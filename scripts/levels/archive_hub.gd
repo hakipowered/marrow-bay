@@ -66,7 +66,12 @@ func _street() -> void:
 		"wall_look": {"tile_size": 3.0, "grime_amount": 0.7, "grime_height": 1.4},
 		"look": {"variation": 0.3},
 		"openings": {"s": [[18.0, 4.0, 9.0]]},
+		"skip_walls": ["e", "w"],
+		"windows": _facade_windows(40.0, "ashgrove"),
+		"decals": {"blood": 4, "stain": 8, "scorch": 2},
+		"papers": 30,
 	})
+	_street_dressing(r)
 	# Sidewalk strips on both sides.
 	for z in [1.5, 14.5]:
 		var mi := MeshInstance3D.new()
@@ -123,6 +128,133 @@ func _street() -> void:
 	place_pickup("ammo:9mm", Vector3(-15, 0.2, -16.2), "street_ammo_1")
 	place_pickup("herb_green", Vector3(17, 0.2, -28.5), "street_herb_1")
 
+## Rows of upper-floor windows for a street facade: some lit, some dark,
+## some boarded. The ground floor is left for shopfronts and doors.
+func _facade_windows(length: float, key: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key)
+	var out := {"n": [], "s": []}
+	for side in ["n", "s"]:
+		var x := 2.0
+		while x < length - 2.0:
+			if side == "s" and x > 16.5 and x < 23.5:
+				x += 4.0   # courtyard gate
+				continue
+			for row in [[3.8, 5.6], [6.6, 8.3]]:
+				var roll := rng.randf()
+				var o := {"moon": 0.0, "opaque": true}
+				if roll < 0.18:
+					o["lit"] = true
+				elif roll < 0.3:
+					o["boards"] = 3
+				out[side].append([x, 1.3, row[0], row[1], o])
+			x += rng.randf_range(3.4, 4.4)
+	return out
+
+## Skyline, signs, clutter and the barricaded street ends for Ashgrove Street.
+func _street_dressing(r: Node3D) -> void:
+	# Uneven skyline: extra storeys and cornices on top of the 9 m facades.
+	var blocks := [
+		["n", 0.0, 12.0, 3.0, "facade_painted"], ["n", 12.0, 25.0, 0.0, ""], ["n", 25.0, 40.0, 5.5, "facade_tiles"],
+		["s", 0.0, 9.0, 4.5, "facade_stone"], ["s", 9.0, 17.0, 1.5, "facade_painted"], ["s", 23.0, 40.0, 2.5, "facade_tiles"],
+	]
+	for b in blocks:
+		var z: float = 0.0 if b[0] == "n" else 16.0
+		var inward: float = 1.0 if b[0] == "n" else -1.0
+		var len: float = b[2] - b[1]
+		var cx: float = (b[1] + b[2]) / 2.0
+		if b[3] > 0.0:
+			var mi := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = Vector3(len, b[3], 0.25)
+			mi.mesh = bm
+			mi.material_override = Mats.surface(b[4], {"tile_size": 3.0, "grime_amount": 0.6})
+			mi.position = Vector3(cx, 9.0 + b[3] / 2.0, z)
+			r.add_child(mi)
+		# Cornice at the top of each block.
+		var top: float = 9.0 + b[3]
+		var c := MeshInstance3D.new()
+		var cm := BoxMesh.new()
+		cm.size = Vector3(len + 0.3, 0.35, 0.6)
+		c.mesh = cm
+		c.material_override = Mats.trim(Color(0.32, 0.3, 0.28), 0.8)
+		c.position = Vector3(cx, top + 0.1, z + inward * 0.2)
+		r.add_child(c)
+		# Storey band between ground floor and the flats above.
+		var band := MeshInstance3D.new()
+		var bb := BoxMesh.new()
+		bb.size = Vector3(len, 0.25, 0.3)
+		band.mesh = bb
+		band.material_override = Mats.trim(Color(0.36, 0.33, 0.3), 0.8)
+		band.position = Vector3(cx, 3.3, z + inward * 0.18)
+		r.add_child(band)
+	# Neon shop signs: each one lights the wet street in its own colour.
+	var signs := [
+		[Vector3(5, 3.0, 0.3), "PHARMACY", Color(0.2, 1.0, 0.45), true],
+		[Vector3(13, 3.0, 0.3), "PAWN & LOAN", Color(1.0, 0.25, 0.2), false],
+		[Vector3(27, 3.0, 0.3), "24H DINER", Color(1.0, 0.55, 0.85), true],
+		[Vector3(35, 3.0, 0.3), "RAGOON CITY TRANSIT", Color(0.35, 0.7, 1.0), false],
+		[Vector3(30, 3.0, 15.7), "HOTEL VESPER", Color(1.0, 0.75, 0.3), true],
+	]
+	for sg in signs:
+		var lbl := Label3D.new()
+		lbl.text = sg[1]
+		lbl.font_size = 96
+		lbl.pixel_size = 0.0045
+		lbl.modulate = sg[2] * 2.2
+		lbl.outline_size = 0
+		lbl.shaded = false
+		lbl.double_sided = false
+		lbl.position = sg[0]
+		if sg[0].z > 8.0:
+			lbl.rotation_degrees.y = 180
+		r.add_child(lbl)
+		var l := RoomBuilder.light(r, sg[0] + Vector3(0, -0.6, 1.2 if sg[0].z < 8.0 else -1.2), sg[2], 0.9, 5.0, false, sg[3])
+		l.light_specular = 1.4
+	# Facade details.
+	for at in [[8.5, 4.8, 0.3, 0.0], [22.0, 7.5, 0.3, 0.0], [32.0, 4.6, 15.7, 180.0], [4.0, 7.4, 15.7, 180.0]]:
+		RoomBuilder.prop(r, "exterior_aircon_unit", Vector3(at[0], at[1], at[2]), at[3], 1.0, false)
+	RoomBuilder.prop(r, "security_light", Vector3(18.0, 3.6, 0.3), 0, 1.0, false)
+	RoomBuilder.prop(r, "korean_public_payphone_01", Vector3(23.5, 1.0, 0.3), 0, 1.0, false)
+	RoomBuilder.prop(r, "planter_box_01", Vector3(10.5, 0.18, 15.3), 180)
+	RoomBuilder.prop(r, "modular_street_seating", Vector3(26.0, 0.18, 15.2), 180)
+	RoomBuilder.prop(r, "old_tyre", Vector3(12.0, 0.3, 9.5), 70, 1.0, false)
+	RoomBuilder.prop(r, "cement_bag", Vector3(36.5, 0.18, 2.4), 30)
+	RoomBuilder.prop(r, "metal_trash_can/metal_trash_can_handle", Vector3(37.0, 0.18, 14.0), 0, 1.0, false)
+	RoomBuilder.prop(r, "metal_trash_can/metal_trash_can_rust", Vector3(15.0, 0.18, 14.6), 90)
+	RoomBuilder.prop(r, "concrete_road_barrier_02", Vector3(3.0, 0, 6.5), 75)
+	# Barricaded ends: the street carries on past a police line into the dark.
+	for e in [[-1.0, 0.0], [1.0, 40.0]]:
+		var ex: float = e[1]
+		for i in 5:
+			RoomBuilder.prop(r, "concrete_road_barrier_02" if i % 2 == 0 else "concrete_road_barrier", Vector3(ex - e[0] * 0.8, 0, 2.5 + i * 2.6), 90 + i * 7)
+		RoomBuilder.prop(r, "modular_chainlink_fence", Vector3(ex - e[0] * 1.6, 0, 8.0), 90 * e[0])
+		var wall := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(0.5, 4.0, 16.0)
+		cs.shape = bs
+		wall.add_child(cs)
+		wall.position = Vector3(ex - e[0] * 0.8, 2.0, 8.0)
+		r.add_child(wall)
+		# More street beyond: road, facades and a dead-end wall far back.
+		var beyond := RoomBuilder.build(r, {
+			"id": "AshgroveBeyond%s" % ("W" if e[0] < 0 else "E"), "pos": Vector3(-14.0 if e[0] < 0 else 40.0, 0, 0), "size": Vector3(14, 11, 16),
+			"floor": "street_road", "wall": "facade_painted" if e[0] < 0 else "facade_brick", "outdoor": true,
+			"floor_look": {"tile_size": 4.0, "wetness": 0.8}, "wall_look": {"tile_size": 3.0, "grime_amount": 0.8},
+			"skip_walls": ["e"] if e[0] < 0 else ["w"],
+			"windows": {"n": [[3.0, 1.3, 3.8, 5.6, {"moon": 0.0, "opaque": true, "lit": e[0] > 0}], [8.0, 1.3, 6.6, 8.3, {"moon": 0.0, "opaque": true}]],
+				"s": [[5.0, 1.3, 3.8, 5.6, {"moon": 0.0, "opaque": true}], [10.0, 1.3, 6.6, 8.3, {"moon": 0.0, "opaque": true, "lit": true}]]},
+			"decals": {"stain": 3, "scorch": 1},
+		})
+		RoomBuilder.prop(beyond, "covered_car", Vector3(7.0, 0, 6.0), 70 if e[0] < 0 else 110)
+		RoomBuilder.prop(beyond, "street_lamp_01", Vector3(4.0, 0, 14.6), 180)
+		RoomBuilder.light(beyond, Vector3(4.0, 4.6, 13.6), Color(1.0, 0.65, 0.35), 1.6, 9.0, false, true)
+		if e[0] > 0:
+			# A car still burning at the east end.
+			RoomBuilder.light(beyond, Vector3(7.0, 1.4, 6.0), Color(1.0, 0.42, 0.12), 3.2, 10.0, true, true)
+		_rain(beyond, Vector3(7, 10, 8), Vector3(6.5, 0, 7.5))
+
 # ---------------- Courtyard (open area) ----------------
 func _courtyard() -> void:
 	var r := RoomBuilder.build(self, {
@@ -157,10 +289,10 @@ func _courtyard() -> void:
 func _great_hall() -> void:
 	var r := RoomBuilder.build(self, {
 		"id": "GreatHall", "pos": Vector3(-12, 0, -2), "size": Vector3(24, 9, 18),
-		"floor": "archive_hall_floor", "wall": "archive_hall_wall", "wainscot": "archive_wainscot",
+		"floor": "stone_trim", "wall": "archive_hall_wall", "wainscot": "archive_wainscot",
 		"ceiling": "hall_ceiling", "ceiling_look": {"tile_size": 2.0},
 		"wainscot_height": 1.4, "trim": Color(0.16, 0.09, 0.05),
-		"floor_look": {"tile_size": 4.2, "roughness_mul": 0.45, "grime_amount": 0.25},
+		"floor_look": {"tile_size": 3.0, "roughness_mul": 0.4, "grime_amount": 0.3},
 		"wall_look": {"tile_size": 3.0, "tint": Color(0.78, 0.74, 0.66), "stain_amount": 0.6},
 		"look": {"grime_amount": 0.45},
 		"windows": {"n": [

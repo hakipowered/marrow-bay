@@ -10,6 +10,10 @@ var shots := [
 	["reading_room", Vector3(-14, 1.7, 3), Vector3(-22, 1.2, -5)],
 	["safe_room", Vector3(13, 1.7, 2.6), Vector3(18, 0.9, 1)],
 	["vault", Vector3(-8, 1.7, 17.5), Vector3(0, 1.0, 24)],
+	["characters", Vector3(-1.6, 1.25, 7.4), Vector3(-1.6, 1.0, 4.0)],
+	["characters_side", Vector3(1.4, 1.3, 4.2), Vector3(-1.6, 1.05, 4.0)],
+	["obcera_profile", Vector3(1.0, 1.15, 4.0), Vector3(-0.9, 1.05, 4.0)],
+	["obcera_front", Vector3(-0.9, 1.3, 5.9), Vector3(-0.9, 1.05, 4.0)],
 ]
 var idx := -1
 var cam: Camera3D
@@ -19,6 +23,10 @@ func _initialize() -> void:
 	var a := OS.get_cmdline_user_args()
 	if a.size() > 0:
 		out = a[0]
+	if a.size() > 1:
+		# Optional comma list of shot names to render.
+		var keep: PackedStringArray = a[1].split(",")
+		shots = shots.filter(func(sh): return sh[0] in keep)
 
 func _process(_d: float) -> bool:
 	frames += 1
@@ -34,6 +42,20 @@ func _process(_d: float) -> bool:
 		cam.make_current()
 		for h in get_nodes_in_group("hud"):
 			h.visible = false
+		# Line-up of the two survivors under the hall chandelier.
+		for c in [["zegan", Vector3(-2.3, 0, 4)], ["obcera", Vector3(-0.9, 0, 4)]]:
+			var cm := CharacterModel.new()
+			cm.character = c[0]
+			cm.customization = root.get_node("GameState").default_customization(c[0])
+			current_scene.add_child(cm)
+			cm.global_position = c[1]
+			cm.rotation.y = PI
+			cm.play("idle", false)
+		var key := OmniLight3D.new()
+		key.light_energy = 1.6
+		key.omni_range = 6.0
+		current_scene.add_child(key)
+		key.global_position = Vector3(-1.6, 2.4, 6.0)
 		idx = 0
 	if idx >= 0 and idx < shots.size():
 		var s = shots[idx]

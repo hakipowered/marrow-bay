@@ -53,8 +53,16 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 		var ops: Array = []
 		for op in openings.get(side, []):
 			ops.append({"at": op[0], "w": op[1], "h": op[2] if op.size() > 2 else 2.3, "window": false})
+		# Windows at the same offset form one column (one per storey).
+		var columns := {}
 		for wn in r.get("windows", {}).get(side, []):
-			ops.append({"at": wn[0], "w": wn[1], "sill": wn[2], "top": wn[3], "opts": wn[4] if wn.size() > 4 else {}, "window": true})
+			var key := "%.2f/%.2f" % [wn[0], wn[1]]
+			if not columns.has(key):
+				columns[key] = {"at": wn[0], "w": wn[1], "panes": [], "window": true}
+			columns[key]["panes"].append([wn[2], wn[3], wn[4] if wn.size() > 4 else {}])
+		for k in columns:
+			columns[k]["panes"].sort_custom(func(a, b): return a[0] < b[0])
+			ops.append(columns[k])
 		ops.sort_custom(func(a, b): return a["at"] < b["at"])
 		var cursor := 0.0
 		for op in ops:
@@ -62,9 +70,12 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 			var w: float = op["w"]
 			_wall_run(root, r, origin, axis, cursor, at, 0.0, size.y, wall_mat, base, side)
 			if op["window"]:
-				_wall_run(root, r, origin, axis, at, at + w, 0.0, op["sill"], wall_mat, base, side)
-				_wall_run(root, r, origin, axis, at, at + w, op["top"], size.y, wall_mat, base, side)
-				_window(root, r, origin, axis, at, w, op["sill"], op["top"], side, op["opts"])
+				var y := 0.0
+				for pane in op["panes"]:
+					_wall_run(root, r, origin, axis, at, at + w, y, pane[0], wall_mat, base, side)
+					_window(root, r, origin, axis, at, w, pane[0], pane[1], side, pane[2])
+					y = pane[1]
+				_wall_run(root, r, origin, axis, at, at + w, y, size.y, wall_mat, base, side)
 			else:
 				_wall_run(root, r, origin, axis, at, at + w, op["h"], size.y, wall_mat, base, side)  # lintel
 				_door_frame(root, r, origin, axis, at, w, op["h"], side)
@@ -119,9 +130,16 @@ static func _window(root: Node3D, r: Dictionary, origin: Vector3, axis: Vector3,
 	glass.mesh = q
 	var gm := StandardMaterial3D.new()
 	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	gm.albedo_color = Color(0.3, 0.36, 0.45, 0.42)
+	gm.albedo_color = Color(0.3, 0.36, 0.45, 0.92 if opts.get("opaque", false) else 0.42)
 	gm.emission_enabled = true
 	gm.emission = Color(0.16, 0.22, 0.32)
+	if opts.get("lit", false):
+		# Someone's light is still on behind a curtain.
+		gm.albedo_color = Color(0.55, 0.38, 0.2, 0.95)
+		gm.emission = Color(1.0, 0.62, 0.3)
+	elif opts.get("opaque", false):
+		gm.albedo_color = Color(0.05, 0.06, 0.08, 0.95)
+		gm.emission = Color(0.05, 0.07, 0.1)
 	gm.emission_energy_multiplier = opts.get("glow", 0.7)
 	gm.roughness = 0.15
 	gm.cull_mode = BaseMaterial3D.CULL_DISABLED

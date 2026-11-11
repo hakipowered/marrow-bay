@@ -65,6 +65,10 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	add_to_group("players")
+	# Gesture when this survivor calls out: wave over, or a full-body shout.
+	CallOuts.callout_played.connect(func(speaker: int, _c: String, _id: String, _t: String, scream: bool):
+		if speaker == peer_id and model:
+			model.play_once("shout" if scream else "call", 0.15, 2.2))
 	collision_layer = 2
 	collision_mask = 1 | 4
 	var shape := CollisionShape3D.new()
@@ -165,11 +169,15 @@ func _physics_process(delta: float) -> void:
 	slowed_for = max(slowed_for - delta, 0.0)
 	if downed:
 		_downed_t += delta
+		sync_anim = "downed"
+		model.play("downed", false)
 		if _downed_t > REVIVE_WINDOW or not Net.is_coop():
 			_bleed_out()
 		return
 	if pinned:
 		velocity = Vector3.ZERO
+		sync_anim = "hit"
+		model.play("hit", false)
 		return
 	_read_keyboard()
 	# Look
@@ -203,6 +211,8 @@ func _physics_process(delta: float) -> void:
 	sync_pitch = pitch
 	sync_aiming = aiming
 	sync_anim = "run" if (running and dir.length() > 0.1) else ("walk" if dir.length() > 0.1 else "idle")
+	if _reloading > 0.0 and dir.length() <= 0.1:
+		sync_anim = "reload"
 	model.play(sync_anim, aiming)
 
 	_tick_weapon(delta)
