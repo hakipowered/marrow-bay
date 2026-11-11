@@ -4,6 +4,7 @@
     FAL_KEY=... python3 tools/voice/say.py zegan z_reload "Reloading."
     FAL_KEY=... python3 tools/voice/say.py obcera o_run "RUN!" --scream
     FAL_KEY=... python3 tools/voice/say.py narrator n_ch1_open "They called it Rah-goon City."
+    FAL_KEY=... python3 tools/voice/say.py tallyman tally_new "Forty-three."   (masked automatically)
 
 Writes assets/audio/voice/<character>/<line_id>.ogg (mono, trimmed, loudness-matched).
 Pass --direction "[whispering]" to override the default delivery tags (Eleven v4 voices only).
@@ -53,7 +54,8 @@ def main():
     else:
         url = fal_run(c["endpoint"], {"prompt": a.text, "voice": c["voice"], "style_instructions": c["style_instructions"],
                                       "output_format": "wav", "language_code": "English (US)"})
-    target = cast["loudness_lufs"][kind]
+    target = c.get("loudness_lufs", cast["loudness_lufs"][kind])
+    mask = c.get("mask_filter", "")
     out_dir = os.path.join(ROOT, "assets", "audio", "voice", a.character)
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, f"{a.line_id}.ogg")
@@ -64,7 +66,8 @@ def main():
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", src, "-af",
                         "silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.03,areverse,"
                         "silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.12,areverse,"
-                        f"loudnorm=I={target}:TP=-1:LRA=11",
+                        + (mask + "," if mask else "")
+                        + f"loudnorm=I={target}:TP=-1:LRA=11",
                         "-ac", "1", "-ar", "44100", "-c:a", "libvorbis", "-q:a", "5", out], check=True)
     print(out)
 
