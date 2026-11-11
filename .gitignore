@@ -5,3 +5,7 @@ export_credentials.cfg
 # CC0 assets are fetched by tools/fetch_assets.py, not committed
 assets/polyhaven/
 relay/node_modules/
+
+# Python bytecode
+__pycache__/
+*.pyc
