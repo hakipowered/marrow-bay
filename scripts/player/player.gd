@@ -36,6 +36,14 @@ var _reloading := 0.0
 var _burst_left := 0
 var _focus: Node = null
 var downed := false
+var pinned := false
+var pinned_by: Node = null
+var slowed_for := 0.0
+var _burn_t := 0.0
+var _struggle := 0
+var _downed_t := 0.0
+const REVIVE_WINDOW := 30.0
+var rescue_area: Area3D
 
 # Synced to the partner.
 @export var sync_yaw := 0.0
@@ -111,6 +119,20 @@ func _ready() -> void:
 	interact_ray.position.y = 1.1
 	body.add_child(interact_ray)
 
+	rescue_area = Area3D.new()
+	rescue_area.collision_layer = 0
+	rescue_area.collision_mask = 0
+	rescue_area.monitoring = false
+	var rcs := CollisionShape3D.new()
+	var rs := SphereShape3D.new()
+	rs.radius = 0.8
+	rcs.shape = rs
+	rcs.position.y = 0.6
+	rescue_area.add_child(rcs)
+	rescue_area.set_script(preload("res://scripts/world/interact_proxy.gd"))
+	rescue_area.target = self
+	add_child(rescue_area)
+
 	_setup_sync()
 	inventory.from_dict(GameState.inventories.get(character, {}))
 	if is_multiplayer_authority():
@@ -122,7 +144,7 @@ func _setup_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim"]:
+	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":downed", ":pinned"]:
 		cfg.add_property(NodePath(prop))
 		cfg.property_set_replication_mode(NodePath(prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -135,7 +157,19 @@ func _physics_process(delta: float) -> void:
 		body.rotation.y = lerp_angle(body.rotation.y, sync_yaw, 0.35)
 		model.play(sync_anim, sync_aiming)
 		return
+	rescue_area.collision_layer = 16 if (downed or pinned) else 0
+	if _burn_t > 0:
+		_burn_t -= delta
+		if fmod(_burn_t, 0.5) < delta:
+			apply_damage(3.0)
+	slowed_for = max(slowed_for - delta, 0.0)
 	if downed:
+		_downed_t += delta
+		if _downed_t > REVIVE_WINDOW or not Net.is_coop():
+			_bleed_out()
+		return
+	if pinned:
+		velocity = Vector3.ZERO
 		return
 	_read_keyboard()
 	# Look
@@ -150,6 +184,8 @@ func _physics_process(delta: float) -> void:
 	var basis_y := Basis(Vector3.UP, yaw)
 	var dir := basis_y * Vector3(move_input.x, 0, move_input.y)
 	var speed := AIM_SPEED if aiming else (RUN_SPEED if running else WALK_SPEED)
+	if slowed_for > 0:
+		speed *= 0.4
 	if Cheats.on("noclip"):
 		global_position += (pivot.global_transform.basis * Vector3(move_input.x, 0, move_input.y)) * RUN_SPEED * 2 * delta
 		return
@@ -296,7 +332,51 @@ func apply_damage(amount: float, _from: Node = null) -> void:
 	model.flinch()
 	if hp <= 0.0:
 		downed = true
+		_downed_t = 0.0
+		pinned = false
 		died.emit()
+		var hud := get_tree().get_first_node_in_group("hud")
+		if hud and is_multiplayer_authority():
+			hud.toast("You're down! Your partner has 30 seconds to reach you." if Net.is_coop() else "You died.")
+
+func _bleed_out() -> void:
+	# Both players go back to the last shared checkpoint together.
+	set_physics_process(false)
+	var level := get_tree().get_first_node_in_group("level")
+	if level and level.has_method("request_retry"):
+		level.request_retry()
+
+func set_pinned(on: bool, by: Node) -> void:
+	pinned = on
+	pinned_by = by if on else null
+	_struggle = 0
+	if on and is_multiplayer_authority():
+		var hud := get_tree().get_first_node_in_group("hud")
+		if hud:
+			hud.toast("Grabbed! Tap INTERACT to struggle, or CALL your partner!")
+
+func set_burning(secs: float) -> void:
+	_burn_t = max(_burn_t, secs)
+
+## Rescue interactions from the partner (revive a downed player, break a pin).
+func proxy_interact_text(_by: Node, _handle := -1) -> String:
+	if downed:
+		return "Revive " + character.capitalize()
+	if pinned:
+		return "Free " + character.capitalize()
+	return ""
+
+func proxy_interact(_by: Node, _handle := -1) -> void:
+	_rpc_rescue.rpc()
+
+@rpc("any_peer", "reliable", "call_local")
+func _rpc_rescue() -> void:
+	if downed:
+		downed = false
+		hp = max_hp * 0.35
+		health_changed.emit(hp, max_hp)
+	if pinned and is_instance_valid(pinned_by) and multiplayer.is_server():
+		pinned_by.break_pin()
 
 func heal(amount: float) -> void:
 	hp = min(hp + amount, max_hp)
@@ -322,6 +402,11 @@ func _update_focus() -> void:
 		interact_prompt.emit(_focus.interact_text(self) if _focus else "")
 
 func interact() -> void:
+	if pinned:
+		_struggle += 1
+		if _struggle >= 12 and is_instance_valid(pinned_by):
+			_rpc_rescue.rpc()
+		return
 	if _focus and _focus.has_method("interact"):
 		_focus.interact(self)
 		_focus = null

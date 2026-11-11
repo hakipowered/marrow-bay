@@ -19,6 +19,7 @@ const WEAPONS := {
 	"flamer": {"name": "Cinder Flamethrower", "kind": "flame", "damage": 9, "rate": 0.05, "mag": 200, "reload": 3.2, "ammo": "fuel", "range": 7.0, "slot": "heavy", "auto": true, "burn": 6.0},
 	"rocket": {"name": "Last Word Rocket Launcher", "kind": "projectile", "projectile": "rocket", "damage": 600, "radius": 6.0, "rate": 1.6, "mag": 1, "reload": 2.5, "ammo": "rockets", "slot": "heavy"},
 	"flash": {"name": "Flash Grenade", "kind": "throwable", "effect": "flash", "rate": 1.0, "ammo": "flash", "slot": "throwable"},
+	"acid_glob": {"name": "Acid", "kind": "projectile", "projectile": "acid", "damage": 18, "rate": 1.0, "enemy_only": true},
 	"frag": {"name": "Frag Grenade", "kind": "throwable", "effect": "frag", "damage": 220, "radius": 5.0, "rate": 1.0, "ammo": "frag", "slot": "throwable"},
 }
 
@@ -32,6 +33,7 @@ const AMMO := {
 	"fuel": {"name": "Fuel Canister", "stack": 400, "pickup": 100},
 	"rockets": {"name": "Rocket", "stack": 2, "pickup": 1},
 	"flash": {"name": "Flash Grenade", "stack": 3, "pickup": 1},
+	"acid_glob": {"name": "Acid", "kind": "projectile", "projectile": "acid", "damage": 18, "rate": 1.0, "enemy_only": true},
 	"frag": {"name": "Frag Grenade", "stack": 3, "pickup": 1},
 }
 

@@ -37,6 +37,22 @@ func _process(_d: float) -> bool:
 				stage = 3
 				frames = 0
 		3:
+			if frames == 5:
+				root.get_node("Cheats").set_cheat("one_hit_kills", false)
+				var p = get_first_node_in_group("players")
+				# Walk into the vault: riot guard, grappler, brute, burner.
+				p.global_position = Vector3(-4, 0.1, 19)
+				p.fire_held = false
+			if frames == 400:
+				var p = get_first_node_in_group("players")
+				var states := {}
+				for z in get_nodes_in_group("zombies"):
+					states[str(z.name)] = z.S.keys()[z.state]
+				print("after vault: hp ", p.hp, " pinned ", p.pinned, " downed ", p.downed)
+				print("zombie states ", states)
+				stage = 4
+				frames = 0
+		4:
 			if frames > 30:
 				print("SMOKE OK")
 				quit(0)

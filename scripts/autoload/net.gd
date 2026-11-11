@@ -7,7 +7,7 @@ signal partner_left(peer_id: int)
 signal session_failed(reason: String)
 
 ## Set this to your deployed relay (see relay/README.md).
-const RELAY_URL := "wss://ragoon-city-relay.example.workers.dev"
+const RELAY_URL := "wss://ragoon-city-relay.hakipowered.workers.dev"
 const LAN_PORT := 24680
 const INVITE_SCHEME := "ragooncity://join/"
 const CODE_ALPHABET := "ABCDEFGHJKMNPQRSTUVWXYZ23456789"

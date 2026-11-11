@@ -17,6 +17,7 @@ func build() -> void:
 	_office_safe_room()
 	_records_vault()
 	_boiler_room()
+	_horror_beats()
 
 func _environment() -> void:
 	var env := Environment.new()
@@ -109,9 +110,13 @@ func _street() -> void:
 	RoomBuilder.light(r, Vector3(30, 1.0, 7), Color(1.0, 0.45, 0.15), 3.0, 9.0, true, true)
 	_rain(r, Vector3(20, 9, 8), Vector3(20, 0.5, 8))
 	place_checkpoint("start", Vector3(0, 0, -24), Vector3(6, 3, 6))
-	place_zombie("Z_street_1", Vector3(-8, 0, -22), 30)
-	place_zombie("Z_street_2", Vector3(10, 0, -25), -60, "officer")
-	place_zombie("Z_street_3", Vector3(14, 0, -18), 200, "civilian", true)
+	place_zombie("Z_street_1", Vector3(-8, 0, -22), 30, "shambler", false, "cop")
+	place_zombie("Z_street_2", Vector3(10, 0, -25), -60, "shambler", false, "mechanic")
+	place_zombie("Z_street_crawl", Vector3(-11, 0, -21.5), 100, "crawler")
+	place_zombie("Z_street_run1", Vector3(18, 0, -26), -90, "runner", true)
+	place_zombie("Z_street_run2", Vector3(19, 0, -24), -100, "runner", true)
+	place_zombie("Z_street_hound", Vector3(-17, 0, -27), 40, "hound", true)
+	place_zombie("Z_street_3", Vector3(14, 0, -18), 200, "shambler", true, "jogger")
 	place_pickup("ammo:9mm", Vector3(-15, 0.2, -16.2), "street_ammo_1")
 	place_pickup("herb_green", Vector3(17, 0.2, -28.5), "street_herb_1")
 
@@ -136,7 +141,8 @@ func _courtyard() -> void:
 	_rain(r, Vector3(10, 6, 6), Vector3(10, 0.5, 6))
 	# Iron gate from the street (manual, swings).
 	place_door(Vector3(0, 0, -14), 0, Door.Kind.MANUAL, "iron_gate", 4.0, 3.0, "courtyard_gate")
-	place_zombie("Z_court_1", Vector3(-6, 0, -6), 90, "civilian", true)
+	place_zombie("Z_court_1", Vector3(-6, 0, -6), 90, "possum")
+	place_zombie("Z_court_2", Vector3(5, 0, -9), 200, "shambler", true, "nurse")
 	place_pickup("ammo:shells", Vector3(7.5, 0.1, -12.4), "court_shells")
 	place_pickup("weapon:m12", Vector3(7.5, 0.1, -12.8), "court_m12")
 
@@ -202,8 +208,11 @@ func _great_hall() -> void:
 	RoomBuilder.light(r, Vector3(21, 3.0, 4), COLD, 0.7, 7.0)
 	place_door(Vector3(0, 0, -2), 0, Door.Kind.MANUAL, "wood_panel", 2.4, 3.2, "hall_main")
 	place_checkpoint("hall", Vector3(0, 0, 4), Vector3(8, 3, 6))
-	place_zombie("Z_hall_1", Vector3(6, 0, 12), 200, "civilian", true)
-	place_zombie("Z_hall_2", Vector3(-8, 0, 8), 120)
+	place_zombie("Z_hall_1", Vector3(6, 0, 12), 200, "shambler", true, "suit")
+	place_zombie("Z_hall_possum1", Vector3(-9, 0, 13), 30, "possum")
+	place_zombie("Z_hall_possum2", Vector3(-7.8, 0, 13.6), 160, "possum")
+	place_zombie("Z_hall_scream", Vector3(9, 0, 4), 180, "screamer")
+	place_zombie("Z_hall_2", Vector3(-8, 0, 8), 120, "shambler", false, "office")
 	place_pickup("ammo:9mm", Vector3(-1, 1.05, 8), "hall_desk_ammo")
 	place_pickup("file:shelter_log", Vector3(0.6, 1.05, 8.1), "hall_file_1")
 	# Co-op steel door down to the records vault: two wheel valves.
@@ -225,7 +234,8 @@ func _west_corridor() -> void:
 	RoomBuilder.light(r, Vector3(4, 3.1, 1.5), SICK, 1.2, 6.0, false, true)
 	RoomBuilder.light(r, Vector3(10, 3.1, 1.5), SICK, 0.6, 5.0)
 	place_door(Vector3(-15.4, 0, 5), 0, Door.Kind.LOCKED, "wood_panel", 1.2, 2.3, "reading_door", "brass_quill_key")
-	place_zombie("Z_corr_1", Vector3(-22, 0, 6.5), 90, "bloated")
+	place_zombie("Z_corr_1", Vector3(-22, 0, 6.5), 90, "bloater")
+	place_zombie("Z_corr_vent", Vector3(-19, 0, 6.4), 90, "ventling")
 
 # ---------------- Reading room ----------------
 func _reading_room() -> void:
@@ -251,8 +261,8 @@ func _reading_room() -> void:
 	RoomBuilder.light(r, Vector3(7, 4.0, 2), COLD, 0.4, 9.0)
 	place_pickup("weapon:longshot", Vector3(-17, 0.82, -1), "reading_rifle")
 	place_pickup("ammo:rifle", Vector3(-16.6, 0.82, -0.6), "reading_rifle_ammo")
-	place_zombie("Z_read_1", Vector3(-20, 0, 2), 0, "civilian", true)
-	place_zombie("Z_read_2", Vector3(-15, 0, -4), 180)
+	place_zombie("Z_read_1", Vector3(-20, 0, 2), 0, "shambler", true, "student")
+	place_zombie("Z_read_2", Vector3(-15, 0, -4), 180, "spitter")
 
 # ---------------- Office (safe room) ----------------
 func _office_safe_room() -> void:
@@ -297,8 +307,10 @@ func _records_vault() -> void:
 	RoomBuilder.prop(r, "hanging_industrial_lamp", Vector3(7, 3.1, 5), 0, 1.0, false)
 	RoomBuilder.prop(r, "propane_tank", Vector3(13, 0, 1), 0)
 	RoomBuilder.light(r, Vector3(7, 2.6, 5), Color(1.0, 0.8, 0.55), 1.6, 8.0, true, true)
-	place_zombie("Z_vault_1", Vector3(-4, 0, 22), 180, "officer")
+	place_zombie("Z_vault_1", Vector3(-4, 0, 22), 180, "riot")
+	place_zombie("Z_vault_grab", Vector3(-8, 0, 24), 200, "grappler")
 	place_zombie("Z_vault_2", Vector3(1, 0, 24), 200, "brute")
+	place_zombie("Z_boiler_burn", Vector3(10, 0, 22), 180, "burner")
 	place_pickup("weapon:gl", Vector3(2.2, 1.2, 24.6), "vault_gl")
 	place_pickup("ammo:grenades", Vector3(2.8, 1.2, 24.6), "vault_gl_ammo")
 
@@ -347,3 +359,17 @@ func _rain(parent: Node3D, top: Vector3, _bottom: Vector3) -> void:
 	p.draw_pass_1 = m
 	p.position = top - parent.position
 	parent.add_child(p)
+
+
+# ---------------- Scripted horror ----------------
+func _horror_beats() -> void:
+	place_scare("hall_entry_sting", "stinger", Vector3(0, 0, 1), Vector3(4, 3, 2))
+	place_scare("hall_whisper", "whisper", Vector3(-8, 0, 12), Vector3(4, 3, 4), {"target": Vector3(-11, 1.5, 14), "text": "...forty-one... forty-two..."})
+	place_scare("corridor_lights", "lights_out", Vector3(-20, 0, 5.2), Vector3(2, 3, 2.6), {"room": "WestCorridor", "duration": 7.0})
+	place_scare("office_bang", "door_bang", Vector3(15, 0, 5), Vector3(3, 3, 3), {"target": Vector3(19.8, 1.2, 7.6)})
+	place_scare("reading_drop", "body_drop", Vector3(-20, 0, -2), Vector3(3, 3, 3), {"target": Vector3(-19, 0, -3)})
+	place_scare("street_window", "window_break", Vector3(4, 0, -26), Vector3(4, 3, 4), {"target": Vector3(7, 0, -29.4), "spawn_count": 3})
+	place_scare("hall_wake", "wake_dead", Vector3(-8, 0, 15), Vector3(3, 3, 2), {"group": "hall_dead"})
+	place_scare("vault_lights", "lights_out", Vector3(-6, 0, 17), Vector3(3, 3, 2), {"room": "RecordsVault", "duration": 5.0})
+	# The Tallyman: first seen behind the reading-room glass, then hunting from chapter 2.
+	place_stalker(Vector3(-24, 0, -5), GameState.has_flag("tallyman_awake"))
