@@ -6,3 +6,7 @@ export_credentials.cfg
 assets/polyhaven/
 relay/node_modules/
 /build_tmp/
+
+# Python bytecode
+__pycache__/
+*.pyc

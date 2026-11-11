@@ -15,6 +15,9 @@ const LINES := {
 			{"id": "z_together", "text": "We open this together. Come on."},
 			{"id": "z_cover_me", "text": "Cover me."},
 			{"id": "z_follow", "text": "Stay close."},
+			{"id": "z_help", "text": "Help me."},
+			{"id": "z_go", "text": "Go."},
+			{"id": "z_come", "text": "Come."},
 		],
 		"scream": [
 			{"id": "z_beesh", "text": "OBCERA YOU BEEEESH!"},
@@ -22,6 +25,7 @@ const LINES := {
 			{"id": "z_obcera_scream", "text": "OBCERAAA!"},
 			{"id": "z_wtf", "text": "WHAT THE FUCK ARE YOU DOING YOU BEESH!"},
 			{"id": "z_hurry", "text": "OBCERA, HURRY UP!"},
+			{"id": "z_help_beesh", "text": "HELP YOU BEEESH!"},
 		],
 	},
 	"obcera": {
@@ -32,6 +36,9 @@ const LINES := {
 			{"id": "o_on_three", "text": "On three. Ready?"},
 			{"id": "o_cover_me", "text": "Watch my back."},
 			{"id": "o_follow", "text": "This way."},
+			{"id": "o_help", "text": "Help me."},
+			{"id": "o_go", "text": "Go."},
+			{"id": "o_come", "text": "Come."},
 		],
 		"scream": [
 			{"id": "o_zegaan", "text": "ZEGAAAN!"},
@@ -39,6 +46,7 @@ const LINES := {
 			{"id": "o_zaga", "text": "ZEGAN YOU ZAGA!"},
 			{"id": "o_move", "text": "ZEGAN, MOVE IT!"},
 			{"id": "o_where", "text": "WHERE THE HELL ARE YOU?!"},
+			{"id": "o_help_beesh", "text": "HELP YOU BEEESH!"},
 		],
 	},
 }
