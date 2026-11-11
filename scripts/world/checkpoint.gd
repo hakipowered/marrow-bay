@@ -12,8 +12,23 @@ func _ready() -> void:
 	collision_layer = 0
 	collision_mask = 2
 	monitoring = true
-	body_entered.connect(func(b): if b is Player: _inside[b.peer_id] = true; _check())
-	body_exited.connect(func(b): if b is Player: _inside.erase(b.peer_id))
+	body_entered.connect(_on_enter)
+	body_exited.connect(_on_exit)
+
+func _on_enter(b: Node3D) -> void:
+	if not b is Player:
+		return
+	_inside[b.peer_id] = true
+	if is_safe_room and b.is_multiplayer_authority():
+		Music.in_safe_room = true
+	_check()
+
+func _on_exit(b: Node3D) -> void:
+	if not b is Player:
+		return
+	_inside.erase(b.peer_id)
+	if is_safe_room and b.is_multiplayer_authority():
+		Music.in_safe_room = false
 
 func _check() -> void:
 	if not multiplayer.is_server():

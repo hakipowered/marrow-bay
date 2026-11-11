@@ -19,7 +19,7 @@ const TYPES := {
 	"spitter": {"hp": 110, "speed": 0.8, "dmg": 10, "reach": 1.1, "drop": "zombie", "ranged": "acid", "range": 11.0, "mutant": true, "looks": ["spitter"]},
 	"hound": {"hp": 60, "speed": 5.2, "dmg": 15, "reach": 1.2, "drop": "none", "quadruped": true, "lunge": true, "looks": ["hound"]},
 	"larva": {"hp": 25, "speed": 1.6, "dmg": 6, "reach": 0.7, "drop": "none", "crawl": true, "tiny": true, "looks": ["larva"]},
-	"brood_mother": {"hp": 900, "speed": 0.0, "dmg": 30, "reach": 2.2, "drop": "brute", "spawner": "larva", "spawn_every": 7.0, "bulk": 2.2, "mutant": true, "looks": ["brood"]},
+	"brood_mother": {"hp": 900, "boss": true, "speed": 0.0, "dmg": 30, "reach": 2.2, "drop": "brute", "spawner": "larva", "spawn_every": 7.0, "bulk": 2.2, "mutant": true, "looks": ["brood"]},
 }
 
 const ZONE_MULT := {"head": 3.0, "torso": 1.0, "arm": 0.6, "leg": 0.8}

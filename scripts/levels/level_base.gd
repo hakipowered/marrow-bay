@@ -8,6 +8,7 @@ var hud: Node
 
 func _ready() -> void:
 	add_to_group("level")
+	Music.enter_game()
 	build()
 	_bake_navigation()
 	_spawn_players()

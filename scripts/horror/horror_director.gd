@@ -44,20 +44,47 @@ func _process(delta: float) -> void:
 	if me == null:
 		return
 	var target := 0.0
+	var threat := 0.0
+	var boss := ""
 	for z in get_tree().get_nodes_in_group("zombies"):
-		if z.state in [Zombie.S.CHASE, Zombie.S.ATTACK]:
-			target = max(target, 1.0 - me.global_position.distance_to(z.global_position) / 14.0)
+		if z.state in [Zombie.S.DEAD, Zombie.S.HIDDEN, Zombie.S.PLAY_DEAD]:
+			continue
+		var d := me.global_position.distance_to(z.global_position)
+		if z.data.get("boss", false) and z.state != Zombie.S.IDLE and d < 35.0:
+			boss = z.variant
+		if z.state in [Zombie.S.CHASE, Zombie.S.ATTACK, Zombie.S.CHARGE, Zombie.S.PINNING]:
+			target = max(target, 1.0 - d / 14.0)
+			if d < 18.0:
+				threat += _threat_weight(z)
 	for s in get_tree().get_nodes_in_group("stalker"):
-		target = max(target, 1.2 - me.global_position.distance_to(s.global_position) / 20.0)
+		var d := me.global_position.distance_to(s.global_position)
+		target = max(target, 1.2 - d / 20.0)
+		if d < 12.0:
+			threat += 3.0
+	Music.threat = threat
+	Music.boss = boss
 	tension = move_toward(tension, clamp(target, 0.0, 1.0), delta * 0.4)
 	if _tension:
-		_tension.volume_db = linear_to_db(max(tension, 0.001)) - 4.0
+		# The strings step aside once the action or boss music takes over.
+		var duck := 0.25 if Music.current_track() in ["action", "boss_1", "boss_2"] else 1.0
+		_tension.volume_db = linear_to_db(max(tension * duck, 0.001)) - 4.0
 	# Distant city: something terrible is always happening somewhere else.
 	_distant_t -= delta
 	if _distant_t <= 0.0:
 		_distant_t = _rng.randf_range(14.0, 35.0)
 		var dir := Vector3(_rng.randf_range(-1, 1), 0.2, _rng.randf_range(-1, 1)).normalized()
 		Sfx.play_at(DISTANT[_rng.randi() % DISTANT.size()], me.global_position + dir * 25.0, "", -6.0, 30.0)
+
+## How much one chasing infected counts toward the action music (3 = on).
+func _threat_weight(z: Node) -> float:
+	var d: Dictionary = z.data
+	if d.get("charge") or d.get("bulk", 1.0) >= 1.5 or d.get("pins"):
+		return 2.5
+	if d.get("lunge") or d.get("ceiling_drop"):
+		return 1.5
+	if d.get("tiny"):
+		return 0.4
+	return 1.0
 
 func run_scare(t: ScareTrigger) -> void:
 	match t.kind:
@@ -132,6 +159,8 @@ func _window_break(t: ScareTrigger) -> void:
 	Sfx.play_at("glass_break", t.target, "", 6.0, 14.0)
 	Effects.impact(t.target, Vector3.UP, null)
 	post_fx.spike(0.8)
+	if t.spawn_count >= 2:
+		Music.force_action(20.0 + t.spawn_count * 4.0)
 	if multiplayer.is_server():
 		var level := get_parent()
 		for i in t.spawn_count:

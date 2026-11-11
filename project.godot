@@ -17,6 +17,7 @@ Combat="*res://scripts/autoload/combat.gd"
 Sfx="*res://scripts/autoload/sfx.gd"
 Effects="*res://scripts/autoload/effects.gd"
 Decals="*res://scripts/autoload/decals.gd"
+Music="*res://scripts/autoload/music.gd"
 
 [display]
 window/size/viewport_width=2176

@@ -1,4 +1,17 @@
-[gd_resource type="AudioBusLayout" format=3]
+[gd_resource type="AudioBusLayout" load_steps=3 format=3]
+
+[sub_resource type="AudioEffectCompressor" id="AudioEffectCompressor_duck"]
+resource_name = "Compressor"
+threshold = -22.0
+ratio = 2.5
+attack_us = 5000.0
+release_ms = 450.0
+sidechain = &"Voice"
+
+[sub_resource type="AudioEffectSpectrumAnalyzer" id="AudioEffectSpectrumAnalyzer_beat"]
+resource_name = "SpectrumAnalyzer"
+buffer_length = 0.1
+fft_size = 1
 
 [resource]
 bus/1/name = &"Voice"
@@ -19,3 +32,7 @@ bus/3/mute = false
 bus/3/bypass_fx = false
 bus/3/volume_db = -4.0
 bus/3/send = &"Master"
+bus/3/effect/0/effect = SubResource("AudioEffectCompressor_duck")
+bus/3/effect/0/enabled = true
+bus/3/effect/1/effect = SubResource("AudioEffectSpectrumAnalyzer_beat")
+bus/3/effect/1/enabled = false
