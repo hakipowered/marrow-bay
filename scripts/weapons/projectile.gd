@@ -9,10 +9,14 @@ var hostile := false
 var _speed := 26.0
 var _life := 6.0
 var _vel := Vector3.ZERO
+var _fuse := -1.0   # throwables bounce until the fuse runs out
 
 func _ready() -> void:
 	var w: Dictionary = WeaponDB.WEAPONS[weapon_id]
 	_speed = {"grenade": 22.0, "rocket": 34.0, "bolt": 60.0, "acid": 14.0}.get(w.get("projectile", ""), 26.0)
+	if w["kind"] == "throwable":
+		_speed = 13.0
+		_fuse = 1.8
 	_vel = direction * _speed
 	var mesh := MeshInstance3D.new()
 	if w.get("projectile") == "acid":
@@ -38,12 +42,24 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_life -= delta
 	var w: Dictionary = WeaponDB.WEAPONS[weapon_id]
-	if w.get("projectile") in ["grenade", "acid"]:
+	if w.get("projectile") in ["grenade", "acid"] or w["kind"] == "throwable":
 		_vel.y -= 9.8 * delta
+	if _fuse >= 0.0:
+		_fuse -= delta
+		if _fuse <= 0.0:
+			_detonate(global_position)
+			return
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsRayQueryParameters3D.create(global_position, global_position + _vel * delta, (1 | 2) if hostile else (1 | 8))
 	q.collide_with_areas = true
 	var hit := space.intersect_ray(q)
+	if _fuse > 0.0 and not hit.is_empty():
+		# Bounce off walls and floors, losing energy.
+		_vel = _vel.bounce(hit.normal) * 0.3
+		global_position = hit.position + hit.normal * 0.05
+		if _vel.length() > 1.5:
+			Sfx.play_at("grenade_bounce", global_position, "", -6.0, 10.0)
+		return
 	if not hit.is_empty() or _life <= 0:
 		_impact(hit)
 		return
@@ -63,7 +79,15 @@ func _impact(hit: Dictionary) -> void:
 		queue_free()
 		return
 	if w.has("radius"):
-		Combat.explode(pos, w["damage"], w["radius"], weapon_id)
+		Combat.explode(pos, w["damage"], w["radius"], weapon_id, owner_peer)
 	elif not hit.is_empty() and hit.collider.has_meta("hit_zone") and authoritative:
 		hit.collider.get_meta("enemy").take_hit(w["damage"], weapon_id, hit.collider.get_meta("hit_zone"), _vel.normalized())
+	queue_free()
+
+func _detonate(pos: Vector3) -> void:
+	var w: Dictionary = WeaponDB.WEAPONS[weapon_id]
+	if w.get("effect") == "flash":
+		Combat.flash(pos, 10.0)
+	else:
+		Combat.explode(pos, w.get("damage", 200.0), w.get("radius", 5.0), weapon_id, owner_peer)
 	queue_free()

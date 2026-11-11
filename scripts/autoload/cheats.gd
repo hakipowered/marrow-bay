@@ -16,6 +16,7 @@ const LIST := {
 	"show_hitboxes": "Show hitboxes",
 	"infinite_heals": "Infinite healing",
 	"rocket_launcher": "Infinite rocket launcher",
+	"no_explosive_ff": "No explosive friendly fire",
 }
 
 var flags: Dictionary = {}

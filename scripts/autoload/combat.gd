@@ -18,6 +18,10 @@ func fire(shooter: Node3D, weapon_id: String, origin: Vector3, dirs: Array, muzz
 			_flame(shooter, weapon_id, w, origin, dirs[0])
 		"projectile":
 			_rpc_projectile.rpc(weapon_id, muzzle_pos, dirs[0], shooter.peer_id)
+		"throwable":
+			# Lobbed: aim direction tipped upward so it arcs over cover.
+			var d: Vector3 = (dirs[0] + Vector3.UP * 0.35).normalized()
+			_rpc_projectile.rpc(weapon_id, muzzle_pos, d, shooter.peer_id)
 
 func _ray(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, dir: Vector3, muzzle_pos: Vector3) -> void:
 	var space := shooter.get_world_3d().direct_space_state
@@ -99,16 +103,58 @@ func _rpc_projectile(weapon_id: String, pos: Vector3, dir: Vector3, owner_peer: 
 	get_tree().current_scene.add_child(p)
 	p.global_position = pos
 
-func explode(pos: Vector3, dmg: float, radius: float, weapon_id: String) -> void:
+## Share of explosive damage that players take (rockets, grenades, frags,
+## barrels). Applies to the partner and to yourself, like real friendly fire.
+const EXPLOSIVE_FF := 0.35
+
+## Runs on every peer (projectiles are simulated everywhere): each peer hurts
+## its own player, the host hurts zombies.
+func explode(pos: Vector3, dmg: float, radius: float, weapon_id: String, owner_peer := 0) -> void:
 	Effects.explosion(pos, radius)
 	Sfx.play_at("explosion", pos, "explosion")
 	_alert_zombies(pos, 40.0)
+	if not Cheats.on("no_explosive_ff"):
+		for p in get_tree().get_nodes_in_group("players"):
+			if not p.is_multiplayer_authority():
+				continue
+			var pd: float = p.global_position.distance_to(pos)
+			if pd >= radius:
+				continue
+			var blocked := _wall_between(p, pos)
+			var amount := dmg * EXPLOSIVE_FF * (1.0 - pd / radius * 0.7) * (0.35 if blocked else 1.0)
+			p.apply_damage(amount, null)
+			var post := get_tree().get_first_node_in_group("horror")
+			if post and post.get("post_fx"):
+				post.post_fx.spike(0.8)
+			# Hit by the partner's explosive: shout at them.
+			if owner_peer != 0 and owner_peer != p.peer_id and not p.downed:
+				var line := "z_wtf" if p.character == "zegan" else "o_zaga"
+				CallOuts.call_partner(true, line)
 	if not multiplayer.is_server():
 		return
 	for z in get_tree().get_nodes_in_group("zombies"):
 		var d: float = z.global_position.distance_to(pos)
 		if d < radius:
 			z.take_hit(dmg * (1.0 - d / radius * 0.6), weapon_id, "torso", (z.global_position - pos).normalized())
+
+func _wall_between(p: Node3D, pos: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.3, p.global_position + Vector3.UP * 1.0, 1)
+	return not p.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+## Flash grenade: blinds and staggers zombies, whites out nearby players.
+func flash(pos: Vector3, radius: float) -> void:
+	Effects.explosion(pos, 0.6)
+	Sfx.play_at("flashbang", pos, "explosion")
+	_alert_zombies(pos, 30.0)
+	for p in get_tree().get_nodes_in_group("players"):
+		if p.is_multiplayer_authority() and p.global_position.distance_to(pos) < radius and not _wall_between(p, pos):
+			var hud := get_tree().get_first_node_in_group("hud")
+			if hud and hud.has_method("white_flash"):
+				hud.white_flash(1.6)
+	if multiplayer.is_server():
+		for z in get_tree().get_nodes_in_group("zombies"):
+			if z.global_position.distance_to(pos) < radius and z.has_method("flashed"):
+				z.flashed(4.0)
 
 func _alert_zombies(pos: Vector3, radius: float) -> void:
 	if radius <= 0:

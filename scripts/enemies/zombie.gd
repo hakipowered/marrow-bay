@@ -397,6 +397,14 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 	if hp <= 0:
 		_die()
 
+## Flash grenade: blinded and reeling.
+func flashed(secs: float) -> void:
+	if state in [S.DEAD, S.HIDDEN]:
+		return
+	if state == S.PINNING:
+		_release_pin()
+	_set_stagger(secs)
+
 func _set_stagger(t: float) -> void:
 	if variant == "brood_mother":
 		return

@@ -200,6 +200,18 @@ func toast(text: String) -> void:
 	t.tween_interval(2.0)
 	t.tween_property(_toast, "modulate:a", 0.0, 0.6)
 
+## Flash grenade went off in view: white screen that fades out.
+func white_flash(secs: float) -> void:
+	var r := ColorRect.new()
+	r.color = Color(1, 1, 1, 1)
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(r)
+	var t := create_tween()
+	t.tween_interval(secs * 0.3)
+	t.tween_property(r, "color:a", 0.0, secs * 0.7)
+	t.tween_callback(r.queue_free)
+
 func show_coop_wait() -> void:
 	var partner := GameState.partner_character(GameState.local_character()).capitalize()
 	_coop_hint.text = "This needs %s too.\nTap CALL to shout for them (hold to scream)." % partner

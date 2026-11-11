@@ -10,7 +10,7 @@ import json, os, sys, urllib.request, concurrent.futures as cf
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "assets", "polyhaven")
 API = "https://api.polyhaven.com/files/"
-UA = {"User-Agent": "dead-signal-asset-fetch/1.0"}
+UA = {"User-Agent": "ragoon-city-asset-fetch/1.0"}
 
 def get(url):
     with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=120) as r:
