@@ -1,0 +1,50 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+config/name="RaGoon City"
+config/description="Original two-player co-op survival horror."
+run/main_scene="res://scenes/main_menu.tscn"
+config/features=PackedStringArray("4.4", "Mobile")
+
+[autoload]
+GameState="*res://scripts/autoload/game_state.gd"
+Net="*res://scripts/autoload/net.gd"
+SaveSystem="*res://scripts/autoload/save_system.gd"
+Cheats="*res://scripts/autoload/cheats.gd"
+CallOuts="*res://scripts/autoload/callouts.gd"
+Combat="*res://scripts/autoload/combat.gd"
+Sfx="*res://scripts/autoload/sfx.gd"
+Effects="*res://scripts/autoload/effects.gd"
+Decals="*res://scripts/autoload/decals.gd"
+
+[display]
+window/size/viewport_width=2176
+window/size/viewport_height=1812
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+
+[input_devices]
+pointing/emulate_touch_from_mouse=true
+
+[layer_names]
+3d_physics/layer_1="world"
+3d_physics/layer_2="players"
+3d_physics/layer_3="enemies"
+3d_physics/layer_4="hitboxes"
+3d_physics/layer_5="interactables"
+
+[rendering]
+renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=1
+environment/defaults/default_clear_color=Color(0.02, 0.02, 0.03, 1)
+
+[debug]
+gdscript/warnings/inference_on_variant=1
+gdscript/warnings/untyped_declaration=0
+
+[navigation]
+3d/default_cell_size=0.15
+3d/default_cell_height=0.1

@@ -1,0 +1,34 @@
+class_name ItemVisual
+## World models for pickups. Uses CC0 models where one exists, else a crafted mesh.
+
+const MODEL_FOR := {
+	"ammo": "ammo_box", "weapon:p9": "service_pistol", "weapon:longshot": "bolt_action_rifle_7_62",
+	"weapon:hatchet": "hatchet", "weapon:knife": "machete", "weapon:frag": "stick_grenade",
+	"medkit": "medical_box", "herb_green": "fern_02", "herb_red": "fern_02", "herb_mix": "fern_02",
+}
+
+static func build(item: String) -> Node3D:
+	var key := item if MODEL_FOR.has(item) else item.split(":")[0]
+	var name: String = MODEL_FOR.get(key, "")
+	var root := Node3D.new()
+	if name != "":
+		var path := "res://assets/polyhaven/models/%s/%s.gltf" % [name, name]
+		if ResourceLoader.exists(path):
+			var m: Node3D = load(path).instantiate()
+			var s := {"ammo_box": 0.6, "fern_02": 0.35, "medical_box": 0.7, "bolt_action_rifle_7_62": 0.9}.get(name, 1.0)
+			m.scale = Vector3.ONE * s
+			m.rotation_degrees.y = randf() * 360.0
+			if item.begins_with("weapon"):
+				m.rotation_degrees.z = 90
+				m.position.y = 0.04
+			root.add_child(m)
+			return root
+	var mi := MeshInstance3D.new()
+	var b := BoxMesh.new()
+	b.size = Vector3(0.18, 0.06, 0.12) if not item.begins_with("key") else Vector3(0.09, 0.015, 0.03)
+	mi.mesh = b
+	mi.position.y = b.size.y / 2
+	var c := Color(0.55, 0.75, 0.9) if item.begins_with("key") else Color(0.6, 0.55, 0.45)
+	mi.material_override = Mats.trim(c, 0.35, 0.6 if item.begins_with("key") else 0.0)
+	root.add_child(mi)
+	return root
