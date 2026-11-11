@@ -20,6 +20,20 @@ var _hitboxes: Array = []
 const SPEED := 1.55
 const STAGGER_DAMAGE := 260.0
 
+## He mutters while he hunts. Breathing and speech never overlap: the breath
+## loop stops while he talks and comes back after a short pause.
+const LINES := [
+	{"id": "tally_count", "text": "...forty-one... forty-two..."},
+	{"id": "tally_ledger", "text": "Another one for the ledger."},
+	{"id": "tally_number", "text": "Every name gets a number."},
+	{"id": "tally_closed", "text": "The Archive is closed. You are late."},
+	{"id": "tally_found", "text": "There you are."},
+]
+var _breath: AudioStreamPlayer3D
+var _voice: AudioStreamPlayer3D
+var _talk_cd := 10.0
+var _speaking := false
+
 func _ready() -> void:
 	add_to_group("stalker")
 	collision_layer = 4
@@ -33,6 +47,24 @@ func _ready() -> void:
 	add_child(cs)
 	_model = _build_model()
 	add_child(_model)
+	_breath = AudioStreamPlayer3D.new()
+	_breath.bus = "SFX"
+	_breath.unit_size = 5.0
+	_breath.max_distance = 16.0
+	_breath.position.y = 2.2
+	if ResourceLoader.exists("res://assets/audio/sfx/stalker_breath.ogg"):
+		var st: AudioStream = load("res://assets/audio/sfx/stalker_breath.ogg").duplicate()
+		if st is AudioStreamOggVorbis:
+			st.loop = true
+		_breath.stream = st
+	add_child(_breath)
+	_voice = AudioStreamPlayer3D.new()
+	_voice.bus = "Voice"
+	_voice.unit_size = 9.0
+	_voice.max_distance = 26.0
+	_voice.position.y = 2.2
+	_voice.finished.connect(_voice_done)
+	add_child(_voice)
 	for z in [["head", Vector3(0, 2.3, 0), Vector3(0.3, 0.32, 0.3)], ["torso", Vector3(0, 1.55, 0), Vector3(0.62, 0.9, 0.38)], ["leg", Vector3(0, 0.55, 0), Vector3(0.5, 1.1, 0.3)]]:
 		var a := Area3D.new()
 		a.collision_layer = 8
@@ -103,6 +135,33 @@ func activate(at: Vector3) -> void:
 	active = true
 	visible = true
 	global_position = at
+	if _breath.stream:
+		_breath.play()
+
+## Host picks a line; every peer plays it with the breath loop muted.
+@rpc("authority", "reliable", "call_local")
+func say(index: int) -> void:
+	var line: Dictionary = LINES[index % LINES.size()]
+	var path := "res://assets/audio/voice/tallyman/%s.ogg" % line["id"]
+	var hud := get_tree().get_first_node_in_group("hud")
+	if hud:
+		hud.show_subtitle("The Tallyman", line["text"], 3.0)
+	if not ResourceLoader.exists(path):
+		return
+	_speaking = true
+	var t := create_tween()
+	t.tween_property(_breath, "volume_db", -60.0, 0.25)
+	t.tween_callback(_breath.stop)
+	t.tween_callback(func():
+		_voice.stream = load(path)
+		_voice.play())
+
+func _voice_done() -> void:
+	_speaking = false
+	await get_tree().create_timer(0.6).timeout
+	if active and not _speaking and _breath.stream:
+		_breath.volume_db = 0.0
+		_breath.play()
 
 func _physics_process(delta: float) -> void:
 	visible = active
@@ -124,6 +183,10 @@ func _physics_process(delta: float) -> void:
 	if target == null:
 		return
 	var d := global_position.distance_to(target.global_position)
+	_talk_cd -= delta
+	if _talk_cd <= 0.0 and not _speaking and d < 22.0:
+		_talk_cd = randf_range(14.0, 26.0)
+		say.rpc(4 if d < 6.0 else randi() % 4)
 	if d < 1.8 and _attack_cd <= 0:
 		_attack_cd = 2.2
 		_swing.rpc(target.get_path())

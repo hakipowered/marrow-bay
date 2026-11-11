@@ -73,12 +73,16 @@ func _ready() -> void:
 	_prompt.visible = false
 	_prompt.pressed.connect(func(): if player: player.interact())
 
-	# Call-outs: tap for normal voice, hold 0.4s for a scream.
+	# Call-outs: tap for a quick normal call, hold to pick any line
+	# (help, go, come, the partner's name, and all the screams).
 	_call_btn = _button(root, "CALL", Vector2(-420, 36), Vector2(170, 100), false, true)
 	_call_btn.button_down.connect(func(): _call_pressed_at = Time.get_ticks_msec())
 	_call_btn.button_up.connect(func():
 		var held := (Time.get_ticks_msec() - _call_pressed_at) / 1000.0
-		CallOuts.call_partner(held > 0.4))
+		if held > 0.35:
+			open_callout_picker()
+		else:
+			CallOuts.call_partner(false))
 	_call_btn.visible = Net.is_coop()
 	var menu := _button(root, "II", Vector2(-220, 36), Vector2(140, 100), false, true)
 	menu.pressed.connect(toggle_pause)
@@ -200,6 +204,71 @@ func toast(text: String) -> void:
 	t.tween_interval(2.0)
 	t.tween_property(_toast, "modulate:a", 0.0, 0.6)
 
+var _picker: Control
+
+## Every call-out line for this character as buttons: normal lines first,
+## screams in red. Closes after a pick.
+func open_callout_picker() -> void:
+	if _picker and is_instance_valid(_picker):
+		_picker.queue_free()
+		return
+	var character := GameState.local_character()
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -560
+	panel.offset_right = 560
+	panel.offset_top = -330
+	panel.offset_bottom = 330
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.03, 0.03, 0.04, 0.88)
+	sb.border_color = Color(0.5, 0.15, 0.12)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(18)
+	panel.add_theme_stylebox_override("panel", sb)
+	var v := VBoxContainer.new()
+	panel.add_child(v)
+	var head := HBoxContainer.new()
+	v.add_child(head)
+	var title := Label.new()
+	title.text = "Call %s" % GameState.partner_character(character).capitalize()
+	title.add_theme_font_size_override("font_size", 34)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title)
+	var close := Button.new()
+	close.text = "X"
+	close.custom_minimum_size = Vector2(90, 70)
+	close.focus_mode = Control.FOCUS_NONE
+	close.pressed.connect(func(): panel.queue_free())
+	head.add_child(close)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(grid)
+	for scream in [false, true]:
+		for line in CallOuts.lines_for(character, scream):
+			var b := Button.new()
+			var t: String = line["text"]
+			b.text = t if t.length() <= 26 else t.substr(0, 24) + "..."
+			b.custom_minimum_size = Vector2(340, 84)
+			b.focus_mode = Control.FOCUS_NONE
+			b.add_theme_font_size_override("font_size", 24)
+			if scream:
+				b.add_theme_color_override("font_color", Color(1.0, 0.5, 0.42))
+			var id: String = line["id"]
+			b.pressed.connect(func():
+				CallOuts.call_partner(scream, id)
+				panel.queue_free())
+			grid.add_child(b)
+	add_child(panel)
+	_picker = panel
+
 ## Flash grenade went off in view: white screen that fades out.
 func white_flash(secs: float) -> void:
 	var r := ColorRect.new()
@@ -214,7 +283,7 @@ func white_flash(secs: float) -> void:
 
 func show_coop_wait() -> void:
 	var partner := GameState.partner_character(GameState.local_character()).capitalize()
-	_coop_hint.text = "This needs %s too.\nTap CALL to shout for them (hold to scream)." % partner
+	_coop_hint.text = "This needs %s too.\nTap CALL to shout for them (hold CALL to pick a line)." % partner
 	_coop_hint.modulate.a = 1.0
 	var t := create_tween()
 	t.tween_interval(3.0)
