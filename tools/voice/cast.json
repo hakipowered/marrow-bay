@@ -1,0 +1,23 @@
+{
+  "_note": "Voices the person picked on 2026-11-11. Keep new lines on the same model, voice and settings so they match.",
+  "loudness_lufs": {"normal": -20, "scream": -14},
+  "pronunciation": {"Zegan": "ZEH-gan", "Obcera": "ob-SEH-ra", "RaGoon": "rah-GOON"},
+  "zegan": {
+    "endpoint": "elevenlabs/tts/eleven-v4",
+    "voice": "TxGEqnHWrfWFTfGW9XjX",
+    "stability": {"normal": 0.35, "scream": 0.0},
+    "default_direction": {"normal": "[low, tired]", "scream": "[furious, screaming]"}
+  },
+  "obcera": {
+    "endpoint": "elevenlabs/tts/eleven-v4",
+    "voice": "FGY2WhTYpPnrIDTdsKH5",
+    "stability": {"normal": 0.35, "scream": 0.0},
+    "default_direction": {"normal": "[confident, low]", "scream": "[furious, screaming]"}
+  },
+  "narrator": {
+    "endpoint": "fal-ai/gemini-3.1-flash-tts",
+    "voice": "Charon",
+    "style_instructions": "Voice: the narrator of a survival horror game. A low, grave, intimate male voice, very close to the microphone, slow and deliberate, almost confiding a terrible secret. Let the last words drop to a near-whisper.",
+    "notes": "Write RaGoon as 'Rah-goon' in the text or Gemini may say a different city name."
+  }
+}
