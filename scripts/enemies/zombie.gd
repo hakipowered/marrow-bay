@@ -30,6 +30,16 @@ var _pinned: Node3D = null
 var _charge_dir := Vector3.ZERO
 var _charge_t := 0.0
 var _rng := RandomNumberGenerator.new()
+var _speed_f := 1.0       # this one's pace, picked once (no twitchy per-frame speed)
+var _atk := {}            # the current attack's timing (attack_timing)
+var _attack_t := 0.0
+var _struck := false
+var _poise_t := 0.0       # after a flinch, a moment before the next hit can break its stride
+var _flinch_t := 0.0      # rocked by a hit: barely moves and can't start a swing
+
+## Meshy punch clip: the arms are fully out at 1.5 s of clip time.
+const ATTACK_STRIKE := 1.5
+const POISE := 1.4
 var agent: NavigationAgent3D
 var model: ZombieModel
 var _hitboxes: Array = []
@@ -43,6 +53,7 @@ func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1 | 2 | 4
 	max_hp = data["hp"] * _rng.randf_range(0.9, 1.15)
+	_speed_f = _rng.randf_range(0.9, 1.06)
 	hp = max_hp
 	drop_table = data["drop"]
 	var h: float = data.get("height", 1.0) * (0.35 if data.get("tiny") else 1.0)
@@ -127,6 +138,8 @@ func _physics_process(delta: float) -> void:
 		return
 	_attack_cd -= delta
 	_special_cd -= delta
+	_poise_t -= delta
+	_flinch_t -= delta
 	var speed_mult := 0.5 if Cheats.on("slow_zombies") else 1.0
 	match state:
 		S.FEED, S.IDLE:
@@ -159,7 +172,7 @@ func _physics_process(delta: float) -> void:
 				_rpc_hurt_player.rpc(_pinned.get_path(), data["dmg"])
 		S.CHARGE:
 			_charge_t -= delta
-			velocity = _charge_dir * 6.5
+			velocity = _charge_dir * 5.4
 			for p in get_tree().get_nodes_in_group("players"):
 				if p.global_position.distance_to(global_position) < 1.3:
 					_rpc_hurt_player.rpc(p.get_path(), data["dmg"] * 1.3)
@@ -177,7 +190,7 @@ func _physics_process(delta: float) -> void:
 			else:
 				_chase(delta, speed_mult)
 		S.ATTACK:
-			velocity = Vector3.ZERO
+			_tick_attack(delta)
 	if data.get("spawner") and state != S.DEAD and _special_cd <= 0 and _nearest_player() and global_position.distance_to(_nearest_player().global_position) < 18.0:
 		_special_cd = data["spawn_every"]
 		get_parent().spawn_zombie_synced.rpc("%s_spawn%d" % [name, _rng.randi() % 100000], global_position + Vector3(_rng.randf_range(-1.5, 1.5), 0, 1.5), data["spawner"])
@@ -204,15 +217,12 @@ func _chase(delta: float, speed_mult: float) -> void:
 		_groan.rpc("brute_roar")
 		return
 	var reach: float = data["reach"] * (0.8 if crippled and not data.get("crawl") else 1.0)
-	if dist < reach and _attack_cd <= 0:
-		state = S.ATTACK
-		_attack_cd = 1.6 if not data.get("lunge") else 1.0
-		_attack()
+	if dist < reach and _attack_cd <= 0 and _flinch_t <= 0:
+		_begin_attack()
 		return
-	var spd: float = (0.35 if crippled and not data.get("crawl") else data["speed"]) * speed_mult * _rng.randf_range(0.95, 1.08)
-	if data.get("lunge") and dist < 3.5 and _special_cd <= 0:
-		_special_cd = 2.5
-		spd *= 2.0
+	var spd: float = (0.35 if crippled and not data.get("crawl") else data["speed"]) * speed_mult * _speed_f
+	if _flinch_t > 0:
+		spd *= 0.15
 	_move_to(target.global_position, spd, delta)
 
 func _sound_id(kind: String) -> String:
@@ -271,6 +281,7 @@ func hear_noise(pos: Vector3) -> void:
 func wake_from_dead() -> void:
 	if state in [S.PLAY_DEAD, S.FEED, S.IDLE]:
 		state = S.CHASE
+		_flinch_t = 1.4   # still getting up
 		_rise.rpc()
 
 @rpc("authority", "reliable", "call_local")
@@ -291,6 +302,7 @@ func _drop_from_ceiling() -> void:
 		d.post_fx.spike(0.9)
 
 func _scream() -> void:
+	_flinch_t = 1.6   # no swinging mid-shriek
 	_groan.rpc("screamer_shriek")
 	_rpc_scream.rpc()
 	for z in get_tree().get_nodes_in_group("zombies"):
@@ -310,24 +322,81 @@ func _spit(at: Vector3) -> void:
 	get_parent().add_child(glob)
 	glob.global_position = global_position + Vector3.UP * 1.6 - global_transform.basis.z * 0.4
 
-func _attack() -> void:
+## How a type's swing plays out. The punch clip starts at `from` and runs at
+## `speed`, so the arms land exactly at `windup` seconds: that wind-up (with
+## the snarl) is the warning, and the blow only counts at the strike frame.
+## The zombie then hangs in the follow-through for `recover`, a window to back
+## off or punish it. The model reads the same numbers so every phone matches.
+static func attack_timing(d: Dictionary) -> Dictionary:
+	var windup := 0.75
+	if d.get("lunge"):
+		windup = 0.5
+	if d.get("quadruped"):
+		windup = 0.42
+	if d.get("bulk", 1.0) >= 1.4:
+		windup = 0.95
+	windup = d.get("windup", windup)
+	var from := 0.45 if windup >= 0.6 else 1.0
+	return {"windup": windup, "from": from, "speed": (ATTACK_STRIKE - from) / windup, "recover": 0.6}
+
+func _begin_attack() -> void:
+	state = S.ATTACK
+	_atk = attack_timing(data)
+	_attack_t = 0.0
+	_struck = false
+	_attack_cd = _atk["windup"] + _atk["recover"] + (0.5 if data.get("lunge") else 0.9)
 	_groan.rpc(_sound_id("attack"))
-	await get_tree().create_timer(0.5 if not data.get("lunge") else 0.3).timeout
-	if state == S.DEAD or target == null:
+
+func _tick_attack(delta: float) -> void:
+	velocity.x = 0.0
+	velocity.z = 0.0
+	_attack_t += delta
+	if _struck:
+		if _attack_t >= _atk["windup"] + _atk["recover"]:
+			state = S.CRAWL if crippled else S.CHASE
 		return
-	if global_position.distance_to(target.global_position) < data["reach"] + 0.3:
-		if data.get("pins") and not target.pinned:
-			_pinned = target
-			state = S.PINNING
-			_set_pinned.rpc(target.get_path(), true)
-			return
-		_rpc_hurt_player.rpc(target.get_path(), data["dmg"])
-		if data.get("ignites"):
-			_ignite.rpc(target.get_path())
-		if data.get("ankle_grab"):
-			_slow_player.rpc(target.get_path(), 1.5)
-	if state == S.ATTACK:
-		state = S.CRAWL if crippled else S.CHASE
+	if target and is_instance_valid(target):
+		# Turns with the target through most of the wind-up, then commits.
+		var to := target.global_position - global_position
+		var turn := 4.0 if _attack_t < _atk["windup"] * 0.7 else 0.8
+		rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), turn * delta)
+		if data.get("lunge"):
+			var fwd := -global_transform.basis.z
+			velocity.x = fwd.x * 1.4
+			velocity.z = fwd.z * 1.4
+	if _attack_t >= _atk["windup"]:
+		_struck = true
+		_strike()
+
+## The strike frame: lands only if the target is still in reach and in front,
+## so stepping back or sideways during the wind-up dodges it.
+func _strike() -> void:
+	var hit: Node3D = null
+	if target and is_instance_valid(target) and not target.downed:
+		var to := target.global_position - global_position
+		to.y = 0.0
+		var in_front := to.length() < 0.5 or (-global_transform.basis.z).dot(to.normalized()) > 0.3
+		if to.length() < data["reach"] + 0.35 and in_front:
+			hit = target
+	_rpc_swipe.rpc()
+	if hit == null:
+		return
+	if data.get("pins") and not hit.pinned:
+		_pinned = hit
+		state = S.PINNING
+		_set_pinned.rpc(hit.get_path(), true)
+		return
+	_rpc_hurt_player.rpc(hit.get_path(), data["dmg"])
+	if data.get("ignites"):
+		_ignite.rpc(hit.get_path())
+	if data.get("ankle_grab"):
+		_slow_player.rpc(hit.get_path(), 1.5)
+
+@rpc("authority", "unreliable", "call_local")
+func _rpc_swipe() -> void:
+	if data.get("quadruped"):
+		return   # the snap is in its attack snarl
+	Sfx.play_at("brute_slam" if variant == "brute" else "zombie_swipe", global_position + Vector3.UP * 1.2 - global_transform.basis.z * 0.5, "", 0.0, 7.0)
 
 @rpc("authority", "reliable", "call_local")
 func _set_pinned(path: NodePath, on: bool) -> void:
@@ -392,14 +461,35 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 			if legs_hp <= 0 and not crippled and not data.get("quadruped"):
 				crippled = true
 				_set_stagger(1.2)
+	# Any real hit rocks it: a swing in progress is broken off, a lurch toward
+	# you stalls for a beat. Then it shrugs off hits for a moment (POISE), so a
+	# knife can buy space but can't pin one in place forever.
+	var flinch := false
 	if (w.get("stagger", 0.0) > 0 or total > 50) and variant not in ["brute", "brood_mother"]:
 		_set_stagger(0.6 + w.get("stagger", 0.0) * 0.6)
 		velocity = dir * 1.5
-	_rpc_hit_fx.rpc(zone)
+		flinch = true
+		_poise_t = POISE
+	elif _poise_t <= 0.0 and state != S.STAGGER and _can_flinch(total):
+		flinch = true
+		_poise_t = POISE
+		if state == S.ATTACK:
+			_set_stagger(0.5)
+		elif state in [S.CHASE, S.CRAWL, S.WANDER]:
+			_flinch_t = 0.55
+	_rpc_hit_fx.rpc(zone, flinch)
 	if hp <= 0:
 		_die()
 
 ## Flash grenade: blinded and reeling.
+func _can_flinch(total: float) -> bool:
+	match variant:
+		"brood_mother":
+			return false
+		"brute":
+			return total >= 40.0
+	return total > 0.0
+
 func flashed(secs: float) -> void:
 	if state in [S.DEAD, S.HIDDEN]:
 		return
@@ -441,8 +531,8 @@ func _rpc_die() -> void:
 		Sfx.play_at("bloater_burst", global_position, "", 6.0, 12.0)
 
 @rpc("authority", "unreliable", "call_local")
-func _rpc_hit_fx(zone: String) -> void:
-	model.hit_react(zone)
+func _rpc_hit_fx(zone: String, flinch := false) -> void:
+	model.hit_react(zone, flinch)
 	Sfx.play_at("flesh_hit", global_position + Vector3.UP, "", -4.0, 6.0)
 
 @rpc("authority", "unreliable", "call_local")
@@ -452,4 +542,4 @@ func _shield_block() -> void:
 
 @rpc("authority", "unreliable", "call_local")
 func _groan(kind: String) -> void:
-	Sfx.attach(kind, self, 2.0 if kind.ends_with("alert") else 0.0, 7.0)
+	Sfx.attach(kind, self, 3.0 if kind.ends_with("alert") or kind.ends_with("attack") else 0.0, 7.0)
