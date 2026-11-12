@@ -83,7 +83,8 @@ func _ready() -> void:
 			open_callout_picker()
 		else:
 			CallOuts.call_partner(false))
-	_call_btn.visible = Net.is_coop()
+	# Always shown: in solo the line is still voiced (and the AI partner
+	# will answer it once that lands).
 	var menu := _button(root, "II", Vector2(-220, 36), Vector2(140, 100), false, true)
 	menu.pressed.connect(toggle_pause)
 

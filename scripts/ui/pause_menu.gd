@@ -7,17 +7,20 @@ var _info: Label
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Anchors AND offsets: set_anchors_preset() alone keeps the current
+	# (zero) size once the node is in the tree, which pushed the menu off
+	# the top-left corner on the phone.
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.color = Color(0, 0, 0, 0.7)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(center)
 	var row := HBoxContainer.new()
-	row.set_anchors_preset(Control.PRESET_CENTER)
-	row.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	row.grow_vertical = Control.GROW_DIRECTION_BOTH
 	row.add_theme_constant_override("separation", 60)
-	add_child(row)
+	center.add_child(row)
 	_list = VBoxContainer.new()
 	_list.custom_minimum_size = Vector2(520, 0)
 	_list.add_theme_constant_override("separation", 18)
