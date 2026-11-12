@@ -235,7 +235,14 @@ func _build_standin() -> void:
 		add_child(mi)
 		_parts[k] = {"mesh": mi, "color": defs[k][2]}
 
-const AIM_ANIMS := {"idle": "stance/aim", "walk": "shoot_walk", "run": "run_shoot"}
+## Moving with the gun up uses stance/aim_walk (walking legs, the aim held
+## steady above the hips), not the rig's shoot_walk, whose feet barely move.
+const AIM_ANIMS := {"idle": "stance/aim", "walk": "stance/aim_walk", "run": "stance/aim_walk"}
+## How fast each loop's feet carry the body at 1x (measured from the clips'
+## foot travel). The clip plays at ground speed / this, so feet don't skate.
+const NATURAL_SPEED := {"walk": 1.23, "run": 2.9, "stance/aim_walk": 1.23, "shoot_walk": 0.25, "run_shoot": 1.4}
+## The body's real ground speed (m/s), set by the player every frame.
+var move_speed := 0.0
 ## Aiming with a knife, hatchet or grenade: the combat stance when standing.
 const GUARD_ANIMS := {"idle": "combat/guard"}
 const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit"}
@@ -251,6 +258,7 @@ func play(state: String, aiming: bool) -> void:
 	anim = STATE_CLIPS.get(state, anim)
 	if _anim and anim in STATE_CLIPS.values():
 		if _current != anim and _held != anim:
+			_anim.speed_scale = 1.0
 			_anim.play(anim, 0.15, 2.0 if anim == "reload" else 1.0)
 			_current = anim
 			_held = anim if anim == "knockdown" else ""
@@ -268,12 +276,15 @@ func play(state: String, aiming: bool) -> void:
 			return
 	_one_shot = false
 	if _anim and _current != anim:
+		if not _anim.has_animation(anim) and _anim.has_animation(state):
+			anim = state
 		if _anim.has_animation(anim):
 			_anim.play(anim, 0.2)
-		elif _anim.has_animation(state):
-			_anim.play(state, 0.2)
 		_current = anim
-	elif not _anim and _parts.has("leg_l"):
+	if _anim:
+		var nat: float = NATURAL_SPEED.get(_current, 0.0)
+		_anim.speed_scale = clampf(move_speed / nat, 0.6, 1.7) if nat > 0.0 and move_speed > 0.05 else 1.0
+	elif _parts.has("leg_l"):
 		_t += get_process_delta_time() * (9.0 if state == "run" else 5.5 if state == "walk" else 0.0)
 		var swing := sin(_t) * (0.5 if state != "idle" else 0.0)
 		_parts["leg_l"]["mesh"].rotation.x = swing
@@ -324,7 +335,48 @@ static func build_stance(ap: AnimationPlayer) -> void:
 		a.track_insert_key(t, 0.0, v)
 	var lib := AnimationLibrary.new()
 	lib.add_animation("aim", a)
+	var aw := _aim_walk(ap)
+	if aw:
+		lib.add_animation("aim_walk", aw)
 	ap.add_animation_library("stance", lib)
+
+## Walking with the gun up: the walk clip's legs and hip sway, with the
+## upper body held in the aim from shoot_walk. Spine02 (the first bone above
+## the hips) is counter-rotated against the hip sway each key, so the torso
+## and the gun stay pointed where she aims instead of swinging with her hips.
+static func _aim_walk(ap: AnimationPlayer) -> Animation:
+	if not ap.has_animation("walk") or not ap.has_animation("shoot_walk"):
+		return null
+	var walk := ap.get_animation("walk")
+	var sw := ap.get_animation("shoot_walk")
+	var a: Animation = walk.duplicate(true)
+	var hips_t := -1
+	for t in a.get_track_count():
+		if a.track_get_path(t).get_concatenated_subnames() == "Hips" and a.track_get_type(t) == Animation.TYPE_ROTATION_3D:
+			hips_t = t
+	if hips_t < 0:
+		return null
+	var sw_hips_t := sw.find_track(a.track_get_path(hips_t), Animation.TYPE_ROTATION_3D)
+	var sw_hips: Quaternion = sw.rotation_track_interpolate(sw_hips_t, 0.5) if sw_hips_t >= 0 else Quaternion.IDENTITY
+	for t in a.get_track_count():
+		var path := a.track_get_path(t)
+		var bone := path.get_concatenated_subnames()
+		if a.track_get_type(t) != Animation.TYPE_ROTATION_3D or not (bone in UPPER_BONES):
+			continue
+		var src := sw.find_track(path, Animation.TYPE_ROTATION_3D)
+		if src < 0:
+			continue
+		var v: Quaternion = sw.rotation_track_interpolate(src, 0.5)
+		for k in range(a.track_get_key_count(t) - 1, -1, -1):
+			a.track_remove_key(t, k)
+		if bone == "Spine02":
+			for k in walk.track_get_key_count(hips_t):
+				var tk := walk.track_get_key_time(hips_t, k)
+				var wh: Quaternion = walk.rotation_track_interpolate(hips_t, tk)
+				a.track_insert_key(t, tk, (wh.inverse() * sw_hips * v).normalized())
+		else:
+			a.track_insert_key(t, 0.0, v)
+	return a
 
 ## Taking a hit: a sharp jolt of the whole body. Moving cuts it short once
 ## the blow has landed (the player's feet are held for that moment), so the
@@ -341,6 +393,7 @@ func flinch(heavy := false) -> void:
 ## then returns to the movement loop.
 func play_once(clip: String, blend := 0.15, speed := 1.0) -> void:
 	if _anim and _anim.has_animation(clip):
+		_anim.speed_scale = 1.0
 		_anim.play(clip, blend, speed)
 		_current = clip
 		_one_shot = true
@@ -359,6 +412,7 @@ func play_combat(clip: String, speed := 1.0, cancel_after := -1.0) -> void:
 ## after the crash, before standing up).
 func hold_end(clip: String) -> void:
 	if _anim and _anim.has_animation(clip):
+		_anim.speed_scale = 1.0
 		_anim.play(clip, 0.0)
 		_anim.seek(_anim.get_animation(clip).length, true)
 		_current = clip

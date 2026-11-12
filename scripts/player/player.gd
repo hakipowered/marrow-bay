@@ -11,9 +11,9 @@ signal interact_prompt(text: String)
 signal inventory_changed
 signal died
 
-const WALK_SPEED := 2.4
-const RUN_SPEED := 4.6
-const AIM_SPEED := 2.0   # walking while aiming (and shooting) still keeps pace
+const WALK_SPEED := 2.0
+const RUN_SPEED := 4.0
+const AIM_SPEED := 1.7   # walking while aiming (and shooting) still keeps pace
 const GRAVITY := 18.0
 const SHOULDER_OFFSET := Vector3(0.55, 1.55, 0.0)
 const CAM_DIST := 2.4
@@ -57,6 +57,8 @@ var cutscene_pose := false
 @export var sync_pitch := 0.0
 @export var sync_aiming := false
 @export var sync_anim := "idle"
+@export var sync_speed := 0.0   # real ground speed, so the partner's legs match too
+var dead := false               # bled out / killed: the game-over sequence is running
 @export var sync_weapon := ""
 
 var pivot: Node3D
@@ -191,7 +193,7 @@ func _setup_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_weapon", ":downed", ":pinned"]:
+	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_speed", ":sync_weapon", ":downed", ":pinned"]:
 		cfg.add_property(NodePath(prop))
 		cfg.property_set_replication_mode(NodePath(prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -206,6 +208,8 @@ func _physics_process(delta: float) -> void:
 		body.rotation.y = lerp_angle(body.rotation.y, sync_yaw, 0.35)
 		if sync_weapon != held.weapon_id:
 			_show_weapon(sync_weapon)
+		_downed_t = _downed_t + delta if downed else 0.0
+		model.move_speed = sync_speed
 		model.play(sync_anim, sync_aiming)
 		return
 	_sync_inventory(delta)
@@ -218,9 +222,11 @@ func _physics_process(delta: float) -> void:
 	if downed:
 		_downed_t += delta
 		sync_anim = "downed"
+		sync_speed = 0.0
 		model.play("downed", false)
-		if _downed_t > REVIVE_WINDOW or not Net.is_coop():
-			_bleed_out()
+		_tick_death_cam(delta)
+		if not dead and _downed_t > REVIVE_WINDOW:
+			_die()
 		return
 	if pinned:
 		velocity = Vector3.ZERO
@@ -287,9 +293,16 @@ func _physics_process(delta: float) -> void:
 	sync_pitch = pitch
 	var raised := aiming or _hip_t > 0.0
 	sync_aiming = raised
-	sync_anim = "run" if (running and _hip_t <= 0.0 and dir.length() > 0.1) else ("walk" if dir.length() > 0.1 else "idle")
-	if _reloading > 0.0 and dir.length() <= 0.1:
+	# The clip follows how fast she really moves (a wall, an ankle grab, a
+	# flinch or the gun up all slow her), so she never runs on the spot or
+	# glides; the clip's playback speed matches her ground speed too.
+	var rv := get_real_velocity() - Vector3(_knock.x, 0.0, _knock.z)
+	var gs := Vector2(rv.x, rv.z).length() if dir.length() > 0.1 else 0.0
+	sync_speed = gs
+	sync_anim = "run" if (gs > 2.8 and _hip_t <= 0.0) else ("walk" if gs > 0.2 else "idle")
+	if _reloading > 0.0 and gs <= 0.2:
 		sync_anim = "reload"
+	model.move_speed = gs
 	model.play(sync_anim, raised)
 
 	_tick_weapon(delta)
@@ -661,6 +674,9 @@ func receive_item(id: String, n: int, rounds: int, from_name: String) -> void:
 func apply_damage(amount: float, from: Node = null) -> void:
 	if Cheats.on("god_mode") or downed:
 		return
+	var lvl := get_tree().get_first_node_in_group("level")
+	if lvl and lvl.get("game_over"):
+		return
 	hp = max(hp - amount, 0.0)
 	health_changed.emit(hp, max_hp)
 	# A real blow (a bite, a swipe, acid, a blast) staggers; burn and gas
@@ -674,9 +690,19 @@ func apply_damage(amount: float, from: Node = null) -> void:
 		_downed_t = 0.0
 		pinned = false
 		died.emit()
-		var hud := get_tree().get_first_node_in_group("hud")
-		if hud and is_multiplayer_authority():
-			hud.toast("You're down! Your partner has 30 seconds to reach you." if Net.is_coop() else "You died.")
+		Sfx.play_at("body_fall", global_position + Vector3.UP * 0.3, "", 2.0, 8.0)
+		var partner_up := false
+		for p in get_tree().get_nodes_in_group("players"):
+			if p != self and not p.downed:
+				partner_up = true
+		if Net.is_coop() and partner_up:
+			# Down, not out: the partner has REVIVE_WINDOW seconds to reach her.
+			var hud := get_tree().get_first_node_in_group("hud")
+			if hud:
+				hud.toast("You're down! Call %s, they have %d seconds to reach you." % [GameState.partner_character(character).capitalize(), int(REVIVE_WINDOW)])
+			_rpc_down_notice.rpc()
+		else:
+			_die()
 
 ## What taking a hit feels like on this phone: the flinch, a shove away from
 ## whatever hit you, a red flash from that side of the screen, a camera jolt,
@@ -733,12 +759,41 @@ func _tick_shake(delta: float) -> void:
 	camera.h_offset = randf_range(-s, s)
 	camera.v_offset = randf_range(-s, s)
 
-func _bleed_out() -> void:
-	# Both players go back to the last shared checkpoint together.
-	set_physics_process(false)
+## The partner's phone: their survivor just went down.
+@rpc("authority", "call_remote", "reliable")
+func _rpc_down_notice() -> void:
+	var hud := get_tree().get_first_node_in_group("hud")
+	if hud:
+		hud.toast("%s is down! Get to %s and press INTERACT to revive." % [character.capitalize(), "her" if character == "obcera" else "him"])
+
+## Dead: she falls, the camera pulls up and away in slow motion, the music
+## dies, and the game-over screen comes up for both players (a co-op game
+## ends when either survivor dies, as in a run where you can't leave anyone).
+func _die() -> void:
+	if dead:
+		return
+	dead = true
+	downed = true
+	pinned = false
+	_grunt(true)
+	if not Net.is_coop():
+		Engine.time_scale = 0.35
+		get_tree().create_timer(1.5, true, false, true).timeout.connect(func(): Engine.time_scale = 1.0)
 	var level := get_tree().get_first_node_in_group("level")
-	if level and level.has_method("request_retry"):
-		level.request_retry()
+	if level and level.has_method("report_death"):
+		level.report_death(character)
+
+## Downed or dead: the camera eases back and looks down at her.
+func _tick_death_cam(delta: float) -> void:
+	if spring == null:
+		return
+	spring.spring_length = lerpf(spring.spring_length, 5.0 if dead else 3.2, 1.4 * delta)
+	pitch = lerpf(pitch, -0.95 if dead else -0.5, 1.1 * delta)
+	if dead:
+		yaw += 0.16 * delta
+	pivot.rotation = Vector3(pitch, yaw, 0)
+	camera.fov = lerpf(camera.fov, 60.0, 2.0 * delta)
+	_tick_shake(delta)
 
 func set_pinned(on: bool, by: Node) -> void:
 	pinned = on
@@ -765,8 +820,9 @@ func proxy_interact(_by: Node, _handle := -1) -> void:
 
 @rpc("any_peer", "reliable", "call_local")
 func _rpc_rescue() -> void:
-	if downed:
+	if downed and not dead:
 		downed = false
+		_downed_t = 0.0
 		hp = max_hp * 0.35
 		health_changed.emit(hp, max_hp)
 	if pinned and is_instance_valid(pinned_by) and multiplayer.is_server():
@@ -778,6 +834,8 @@ func heal(amount: float) -> void:
 	health_changed.emit(hp, max_hp)
 
 func use_item(id: String) -> bool:
+	if downed:
+		return false   # only the partner can get her back up
 	var item: Dictionary = WeaponDB.ITEMS.get(id, {})
 	if item.has("heal") and (Cheats.on("infinite_heals") or inventory.take_item(id)):
 		heal(item["heal"])
