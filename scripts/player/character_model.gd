@@ -54,6 +54,10 @@ const REGIONS := {
 	],
 }
 
+## Characters who wear one shared head on every outfit (the outfit models
+## have their own head cut away by tools/outfits/shared_head.py).
+const SHARED_HEAD := {"obcera": "res://assets/characters/obcera/head/obcera_head.glb"}
+
 ## Colours for the stand-in figure only (used when no model ships).
 const PALETTES := {
 	"zegan": {
@@ -116,6 +120,7 @@ func _build(id: String) -> void:
 		prepare_clips()
 		_anim.animation_finished.connect(func(_n): _current = "")
 		_setup_body(m, lib)
+		_attach_head()
 	else:
 		_build_standin()
 	outfit_loaded.emit(id)
@@ -367,20 +372,7 @@ var _body_mesh: MeshInstance3D
 
 func _setup_body(m: Node3D, lib: AnimationLibrary = null) -> void:
 	_body_mesh = m.find_children("*", "MeshInstance3D", true, false)[0]
-	var std := _body_mesh.get_active_material(0) as StandardMaterial3D
-	_body_mat = ShaderMaterial.new()
-	_body_mat.shader = preload("res://shaders/character_body.gdshader")
-	if std:
-		_body_mat.set_shader_parameter("albedo_tex", std.albedo_texture)
-		_body_mat.set_shader_parameter("has_normal", std.normal_enabled and std.normal_texture != null)
-		_body_mat.set_shader_parameter("normal_tex", std.normal_texture)
-		_body_mat.set_shader_parameter("normal_scale", std.normal_scale)
-		_body_mat.set_shader_parameter("orm_tex", std.roughness_texture if std.roughness_texture else std.metallic_texture)
-		var chans := [Vector4(1, 0, 0, 0), Vector4(0, 1, 0, 0), Vector4(0, 0, 1, 0), Vector4(0, 0, 0, 1), Vector4(0.33, 0.33, 0.33, 0)]
-		_body_mat.set_shader_parameter("rough_ch", chans[std.roughness_texture_channel] if std.roughness_texture else Vector4.ZERO)
-		_body_mat.set_shader_parameter("metal_ch", chans[std.metallic_texture_channel] if std.metallic_texture else Vector4.ZERO)
-		_body_mat.set_shader_parameter("roughness", std.roughness if std.roughness_texture else std.roughness)
-		_body_mat.set_shader_parameter("metallic", std.metallic)
+	_body_mat = _skin_material(_body_mesh)
 	_body_mesh.material_override = _body_mat
 	_regions.clear()
 	# Outfit models carry their own shape, so they keep only part of the base
@@ -406,6 +398,47 @@ func _setup_body(m: Node3D, lib: AnimationLibrary = null) -> void:
 			"disp": Vector3.ZERO, "vel": Vector3.ZERO, "prev": Vector3.ZERO, "prev_v": Vector3.ZERO, "init": false,
 		})
 	_update_regions(0.0)
+
+## The scanned PBR textures of a model mesh on the body shader.
+func _skin_material(mi: MeshInstance3D) -> ShaderMaterial:
+	var std := mi.get_active_material(0) as StandardMaterial3D
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/character_body.gdshader")
+	if std:
+		mat.set_shader_parameter("albedo_tex", std.albedo_texture)
+		mat.set_shader_parameter("has_normal", std.normal_enabled and std.normal_texture != null)
+		mat.set_shader_parameter("normal_tex", std.normal_texture)
+		mat.set_shader_parameter("normal_scale", std.normal_scale)
+		mat.set_shader_parameter("orm_tex", std.roughness_texture if std.roughness_texture else std.metallic_texture)
+		var chans := [Vector4(1, 0, 0, 0), Vector4(0, 1, 0, 0), Vector4(0, 0, 1, 0), Vector4(0, 0, 0, 1), Vector4(0.33, 0.33, 0.33, 0)]
+		mat.set_shader_parameter("rough_ch", chans[std.roughness_texture_channel] if std.roughness_texture else Vector4.ZERO)
+		mat.set_shader_parameter("metal_ch", chans[std.metallic_texture_channel] if std.metallic_texture else Vector4.ZERO)
+		mat.set_shader_parameter("roughness", std.roughness)
+		mat.set_shader_parameter("metallic", std.metallic)
+	return mat
+
+## Puts the character's shared head (the same face on every outfit, see
+## tools/outfits/shared_head.py) on the outfit's skeleton. Its skin binds by
+## bone name, so it sits on this outfit's own neck and follows its pose.
+func _attach_head() -> void:
+	var path: String = SHARED_HEAD.get(character, "")
+	if path == "" or not ResourceLoader.exists(path) or _skel == null:
+		return
+	var scene: Node = load(path).instantiate()
+	var found := scene.find_children("*", "MeshInstance3D", true, false)
+	if found.is_empty():
+		scene.free()
+		return
+	var mi: MeshInstance3D = found[0]
+	var local := mi.transform
+	mi.get_parent().remove_child(mi)
+	scene.free()
+	mi.owner = null
+	mi.name = "SharedHead"
+	_skel.add_child(mi)
+	mi.transform = local
+	mi.skeleton = NodePath("..")
+	mi.material_override = _skin_material(mi)
 
 func _process(delta: float) -> void:
 	if _body_mat and delta > 0.0:
