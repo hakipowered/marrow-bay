@@ -81,9 +81,13 @@ var camera: Camera3D
 var body: Node3D
 var model: CharacterModel
 var flashlight: SpotLight3D
-## Render layer of the survivor's own meshes: lit and seen as usual, but
-## left out of the chest lamp's shadows.
+## Render layer of the survivor's own meshes (the host's survivor on layer
+## 11, the partner's on 12): lit and seen as usual, but left out of her own
+## chest lamp's shadows. A mesh casts into a light's shadow when any of its
+## layers is in the light's caster mask, so her meshes are on this layer
+## only. The partner's body still casts into her beam.
 const SELF_LAYER := 1 << 10
+var self_layer := SELF_LAYER
 var _tag_t := 0.0
 const LAMP_ENERGY := 3.4
 const LAMP_RANGE := 22.0
@@ -182,7 +186,8 @@ func _ready() -> void:
 	flashlight.light_specular = 0.6
 	flashlight.light_color = Color(1.0, 0.95, 0.86)
 	flashlight.shadow_enabled = true
-	flashlight.shadow_caster_mask = 0xFFFFF & ~SELF_LAYER
+	self_layer = SELF_LAYER if peer_id == 1 else SELF_LAYER << 1
+	flashlight.shadow_caster_mask = 0xFFFFF & ~self_layer
 	body.add_child(flashlight)
 	# Bounce: a torch on a wall lights up the space around it too, her
 	# included. A soft, shadowless light at the spot the beam lands on,
@@ -441,12 +446,13 @@ func _aim_flashlight(delta: float, aim: Vector2) -> void:
 
 func _tag_self() -> void:
 	# The gun in her hands lives under `held`, outside the body: tag it too,
-	# or the barrel throws a hard wedge of shadow across the beam.
+	# or the barrel, pointing at the spot the beam lands on, throws a hard
+	# wedge of shadow out of the middle of the beam.
 	for root in [body, held]:
 		if root == null:
 			continue
 		for n in root.find_children("*", "GeometryInstance3D", true, false):
-			(n as GeometryInstance3D).layers |= SELF_LAYER
+			(n as GeometryInstance3D).layers = self_layer
 
 ## Starts a dodge roll (the HUD's ROLL button, Space on a keyboard).
 func roll() -> void:
