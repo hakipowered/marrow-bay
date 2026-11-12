@@ -63,20 +63,33 @@ func _color() -> Color:
 		"file": return Color(0.9, 0.9, 0.75)
 	return WeaponDB.ITEMS.get(item, {}).get("glow", Color(1, 1, 1))
 
-func display_name() -> String:
+## Bag id (see ItemInfo) of this pickup.
+func bag_id() -> String:
 	var parts := item.split(":")
 	match parts[0]:
-		"ammo": return WeaponDB.AMMO[parts[1]]["name"]
-		"weapon": return WeaponDB.WEAPONS[parts[1]]["name"]
-		"key": return parts[1].capitalize().replace("_", " ")
-		"file": return "Document"
-	return WeaponDB.ITEMS.get(item, {}).get("name", item)
+		"weapon": return parts[1]
+		"key", "file", "ammo": return item
+	return item
 
-func interact_text(_player: Node) -> String:
+## The pickup string for a bag id: guns and grenades lie as "weapon:<id>".
+static func item_string(id: String) -> String:
+	return "weapon:" + id if ItemInfo.kind(id) in ["weapon", "throwable"] else id
+
+func display_name() -> String:
+	return ItemInfo.display_name(bag_id())
+
+func interact_text(player: Node) -> String:
+	if player and player.get("inventory") and not player.inventory.can_take(item):
+		return "Bag full: " + display_name()
 	return "Pick up " + display_name()
 
 func interact(player: Node) -> void:
 	if _taken:
+		return
+	if player.get("inventory") and not player.inventory.can_take(item):
+		var hud := get_tree().get_first_node_in_group("hud")
+		if hud:
+			hud.toast("No room in your bag for %s. Open the bag to combine or drop something." % display_name())
 		return
 	_rpc_claim.rpc_id(1, player.get_path())
 
@@ -95,21 +108,41 @@ func _rpc_taken(player_path: NodePath) -> void:
 	var p := get_node_or_null(player_path)
 	if p and p.is_multiplayer_authority():
 		_give(p)
-	Sfx.play_at("pickup_" + item.split(":")[0], global_position, "pickup")
+	Sfx.play_at("pickup_" + item.split(":")[0], global_position, "pickup", -2.0, 5.0)
 	queue_free()
 
 func _give(p: Node) -> void:
 	var parts := item.split(":")
+	var n := 1
+	var got := 0
 	match parts[0]:
 		"ammo":
-			p.inventory.add_ammo(parts[1], amount if amount > 0 else WeaponDB.AMMO[parts[1]]["pickup"])
-			p._emit_ammo()
+			n = amount if amount > 0 else WeaponDB.AMMO[parts[1]]["pickup"]
+			got = p.inventory.add_ammo(parts[1], n)
 		"weapon":
-			p.inventory.add_weapon(parts[1])
+			if ItemInfo.kind(parts[1]) == "throwable":
+				n = maxi(amount, 1)
+				got = p.inventory.add(parts[1], n)
+			else:
+				got = 1 if p.inventory.add_weapon(parts[1]) else 0
 		"key":
-			p.inventory.key_items.append(parts[1])
+			p.inventory.add_key(parts[1])
+			got = 1
+		"file":
+			p.inventory.add_file(parts[1])
+			got = 1
 		_:
-			p.inventory.add_item(item, max(amount, 1))
+			n = maxi(amount, 1)
+			got = p.inventory.add_item(item, n)
+	p._emit_ammo()
 	var hud := get_tree().get_first_node_in_group("hud")
+	if got < n:
+		# The bag filled up between the prompt and the pickup: leave the rest.
+		var level := get_tree().get_first_node_in_group("level")
+		if level and level.has_method("request_drop"):
+			level.request_drop(item, global_position, n - got)
 	if hud:
-		hud.toast("Picked up " + display_name())
+		var what := display_name() + (" x%d" % got if got > 1 else "")
+		hud.toast(("Picked up " + what) if got > 0 else "No room in your bag")
+		if parts[0] == "file" and hud.has_method("show_file_hint"):
+			hud.show_file_hint(parts[1])

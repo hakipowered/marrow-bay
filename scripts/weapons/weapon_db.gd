@@ -40,6 +40,7 @@ const AMMO := {
 const ITEMS := {
 	"herb_green": {"name": "Green Fern", "heal": 35, "glow": Color(0.35, 1.0, 0.45)},
 	"herb_red": {"name": "Red Fern", "combine_with": "herb_green", "result": "herb_mix", "glow": Color(1.0, 0.3, 0.25)},
+	"herb_gg": {"name": "Fern Bundle", "heal": 70, "glow": Color(0.45, 1.0, 0.5)},
 	"herb_mix": {"name": "Fern Mixture", "heal": 100, "glow": Color(1.0, 0.75, 0.3)},
 	"medkit": {"name": "Trauma Kit", "heal": 100, "glow": Color(0.9, 0.95, 1.0)},
 	"bandage": {"name": "Gauze Wrap", "heal": 20, "glow": Color(0.95, 0.95, 0.9)},

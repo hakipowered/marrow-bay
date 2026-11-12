@@ -8,6 +8,7 @@ signal health_changed(hp: float, max_hp: float)
 signal weapon_changed(id: String)
 signal ammo_changed(in_mag: int, reserve: int)
 signal interact_prompt(text: String)
+signal inventory_changed
 signal died
 
 const WALK_SPEED := 2.4
@@ -17,6 +18,7 @@ const GRAVITY := 18.0
 const SHOULDER_OFFSET := Vector3(0.55, 1.55, 0.0)
 const CAM_DIST := 2.4
 const CAM_DIST_AIM := 1.15
+const CAM_DIST_GUARD := 1.9
 
 @export var peer_id := 1
 @export var character := "zegan"
@@ -50,6 +52,7 @@ var rescue_area: Area3D
 @export var sync_pitch := 0.0
 @export var sync_aiming := false
 @export var sync_anim := "idle"
+@export var sync_weapon := ""
 
 var pivot: Node3D
 var spring: SpringArm3D
@@ -59,6 +62,24 @@ var model: CharacterModel
 var flashlight: SpotLight3D
 var muzzle: Node3D
 var interact_ray: RayCast3D
+var held: HeldWeapon
+
+## Knife combo and hatchet chop: [clip, speed, seconds until the blade lands].
+const MELEE_MOVES := {
+	"knife": [["slash", 1.6, 0.36], ["slash_back", 1.6, 0.41], ["thrust", 1.5, 0.37]],
+	"hatchet": [["chop", 1.25, 0.8]],
+}
+const THROW_SPEED := 1.3
+const THROW_RELEASE := 0.74   # seconds into the throw clip at that speed
+var _swing_t := -1.0      # until the current swing lands
+var _throw_t := -1.0      # until the grenade leaves the hand
+var _attack_lock := 0.0   # feet planted while swinging or throwing
+var _combo := 0
+var _combo_window := 0.0
+var _lock_target: Node3D = null
+var _face_yaw := 0.0
+var _inv_dirty := false
+var _inv_sync_t := 0.0
 
 func _enter_tree() -> void:
 	set_multiplayer_authority(peer_id)
@@ -116,6 +137,11 @@ func _ready() -> void:
 	camera.near = 0.05
 	spring.add_child(camera)
 
+	held = HeldWeapon.new()
+	held.name = "HeldWeapon"
+	held.model = model
+	add_child(held)
+
 	interact_ray = RayCast3D.new()
 	interact_ray.target_position = Vector3(0, 0, -2.2)
 	interact_ray.collision_mask = 16
@@ -139,6 +165,10 @@ func _ready() -> void:
 
 	_setup_sync()
 	inventory.from_dict(GameState.inventories.get(character, {}))
+	inventory.changed.connect(func(): _inv_dirty = true; inventory_changed.emit())
+	if not inventory.has_weapon(inventory.equipped):
+		inventory.equipped = _fallback_weapon()
+	_show_weapon(inventory.equipped)
 	if is_multiplayer_authority():
 		camera.make_current()
 	else:
@@ -148,7 +178,7 @@ func _setup_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":downed", ":pinned"]:
+	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_weapon", ":downed", ":pinned"]:
 		cfg.add_property(NodePath(prop))
 		cfg.property_set_replication_mode(NodePath(prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -159,8 +189,11 @@ func _setup_sync() -> void:
 func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
 		body.rotation.y = lerp_angle(body.rotation.y, sync_yaw, 0.35)
+		if sync_weapon != held.weapon_id:
+			_show_weapon(sync_weapon)
 		model.play(sync_anim, sync_aiming)
 		return
+	_sync_inventory(delta)
 	rescue_area.collision_layer = 16 if (downed or pinned) else 0
 	if _burn_t > 0:
 		_burn_t -= delta
@@ -185,8 +218,12 @@ func _physics_process(delta: float) -> void:
 	pitch = clamp(pitch - look_delta.y * 0.0035, -1.2, 0.9)
 	look_delta = Vector2.ZERO
 	pivot.rotation = Vector3(pitch, yaw, 0)
-	spring.spring_length = lerp(spring.spring_length, CAM_DIST_AIM if aiming else CAM_DIST, 10 * delta)
-	camera.fov = lerp(camera.fov, 52.0 if aiming else 68.0, 10 * delta)
+	# Guns zoom in over the shoulder. The knife guard and a grenade wind-up
+	# stay wider, or the hand holding them drops out of the bottom of the shot.
+	var gun_aim := aiming and (held == null or held.hold == "gun")
+	var near := CAM_DIST_AIM if gun_aim else (CAM_DIST_GUARD if aiming else CAM_DIST)
+	spring.spring_length = lerp(spring.spring_length, near, 10 * delta)
+	camera.fov = lerp(camera.fov, 52.0 if gun_aim else (62.0 if aiming else 68.0), 10 * delta)
 
 	# Move relative to camera
 	var basis_y := Basis(Vector3.UP, yaw)
@@ -194,6 +231,9 @@ func _physics_process(delta: float) -> void:
 	var speed := AIM_SPEED if aiming else (RUN_SPEED if running else WALK_SPEED)
 	if slowed_for > 0:
 		speed *= 0.4
+	if _attack_lock > 0.0:
+		_attack_lock -= delta
+		speed *= 0.12
 	if Cheats.on("noclip"):
 		global_position += (pivot.global_transform.basis * Vector3(move_input.x, 0, move_input.y)) * RUN_SPEED * 2 * delta
 		return
@@ -202,7 +242,9 @@ func _physics_process(delta: float) -> void:
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
 	move_and_slide()
 
-	if aiming or fire_held:
+	if _attack_lock > 0.0:
+		body.rotation.y = lerp_angle(body.rotation.y, _face_yaw, 22 * delta)
+	elif aiming or fire_held:
 		body.rotation.y = lerp_angle(body.rotation.y, yaw, 18 * delta)
 	elif dir.length() > 0.1:
 		body.rotation.y = lerp_angle(body.rotation.y, atan2(-dir.x, -dir.z), 10 * delta)
@@ -243,6 +285,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R: reload()
 			KEY_Q: CallOuts.call_partner(false)
 			KEY_Z: CallOuts.call_partner(true)
+			KEY_TAB, KEY_I:
+				var hud := get_tree().get_first_node_in_group("hud")
+				if hud and hud.has_method("toggle_inventory"):
+					hud.toggle_inventory()
+					get_viewport().set_input_as_handled()
 
 # ---------- Weapons ----------
 
@@ -252,44 +299,88 @@ func weapon() -> Dictionary:
 func equip(id: String) -> void:
 	if not inventory.has_weapon(id):
 		return
+	var changed := id != inventory.equipped
 	inventory.equipped = id
-	if not inventory.mag.has(id):
-		inventory.mag[id] = weapon().get("mag", 0)
+	if not inventory.mag.has(id) and weapon().has("mag"):
+		inventory.mag[id] = weapon()["mag"]
 	_reloading = 0.0
+	_burst_left = 0
+	_show_weapon(id)
+	if changed and is_inside_tree():
+		if get_tree().paused:
+			Sfx.ui("equip", -4.0)
+		else:
+			Sfx.play_at("equip", global_position + Vector3.UP, "", -6.0, 4.0)
 	weapon_changed.emit(id)
 	_emit_ammo()
+	_inv_dirty = true
 
+func _show_weapon(id: String) -> void:
+	held.set_weapon(id)
+	model.hold = held.hold if held.hold != "" else "gun"
+	if is_multiplayer_authority():
+		sync_weapon = id
+
+## Something to hold when the equipped weapon is gone (thrown the last
+## grenade, discarded the gun).
+func _fallback_weapon() -> String:
+	var list := inventory.weapon_list()
+	for id in list:
+		if ItemInfo.kind(id) == "weapon" and WeaponDB.WEAPONS[id]["kind"] != "melee":
+			return id
+	return list[0] if not list.is_empty() else ""
+
+## HUD readout: rounds in the gun / rounds carried. Melee shows nothing
+## (-1, -1); grenades show only how many are left (-1, n).
 func _emit_ammo() -> void:
+	_inv_dirty = true
 	var w := weapon()
-	ammo_changed.emit(inventory.mag.get(inventory.equipped, 0), inventory.ammo.get(w.get("ammo", ""), 0))
+	match w.get("kind", ""):
+		"melee", "":
+			ammo_changed.emit(-1, -1)
+		"throwable":
+			ammo_changed.emit(-1, 99 if Cheats.on("infinite_ammo") else inventory.ammo_count(inventory.equipped))
+		_:
+			ammo_changed.emit(inventory.mag.get(inventory.equipped, 0), inventory.ammo_count(w.get("ammo", "")))
 
 func reload() -> void:
 	var w := weapon()
 	if not w.has("mag") or _reloading > 0:
 		return
-	var reserve: int = inventory.ammo.get(w["ammo"], 0)
+	var reserve: int = inventory.ammo_count(w["ammo"])
 	if Cheats.on("infinite_ammo"):
 		reserve = 999
 	if inventory.mag.get(inventory.equipped, 0) >= w["mag"] or reserve <= 0:
 		return
 	_reloading = 0.05 if Cheats.on("no_reload") else w["reload"]
+	var snd := "reload_shell" if w.get("reload_per_shell", false) else ("reload_pistol" if w.get("slot") == "sidearm" else "reload_rifle")
+	Sfx.play_at(snd, global_position + Vector3.UP, "", -3.0, 5.0)
 
 func _finish_reload() -> void:
 	var w := weapon()
+	if not w.has("mag"):
+		return
 	var need: int = w["mag"] - inventory.mag.get(inventory.equipped, 0)
 	if w.get("reload_per_shell", false):
 		need = min(need, 1)
-	var have: int = 999 if Cheats.on("infinite_ammo") else inventory.ammo.get(w["ammo"], 0)
-	var n: int = min(need, have)
+	var n: int = need if Cheats.on("infinite_ammo") else inventory.take_ammo(w["ammo"], need)
 	inventory.mag[inventory.equipped] = inventory.mag.get(inventory.equipped, 0) + n
-	if not Cheats.on("infinite_ammo"):
-		inventory.ammo[w["ammo"]] = have - n
 	_emit_ammo()
-	if w.get("reload_per_shell", false) and inventory.mag[inventory.equipped] < w["mag"]:
+	if w.get("reload_per_shell", false) and inventory.mag[inventory.equipped] < w["mag"] and (Cheats.on("infinite_ammo") or inventory.ammo_count(w["ammo"]) > 0):
 		_reloading = w["reload"]
+		Sfx.play_at("reload_shell", global_position + Vector3.UP, "", -3.0, 5.0)
 
 func _tick_weapon(delta: float) -> void:
 	_cooldown -= delta
+	_combo_window -= delta
+	if _swing_t >= 0.0:
+		_swing_t -= delta
+		if _swing_t < 0.0:
+			Combat.melee_hit(self, inventory.equipped, _lock_target)
+	if _throw_t >= 0.0:
+		_throw_t -= delta
+		if _throw_t < 0.0:
+			_release_throw()
 	if _reloading > 0:
 		_reloading -= delta
 		if _reloading <= 0:
@@ -298,29 +389,46 @@ func _tick_weapon(delta: float) -> void:
 	var w := weapon()
 	if w.is_empty():
 		return
-	var wants: bool = fire_held and (aiming or w["kind"] == "melee")
+	var melee: bool = w["kind"] == "melee"
+	var wants: bool = fire_held and (aiming or melee)
 	if _burst_left > 0 and _cooldown <= 0:
 		_fire_once(w)
 		_burst_left -= 1
 		_cooldown = w["rate"] if _burst_left > 0 else w.get("burst_gap", w["rate"])
 		return
-	if wants and _cooldown <= 0:
-		if w["kind"] != "melee" and inventory.mag.get(inventory.equipped, 0) <= 0:
-			reload()
-			return
-		_burst_left = w.get("burst", 1) - 1
-		_fire_once(w)
-		_cooldown = w["rate"]
-		if not w.get("auto", false) and w.get("burst", 1) == 1:
+	if not wants or _cooldown > 0:
+		return
+	if melee:
+		_start_swing(w)
+		fire_held = false
+		return
+	if w["kind"] == "throwable":
+		_start_throw(w)
+		fire_held = false
+		return
+	if inventory.mag.get(inventory.equipped, 0) <= 0:
+		if inventory.ammo_count(w["ammo"]) <= 0 and not Cheats.on("infinite_ammo"):
+			Sfx.play_at("dry_fire", muzzle.global_position, "", -4.0, 4.0)
+			_cooldown = 0.35
 			fire_held = false
+			var hud := get_tree().get_first_node_in_group("hud")
+			if hud:
+				hud.toast("Out of ammo")
+		else:
+			reload()
+		return
+	_burst_left = w.get("burst", 1) - 1
+	_fire_once(w)
+	_cooldown = w["rate"]
+	if not w.get("auto", false) and w.get("burst", 1) == 1:
+		fire_held = false
 
 func _fire_once(w: Dictionary) -> void:
-	if w["kind"] != "melee":
-		if inventory.mag.get(inventory.equipped, 0) <= 0:
-			return
-		if not Cheats.on("infinite_ammo"):
-			inventory.mag[inventory.equipped] -= 1
-		_emit_ammo()
+	if inventory.mag.get(inventory.equipped, 0) <= 0:
+		return
+	if not Cheats.on("infinite_ammo"):
+		inventory.mag[inventory.equipped] -= 1
+	_emit_ammo()
 	var origin := camera.global_position
 	var aim_dir := -camera.global_transform.basis.z
 	var shots := []
@@ -330,7 +438,161 @@ func _fire_once(w: Dictionary) -> void:
 		var d := aim_dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread) * 0.5)
 		d = d.rotated(camera.global_transform.basis.y, randf_range(-spread, spread) * 0.5)
 		shots.append(d.normalized())
-	Combat.fire(self, inventory.equipped, origin, shots, muzzle.global_position)
+	var from := _muzzle_pos()
+	held.fired(_recoil(w))
+	Combat.fire(self, inventory.equipped, origin, shots, from)
+	_rpc_action.rpc("shot", inventory.equipped, 1.0)
+
+## Where shots leave: the gun's muzzle when one is in hand.
+func _muzzle_pos() -> Vector3:
+	if held and held.visible and held.hold == "gun":
+		return held.muzzle_global()
+	return muzzle.global_position
+
+func _recoil(w: Dictionary) -> float:
+	if w["kind"] == "flame":
+		return 0.05
+	return clampf(float(w.get("damage", 20)) * float(w.get("pellets", 1)) / 160.0, 0.12, 1.0)
+
+## Knife combo: slash, backhand, stab. Snaps to the nearest infected in
+## front first, so swings connect on a phone without precise aiming.
+func _start_swing(w: Dictionary) -> void:
+	var moves: Array = MELEE_MOVES.get(inventory.equipped, MELEE_MOVES["knife"])
+	if _combo_window <= 0.0:
+		_combo = 0
+	var m: Array = moves[_combo % moves.size()]
+	_combo += 1
+	_lock_target = _melee_target(float(w.get("range", 1.8)) + 1.4)
+	_face_toward(_lock_target)
+	model.play_combat(m[0], m[1], (m[2] + 0.14) * m[1])
+	_swing_t = m[2]
+	_attack_lock = m[2] + 0.14
+	_combo_window = m[2] + 0.6
+	_cooldown = maxf(float(w["rate"]), m[2] + 0.08)
+	Combat.play_shot_sound(inventory.equipped, global_position + Vector3.UP * 1.3)
+	_rpc_action.rpc("swing", m[0], m[1])
+
+func _start_throw(w: Dictionary) -> void:
+	if inventory.ammo_count(inventory.equipped) <= 0 and not Cheats.on("infinite_ammo"):
+		equip(_fallback_weapon())
+		return
+	_face_yaw = yaw
+	model.play_combat("throw", THROW_SPEED, 1.1 * THROW_SPEED)
+	_throw_t = THROW_RELEASE
+	_attack_lock = THROW_RELEASE + 0.1
+	_cooldown = maxf(float(w.get("rate", 1.0)), THROW_RELEASE + 0.3)
+	_rpc_action.rpc("swing", "throw", THROW_SPEED)
+
+func _release_throw() -> void:
+	var id := inventory.equipped
+	if ItemInfo.kind(id) != "throwable":
+		return
+	if not Cheats.on("infinite_ammo") and inventory.take_ammo(id, 1) == 0:
+		return
+	var aim_dir := -camera.global_transform.basis.z
+	var from: Vector3 = held.hand_global() if held.visible else muzzle.global_position
+	# Leave the hand a little ahead of the body so it never hits the thrower.
+	from += Vector3(aim_dir.x, 0.0, aim_dir.z).normalized() * 0.45
+	Combat.fire(self, id, camera.global_position, [aim_dir], from)
+	_emit_ammo()
+	if inventory.ammo_count(id) <= 0 and not Cheats.on("infinite_ammo"):
+		equip(_fallback_weapon())
+
+## Nearest standing infected within reach and roughly ahead (where the
+## camera looks when aiming, else where the survivor faces or is moving).
+func _melee_target(reach: float) -> Node3D:
+	var fwd := -body.global_transform.basis.z
+	if aiming:
+		fwd = -camera.global_transform.basis.z
+	elif move_input.length() > 0.2:
+		fwd = Basis(Vector3.UP, yaw) * Vector3(move_input.x, 0, move_input.y)
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var best: Node3D = null
+	var best_score := INF
+	for z in get_tree().get_nodes_in_group("zombies"):
+		if not (z is Node3D) or z.get("state") in [Zombie.S.DEAD, Zombie.S.HIDDEN]:
+			continue
+		var to: Vector3 = z.global_position - global_position
+		to.y = 0.0
+		var d := to.length()
+		if d > reach or d < 0.01:
+			continue
+		var ang := fwd.angle_to(to / d)
+		if ang > deg_to_rad(75.0):
+			continue
+		var score := d + ang * 1.5
+		if score < best_score:
+			best_score = score
+			best = z
+	return best
+
+func _face_toward(t: Node3D) -> void:
+	if t == null:
+		_face_yaw = body.rotation.y if not aiming else yaw
+		if move_input.length() > 0.2:
+			var d := Basis(Vector3.UP, yaw) * Vector3(move_input.x, 0, move_input.y)
+			_face_yaw = atan2(-d.x, -d.z)
+		return
+	var to := t.global_position - global_position
+	_face_yaw = atan2(-to.x, -to.z)
+
+## Lets the partner's phone see and hear this survivor's swings, throws and
+## shots (damage itself is resolved by the host).
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _rpc_action(kind: String, what: String, speed: float) -> void:
+	match kind:
+		"swing":
+			model.play_combat(what, speed)
+			if what != "throw":
+				Combat.play_shot_sound(held.weapon_id if held.weapon_id != "" else "knife", global_position + Vector3.UP * 1.3)
+		"shot":
+			var w: Dictionary = WeaponDB.WEAPONS.get(what, {})
+			if not w.is_empty():
+				held.fired(_recoil(w))
+				Combat.play_shot_sound(what, _muzzle_pos())
+
+## Inventory changes reach the partner's copy of this player (and so the
+## host's saves) a moment later; mag counts ride along with the next change.
+func _sync_inventory(delta: float) -> void:
+	_inv_sync_t -= delta
+	if not _inv_dirty or _inv_sync_t > 0.0:
+		return
+	_inv_dirty = false
+	_inv_sync_t = 0.5
+	var d := inventory.to_dict()
+	GameState.inventories[character] = d
+	if multiplayer.has_multiplayer_peer() and multiplayer.get_peers().size() > 0:
+		_rpc_inventory.rpc(d)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_inventory(d: Dictionary) -> void:
+	inventory.from_dict(d)
+	GameState.inventories[character] = d
+	inventory_changed.emit()
+
+## The partner handed something over. Whatever doesn't fit lands at our feet.
+@rpc("any_peer", "call_local", "reliable")
+func receive_item(id: String, n: int, rounds: int, from_name: String) -> void:
+	if not is_multiplayer_authority():
+		return
+	var got := 0
+	if ItemInfo.kind(id) == "weapon":
+		if inventory.count(id) == 0 and inventory.add(id) == 1:
+			inventory.mag[id] = rounds
+			got = 1
+	else:
+		got = inventory.add(id, n)
+	var hud := get_tree().get_first_node_in_group("hud")
+	if got < n:
+		var level := get_tree().get_first_node_in_group("level")
+		if level and level.has_method("request_drop"):
+			level.request_drop(Pickup.item_string(id), global_position + body.global_transform.basis.z * -0.5, n - got)
+		if hud:
+			hud.toast("%s gave you %s, but your bag is full. It's on the floor." % [from_name, ItemInfo.display_name(id)])
+	elif hud:
+		hud.toast("%s gave you %s" % [from_name, ItemInfo.display_name(id) + (" x%d" % n if n > 1 else "")])
+	_emit_ammo()
 
 # ---------- Health ----------
 
@@ -393,10 +655,16 @@ func heal(amount: float) -> void:
 	downed = false
 	health_changed.emit(hp, max_hp)
 
-func use_item(id: String) -> void:
+func use_item(id: String) -> bool:
 	var item: Dictionary = WeaponDB.ITEMS.get(id, {})
 	if item.has("heal") and (Cheats.on("infinite_heals") or inventory.take_item(id)):
 		heal(item["heal"])
+		if get_tree().paused:
+			Sfx.ui("heal", -2.0)
+		else:
+			Sfx.play_at("heal", global_position + Vector3.UP, "", -2.0, 4.0)
+		return true
+	return false
 
 # ---------- Interaction ----------
 

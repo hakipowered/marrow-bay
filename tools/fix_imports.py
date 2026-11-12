@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEEP_1K = ("covered_car", "old_bed_frame", "wooden_bookshelf_worn", "modular_fire_escape", "modular_chainlink_fence",
            "concrete_road_barrier", "Sofa_01", "gothic_statue", "standing_chalkboard_01", "dining_table",
            "vintage_grandfather_clock_01", "GothicCabinet_01", "metal_office_desk", "painted_wooden_bench", "street_lamp_01")
-dirs = ["assets/polyhaven", "assets/textures", "assets/characters"]
+dirs = ["assets/polyhaven", "assets/textures", "assets/characters", "assets/weapons"]
 changed = 0
 for d in dirs:
     for imp in glob.glob(os.path.join(ROOT, d, "**", "*.import"), recursive=True):

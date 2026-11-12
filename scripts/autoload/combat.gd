@@ -4,13 +4,21 @@ extends Node
 
 const HITBOX_MASK := 1 | 8   # world + hitboxes
 
+## Shot sounds that share a recording, and how loud each class carries.
+const SOUND_FOR := {"vk18": "weapon_p9", "flash": "weapon_throw", "frag": "weapon_throw", "knife": "weapon_knife", "hatchet": "weapon_hatchet"}
+var _flame_sound_at := 0
+
+static func shot_sound(weapon_id: String) -> String:
+	return SOUND_FOR.get(weapon_id, "weapon_" + weapon_id)
+
 func fire(shooter: Node3D, weapon_id: String, origin: Vector3, dirs: Array, muzzle_pos: Vector3) -> void:
 	var w: Dictionary = WeaponDB.WEAPONS[weapon_id]
-	Sfx.play_at("weapon_" + weapon_id, muzzle_pos, "gunshot")
-	_alert_zombies(muzzle_pos, 0.0 if w.get("silent", false) else 25.0)
+	play_shot_sound(weapon_id, muzzle_pos)
+	var loud := 0.0 if w.get("silent", false) else (6.0 if w["kind"] in ["melee", "throwable"] else 25.0)
+	_alert_zombies(muzzle_pos, loud)
 	match w["kind"]:
 		"melee":
-			_melee(shooter, weapon_id, w)
+			melee_hit(shooter, weapon_id, null)
 		"hitscan", "pellets":
 			for d in dirs:
 				_ray(shooter, weapon_id, w, origin, d, muzzle_pos)
@@ -47,22 +55,73 @@ func _ray(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, di
 			break
 	Effects.tracer(muzzle_pos, end_point)
 
-func _melee(shooter: Node3D, weapon_id: String, w: Dictionary) -> void:
+## Gun, swing and throw sounds. The flamethrower plays its roar once per
+## couple of seconds rather than on every tick of fuel.
+func play_shot_sound(weapon_id: String, pos: Vector3) -> void:
+	var w: Dictionary = WeaponDB.WEAPONS.get(weapon_id, {})
+	if w.get("kind") == "flame":
+		if Time.get_ticks_msec() - _flame_sound_at < 1800:
+			return
+		_flame_sound_at = Time.get_ticks_msec()
+		Sfx.play_at("flamer_loop", pos, "", -2.0, 8.0)
+		return
+	var quiet: bool = w.get("kind") in ["melee", "throwable"]
+	Sfx.play_at(shot_sound(weapon_id), pos, "" if quiet else "weapon_p9", -4.0 if quiet else 0.0, 4.0 if quiet else 14.0)
+
+## A knife or hatchet swing landing. Checks in front of the swing at chest,
+## knee and floor height (so crawlers and legless ones get hit too), and falls
+## back to the soft-locked target if it is within reach. The knife cuts one
+## body, the hatchet up to two. Returns whether anything was hit.
+func melee_hit(shooter: Node3D, weapon_id: String, target: Node3D) -> bool:
+	var w: Dictionary = WeaponDB.WEAPONS[weapon_id]
 	var space := shooter.get_world_3d().direct_space_state
+	var xf: Transform3D = shooter.body.global_transform
+	var fwd := -xf.basis.z
+	var reach: float = w.get("range", 1.8)
 	var shape := SphereShape3D.new()
-	shape.radius = 0.6
+	shape.radius = 0.55
 	var q := PhysicsShapeQueryParameters3D.new()
 	q.shape = shape
 	q.collision_mask = 8
 	q.collide_with_areas = true
-	q.transform = Transform3D(Basis(), shooter.body.global_transform * Vector3(0, 1.2, -w["range"] * 0.6))
-	var seen := {}
-	for r in space.intersect_shape(q, 8):
-		var col: Object = r.collider
-		var owner_id := col.get_meta("owner_path", "")
-		if col.has_meta("hit_zone") and not seen.has(owner_id):
-			seen[owner_id] = true
-			_request_damage(col, w["damage"], weapon_id, col.global_position, -shooter.body.global_transform.basis.z)
+	var hits := {}   # enemy -> [collider, zone]
+	for h in [1.2, 0.55, 0.22]:
+		var center := xf * Vector3(0, h, -reach * 0.55)
+		q.transform = Transform3D(Basis(), center)
+		var best: Object = null
+		var best_d := INF
+		for r in space.intersect_shape(q, 12):
+			var col: Object = r.collider
+			if not col.has_meta("hit_zone"):
+				continue
+			var enemy: Node = col.get_meta("enemy")
+			if enemy == null or hits.has(enemy):
+				continue
+			var d: float = (col as Node3D).global_position.distance_to(center)
+			if d < best_d:
+				best_d = d
+				best = col
+		if best:
+			hits[best.get_meta("enemy")] = [best, best.get_meta("hit_zone")]
+	if hits.is_empty() and is_instance_valid(target) and target.has_method("take_hit"):
+		var to := target.global_position - shooter.global_position
+		to.y = 0.0
+		if to.length() <= reach + 0.45 and fwd.dot(to.normalized()) > 0.3:
+			hits[target] = [null, "torso"]
+	var cap := 2 if weapon_id == "hatchet" else 1
+	var n := 0
+	for enemy in hits:
+		if n >= cap:
+			break
+		n += 1
+		var col: Object = hits[enemy][0]
+		var at: Vector3 = (col as Node3D).global_position if col else enemy.global_position + Vector3.UP
+		Effects.blood(at, -fwd)
+		_request_damage_node(enemy, w["damage"], weapon_id, hits[enemy][1], fwd)
+	if n > 0:
+		Sfx.play_at("melee_hit", xf * Vector3(0, 1.2, -reach * 0.5), "", -2.0, 6.0)
+		_alert_zombies(shooter.global_position, 6.0)
+	return n > 0
 
 func _flame(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, dir: Vector3) -> void:
 	Effects.flame(shooter.muzzle.global_position, dir, w["range"])

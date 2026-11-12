@@ -4,13 +4,26 @@ class_name ItemVisual
 const MODEL_FOR := {
 	"ammo": "ammo_box", "weapon:p9": "service_pistol", "weapon:longshot": "bolt_action_rifle_7_62",
 	"weapon:hatchet": "hatchet", "weapon:knife": "machete", "weapon:frag": "stick_grenade",
-	"medkit": "medical_box", "herb_green": "fern_02", "herb_red": "fern_02", "herb_mix": "fern_02",
+	"medkit": "medical_box", "herb_green": "fern_02", "herb_red": "fern_02", "herb_mix": "fern_02", "herb_gg": "fern_02",
 }
 
 static func build(item: String) -> Node3D:
+	var root := Node3D.new()
+	# Guns, blades and grenades use the same models the survivors hold, lying
+	# on their side.
+	if item.begins_with("weapon:"):
+		var g := HeldWeapon.build_model(item.substr(7))
+		if g:
+			var box: AABB = g.get_meta("aabb")
+			var holder := Node3D.new()
+			holder.add_child(g)
+			g.position = -box.get_center()
+			holder.rotation = Vector3(0, randf() * TAU, PI / 2.0)
+			holder.position.y = box.size.x * 0.5 + 0.01
+			root.add_child(holder)
+			return root
 	var key := item if MODEL_FOR.has(item) else item.split(":")[0]
 	var name: String = MODEL_FOR.get(key, "")
-	var root := Node3D.new()
 	if name != "":
 		var path := "res://assets/polyhaven/models/%s/%s.gltf" % [name, name]
 		if ResourceLoader.exists(path):

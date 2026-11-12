@@ -51,3 +51,18 @@ func attach(id: String, parent: Node3D, volume_db := 0.0, unit := 8.0) -> AudioS
 	a.play()
 	a.finished.connect(a.queue_free)
 	return a
+
+## Interface sounds (bag open, select, combine). Not positional, and they
+## play while the game is paused.
+func ui(id: String, volume_db := -6.0) -> void:
+	var v := _variants(id)
+	if v.is_empty():
+		return
+	var a := AudioStreamPlayer.new()
+	a.stream = v.pick_random()
+	a.volume_db = volume_db
+	a.bus = "SFX"
+	a.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(a)
+	a.play()
+	a.finished.connect(a.queue_free)

@@ -74,6 +74,19 @@ func spawn_pickup(item: String, pos: Vector3, amount: int) -> void:
 	add_child(p)
 	p.global_position = pos
 
+## Anyone can ask for something to be put on the floor (a dropped item, a
+## gift the partner had no room for); the host spawns it for everyone.
+func request_drop(item: String, pos: Vector3, amount: int) -> void:
+	if not multiplayer.has_multiplayer_peer() or multiplayer.is_server():
+		spawn_pickup.rpc(item, pos + Vector3(0, 0.05, 0), amount)
+	else:
+		_rpc_request_drop.rpc_id(1, item, pos, amount)
+
+@rpc("any_peer", "reliable")
+func _rpc_request_drop(item: String, pos: Vector3, amount: int) -> void:
+	if multiplayer.is_server():
+		spawn_pickup.rpc(item, pos + Vector3(0, 0.05, 0), amount)
+
 ## Host-requested spawn of a new enemy on every peer (window break-ins, brood larvae).
 @rpc("authority", "reliable", "call_local")
 func spawn_zombie_synced(name_: String, pos: Vector3, variant := "shambler") -> void:

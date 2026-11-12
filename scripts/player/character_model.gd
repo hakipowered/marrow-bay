@@ -76,6 +76,7 @@ func _ready() -> void:
 		var lib_path := "res://assets/characters/%s/%s_anims.res" % [character, character]
 		if ResourceLoader.exists(lib_path):
 			_anim.add_animation_library("", load(lib_path))
+		prepare_clips()
 		_anim.animation_finished.connect(func(_n): _current = "")
 		_setup_body(m)
 	else:
@@ -141,13 +142,19 @@ func _build_standin() -> void:
 		add_child(mi)
 		_parts[k] = {"mesh": mi, "color": defs[k][2]}
 
-const AIM_ANIMS := {"idle": "aim", "walk": "shoot_walk", "run": "run_shoot"}
+const AIM_ANIMS := {"idle": "stance/aim", "walk": "shoot_walk", "run": "run_shoot"}
+## Aiming with a knife, hatchet or grenade: the combat stance when standing.
+const GUARD_ANIMS := {"idle": "combat/guard"}
 const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit"}
 var _one_shot := false
 var _held := ""   # one-shot clip finished and holding its last pose (knocked down)
+var _cancel_at := -1.0   # a combat clip may give way to movement after this point
+## How the equipped weapon is held (HeldWeapon.MODELS hold): gun, blade, palm.
+var hold := "gun"
 
 func play(state: String, aiming: bool) -> void:
-	var anim: String = AIM_ANIMS.get(state, state) if aiming else state
+	var aims: Dictionary = AIM_ANIMS if hold == "gun" or hold == "" else GUARD_ANIMS
+	var anim: String = aims.get(state, state) if aiming else state
 	anim = STATE_CLIPS.get(state, anim)
 	if _anim and anim in STATE_CLIPS.values():
 		if _current != anim and _held != anim:
@@ -161,8 +168,10 @@ func play(state: String, aiming: bool) -> void:
 		play_once("stand_up", 0.2, 2.5)
 		return
 	if _anim and _one_shot and _anim.is_playing():
-		# Gestures give way as soon as the player moves; hits and reloads finish.
-		if not (state != "idle" and _current in ["call", "shout", "stand_up"]):
+		# Gestures give way as soon as the player moves; hits and reloads
+		# finish; a swing can be cut short once it has landed.
+		var cancel := _cancel_at >= 0.0 and _anim.current_animation_position >= _cancel_at
+		if not (state != "idle" and (_current in ["call", "shout", "stand_up"] or cancel)):
 			return
 	_one_shot = false
 	if _anim and _current != anim:
@@ -179,6 +188,51 @@ func play(state: String, aiming: bool) -> void:
 		_parts["arm_l"]["mesh"].rotation.x = -1.4 if aiming else -swing * 0.7
 		_parts["arm_r"]["mesh"].rotation.x = -1.4 if aiming else swing * 0.7
 
+## Adds the melee and throw clips and the standing aim to this body's
+## AnimationPlayer. Call it right after the base clips are added and before
+## anything plays: adding a clip library while a clip is playing or blending
+## crashes the engine (the player keeps pointers into its old clip table).
+func prepare_clips() -> void:
+	if _anim == null or _skel == null:
+		return
+	CombatClips.attach(_anim, _skel, character)
+	build_stance(_anim)
+
+## Bones that carry the aim: everything above the hips.
+const UPPER_BONES := ["Spine02", "Spine01", "Spine", "neck", "Head", "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand", "RightShoulder", "RightArm", "RightForeArm", "RightHand"]
+
+## Standing aim, "stance/aim": the raised two-handed hold from the walking
+## aim clip, frozen, over the idle clip's legs and breathing hips. (The rig's
+## own "aim" clip holds the gun down at the hip, which reads as not aiming
+## once a real gun is in the hand.) Built from whatever clips this player
+## has, so it fits every outfit skeleton.
+static func build_stance(ap: AnimationPlayer) -> void:
+	if ap.has_animation_library("stance") or not ap.has_animation("idle") or not ap.has_animation("shoot_walk"):
+		return
+	var idle := ap.get_animation("idle")
+	var walk := ap.get_animation("shoot_walk")
+	var a: Animation = idle.duplicate(true)
+	for t in a.get_track_count():
+		var path := a.track_get_path(t)
+		var bone := path.get_concatenated_subnames()
+		var type := a.track_get_type(t)
+		var upper := bone in UPPER_BONES
+		var hips_turn := bone == "Hips" and type == Animation.TYPE_ROTATION_3D
+		if not (upper or hips_turn) or type == Animation.TYPE_SCALE_3D:
+			continue
+		var src := walk.find_track(path, type)
+		if src < 0:
+			continue
+		var v: Variant = walk.rotation_track_interpolate(src, 0.5) if type == Animation.TYPE_ROTATION_3D else walk.position_track_interpolate(src, 0.5)
+		if type == Animation.TYPE_POSITION_3D and not upper:
+			continue
+		for k in range(a.track_get_key_count(t) - 1, -1, -1):
+			a.track_remove_key(t, k)
+		a.track_insert_key(t, 0.0, v)
+	var lib := AnimationLibrary.new()
+	lib.add_animation("aim", a)
+	ap.add_animation_library("stance", lib)
+
 func flinch() -> void:
 	play_once("hit", 0.05)
 
@@ -189,6 +243,16 @@ func play_once(clip: String, blend := 0.15, speed := 1.0) -> void:
 		_anim.play(clip, blend, speed)
 		_current = clip
 		_one_shot = true
+		_cancel_at = -1.0
+
+## Knife slashes, the hatchet chop and grenade throws (the "combat" library,
+## retargeted onto this skeleton on first use). After cancel_after seconds
+## of clip time, moving cuts the recovery short.
+func play_combat(clip: String, speed := 1.0, cancel_after := -1.0) -> void:
+	if _anim == null:
+		return
+	play_once("combat/" + clip, 0.08, speed)
+	_cancel_at = cancel_after
 
 # ---------- Body shaping and secondary motion ----------
 

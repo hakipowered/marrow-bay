@@ -8,6 +8,10 @@ var player: Player
 var _hp_bar: ProgressBar
 var _ammo: Label
 var _weapon: Label
+var _weapon_icon: TextureRect
+var _inventory: Control
+var _weapon_pressed_at := 0.0
+var _weapon_long := false
 var _prompt: Button
 var _toast: Label
 var _subtitle: Label
@@ -48,8 +52,27 @@ func _ready() -> void:
 	_hp_bar.position = Vector2(48, 40)
 	_hp_bar.custom_minimum_size = Vector2(380, 26)
 	root.add_child(_hp_bar)
-	_weapon = _label(root, Vector2(48, 76), 30)
-	_ammo = _label(root, Vector2(48, 116), 44)
+	# Equipped weapon: its icon in a small frame, name and rounds beside it.
+	var frame := Panel.new()
+	frame.position = Vector2(48, 80)
+	frame.size = Vector2(150, 96)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fsb := StyleBoxFlat.new()
+	fsb.bg_color = Color(0.04, 0.04, 0.05, 0.6)
+	fsb.border_color = Color(0.85, 0.75, 0.55, 0.45)
+	fsb.set_border_width_all(2)
+	fsb.set_corner_radius_all(10)
+	frame.add_theme_stylebox_override("panel", fsb)
+	root.add_child(frame)
+	_weapon_icon = TextureRect.new()
+	_weapon_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_weapon_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_weapon_icon.position = Vector2(4, 4)
+	_weapon_icon.size = Vector2(142, 88)
+	_weapon_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_child(_weapon_icon)
+	_weapon = _label(root, Vector2(214, 78), 30)
+	_ammo = _label(root, Vector2(214, 114), 44)
 
 	# Action buttons, bottom-right cluster.
 	_fire_btn = _button(root, "FIRE", Vector2(-260, -300), Vector2(220, 220))
@@ -60,8 +83,12 @@ func _ready() -> void:
 	aim.toggled.connect(func(on): if player: player.aiming = on)
 	var reload := _button(root, "RELOAD", Vector2(-230, -520), Vector2(180, 120))
 	reload.pressed.connect(func(): if player: player.reload())
+	# Tap: next weapon. Hold: open the bag.
 	var swap := _button(root, "WEAPON", Vector2(-450, -440), Vector2(180, 110))
-	swap.pressed.connect(_cycle_weapon)
+	swap.button_down.connect(func(): _weapon_pressed_at = Time.get_ticks_msec(); _weapon_long = false)
+	swap.button_up.connect(func():
+		if not _weapon_long:
+			_cycle_weapon())
 	var heal := _button(root, "HEAL", Vector2(-660, -420), Vector2(160, 110))
 	heal.pressed.connect(_quick_heal)
 
@@ -87,6 +114,8 @@ func _ready() -> void:
 	# will answer it once that lands).
 	var menu := _button(root, "II", Vector2(-220, 36), Vector2(140, 100), false, true)
 	menu.pressed.connect(toggle_pause)
+	var bag := _button(root, "BAG", Vector2(-620, 36), Vector2(170, 100), false, true)
+	bag.pressed.connect(toggle_inventory)
 
 	_toast = _label(root, Vector2(0, 0), 34)
 	_toast.anchor_left = 0.5
@@ -109,6 +138,10 @@ func _ready() -> void:
 	_coop_hint.anchor_bottom = 0.5
 	_coop_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_coop_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	_inventory = preload("res://scripts/ui/inventory_menu.gd").new()
+	_inventory.visible = false
+	add_child(_inventory)
 
 	_pause = preload("res://scripts/ui/pause_menu.gd").new()
 	_pause.theme = _theme
@@ -170,33 +203,76 @@ func _button(parent: Control, text: String, offset: Vector2, size: Vector2, cent
 func bind_player(p: Player) -> void:
 	player = p
 	p.health_changed.connect(func(hp, mx): _hp_bar.max_value = mx; _hp_bar.value = hp; _tint_hp(hp / mx))
-	p.ammo_changed.connect(func(m, r): _ammo.text = "%d / %d" % [m, r])
-	p.weapon_changed.connect(func(id): _weapon.text = WeaponDB.WEAPONS[id]["name"])
+	p.ammo_changed.connect(_show_ammo)
+	p.weapon_changed.connect(func(id):
+		_weapon.text = WeaponDB.WEAPONS[id]["name"]
+		_weapon_icon.texture = ItemInfo.icon(id))
 	p.interact_prompt.connect(func(t): _prompt.text = t; _prompt.visible = t != "")
 	_hp_bar.max_value = p.max_hp
 	_hp_bar.value = p.hp
 	p.equip(p.inventory.equipped)
+
+func _show_ammo(in_mag: int, reserve: int) -> void:
+	if in_mag < 0 and reserve < 0:
+		_ammo.text = ""          # knife, hatchet: nothing to count
+	elif in_mag < 0:
+		_ammo.text = "x%d" % reserve
+	else:
+		_ammo.text = "%d / %d" % [in_mag, reserve]
+	_ammo.add_theme_color_override("font_color", Color(1.0, 0.45, 0.35) if in_mag == 0 else Color(0.93, 0.9, 0.84))
+
+func _process(_d: float) -> void:
+	if _weapon_pressed_at > 0.0 and not _weapon_long and (Time.get_ticks_msec() - _weapon_pressed_at) > 450.0:
+		_weapon_long = true
+		_weapon_pressed_at = 0.0
+		toggle_inventory()
+
+## Opens or closes the bag. Solo pauses the world; co-op never does, so the
+## menu reminds you that things can still reach you.
+func toggle_inventory() -> void:
+	if _pause.visible:
+		return
+	if _inventory.visible:
+		_inventory.close()
+	else:
+		_inventory.open(player)
 
 func _tint_hp(f: float) -> void:
 	var fill := _theme.get_stylebox("fill", "ProgressBar") as StyleBoxFlat
 	fill.bg_color = Color(0.3, 0.75, 0.35) if f > 0.6 else (Color(0.9, 0.7, 0.2) if f > 0.25 else Color(0.85, 0.15, 0.1))
 
 func _cycle_weapon() -> void:
+	_weapon_pressed_at = 0.0
 	if not player:
 		return
-	var owned: Array = WeaponDB.WEAPONS.keys().filter(func(w): return player.inventory.has_weapon(w))
+	var owned := player.inventory.weapon_list()
+	if owned.is_empty():
+		return
 	var i := owned.find(player.inventory.equipped)
 	player.equip(owned[(i + 1) % owned.size()])
 
 func _quick_heal() -> void:
 	if not player:
 		return
-	for id in ["herb_mix", "medkit", "herb_green", "bandage"]:
-		if player.inventory.items.get(id, 0) > 0 or Cheats.on("infinite_heals"):
-			player.use_item(id)
-			toast("Used " + WeaponDB.ITEMS[id]["name"])
-			return
+	if player.hp >= player.max_hp:
+		toast("Already at full health")
+		return
+	# Smallest remedy that still does the job first, so nothing is wasted.
+	var missing := player.max_hp - player.hp
+	var order := ["bandage", "herb_green", "herb_gg", "herb_mix", "medkit"]
+	var pick := ""
+	for id in order:
+		if player.inventory.count(id) > 0 or Cheats.on("infinite_heals"):
+			pick = id   # the strongest so far, unless a smaller one is enough
+			if WeaponDB.ITEMS[id]["heal"] >= missing:
+				break
+	if pick != "" and player.use_item(pick):
+		toast("Used " + WeaponDB.ITEMS[pick]["name"])
+		return
 	toast("No healing items")
+
+func show_file_hint(_id: String) -> void:
+	toast("New file. Read it in the bag under Files.")
 
 func toast(text: String) -> void:
 	_toast.text = text
@@ -310,6 +386,8 @@ func show_subtitle(speaker: String, text: String, duration: float) -> void:
 	t.tween_property(_subtitle, "modulate:a", 0.0, 0.4)
 
 func toggle_pause() -> void:
+	if _inventory.visible:
+		_inventory.close()
 	_pause.visible = not _pause.visible
 	if _pause.visible:
 		_pause.refresh()
