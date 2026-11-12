@@ -14,6 +14,7 @@ uniform sampler2D orm_tex : hint_default_white, filter_linear_mipmap, repeat_ena
 uniform vec4 rough_ch = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 metal_ch = vec4(0.0, 0.0, 1.0, 0.0);
 uniform float roughness = 1.0;
+uniform float rough_min = 0.3;    // scanned cloth can come out glossy; keep it matte
 uniform float metallic = 1.0;
 uniform float normal_scale = 1.0;
 uniform bool has_normal = true;
@@ -53,8 +54,9 @@ void vertex() {
 void fragment() {
 	vec3 base = texture(albedo_tex, UV).rgb;
 	vec4 orm = texture(orm_tex, UV);
-	float rough = clamp(dot(orm, rough_ch) * roughness, 0.05, 1.0);
-	float metal = dot(orm, metal_ch) * metallic;
+	// No texture channel (all zero) means use the plain value.
+	float rough = clamp((dot(rough_ch, vec4(1.0)) > 0.0 ? dot(orm, rough_ch) : 1.0) * roughness, rough_min, 1.0);
+	float metal = (dot(metal_ch, vec4(1.0)) > 0.0 ? dot(orm, metal_ch) : 1.0) * metallic;
 	vec3 sp = rest + vec3(seed * 3.7, seed * 1.3, seed * 5.1);
 	float x = rest.x - 0.5;           // -0.5 .. 0.5, 0 = centre line
 	float ax = abs(x);

@@ -34,14 +34,21 @@ const MODEL_FOR_LOOK := {
 ## Infection look per type: shader parameters on top of the defaults.
 const INFECTION := {
 	"burnt": {"burn": 1.0, "ember": 1.0, "blood": 0.3, "pallor": 0.6},
-	"bloated": {"flesh": Color(0.58, 0.66, 0.42), "veins": 1.0, "bile": 0.5},
-	"spitter": {"bile": 1.0, "skin_legs": 1.0, "flesh": Color(0.62, 0.68, 0.5)},
+	"bloated": {"flesh": Color(0.6, 0.62, 0.52), "veins": 1.0, "bile": 0.35},
+	"spitter": {"bile": 0.8, "skin_legs": 1.0, "flesh": Color(0.62, 0.64, 0.55)},
 	"ventling": {"bile": 0.4, "skin_legs": 1.0, "blood": 1.0},
 	"screamer": {"flesh": Color(0.68, 0.68, 0.66), "veins": 1.0},
 	"brute": {"blood": 1.0, "flesh": Color(0.55, 0.52, 0.5)},
 	"grappler": {"blood": 1.0, "flesh": Color(0.62, 0.5, 0.48)},
 	"jogger": {"skin_legs": 0.0},
 }
+## Fixes for how a scanned model's materials came out, per model.
+const MODEL_FIX := {
+	"brute": {"rough_min": 0.62, "metallic": 0.0},   # shirt scanned as glossy latex
+}
+## Riot shield placement in the left forearm bone's space (tuned by render).
+const SHIELD_OFFSET := Vector3(0.0, 0.16, 0.09)
+const SHIELD_ROT := Vector3(0, 0, 0)
 ## Native speed of each moving clip in m/s, so feet don't slide.
 const CLIP_SPEED := {"shamble": 0.75, "walk": 1.3, "run": 3.6, "sprint": 5.0, "crawl": 0.5}
 static var _mesh_cache := {}
@@ -133,10 +140,70 @@ func _load_rigged() -> bool:
 		l.position.y = 1.2
 		add_child(l)
 		l.set_script(preload("res://scripts/world/flicker.gd"))
+	if data.get("shield"):
+		_strap_shield(m)
 	if variant == "ventling":
 		visible = false
 	_play("idle", 0.0)
 	return true
+
+## Riot type: a scuffed clear riot shield strapped to the left forearm, so it
+## swings with the arm in every clip.
+func _strap_shield(m: Node3D) -> void:
+	var sk := m.find_child("Skeleton3D", true, false) as Skeleton3D
+	if sk == null or sk.find_bone("LeftForeArm") < 0:
+		return
+	var att := BoneAttachment3D.new()
+	att.bone_name = "LeftForeArm"
+	sk.add_child(att)
+	# Meshy armatures are scaled 0.01 (centimetre bones); undo that so the
+	# shield is built in metres.
+	var k := 1.0
+	var n: Node = sk
+	while n != null and n != m:
+		if n is Node3D:
+			k *= (n as Node3D).scale.x
+		n = n.get_parent()
+	var holder := Node3D.new()
+	holder.scale = Vector3.ONE / k
+	holder.position = SHIELD_OFFSET / k
+	holder.rotation_degrees = SHIELD_ROT
+	att.add_child(holder)
+	var clear := StandardMaterial3D.new()
+	clear.albedo_color = Color(0.55, 0.6, 0.62, 0.32)
+	clear.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	clear.roughness = 0.12
+	clear.metallic_specular = 0.8
+	clear.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var pane := MeshInstance3D.new()
+	var pm := BoxMesh.new()
+	pm.size = Vector3(0.52, 0.86, 0.012)
+	pane.mesh = pm
+	pane.material_override = clear
+	pane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(pane)
+	var rim := StandardMaterial3D.new()
+	rim.albedo_color = Color(0.05, 0.05, 0.06)
+	rim.roughness = 0.6
+	for e in [[Vector3(0, 0.44, 0), Vector3(0.54, 0.03, 0.025)], [Vector3(0, -0.44, 0), Vector3(0.54, 0.03, 0.025)],
+			[Vector3(0.265, 0, 0), Vector3(0.03, 0.9, 0.025)], [Vector3(-0.265, 0, 0), Vector3(0.03, 0.9, 0.025)]]:
+		var b := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = e[1]
+		b.mesh = bm
+		b.position = e[0]
+		b.material_override = rim
+		holder.add_child(b)
+	var band := MeshInstance3D.new()
+	var bandm := BoxMesh.new()
+	bandm.size = Vector3(0.4, 0.05, 0.014)
+	band.mesh = bandm
+	band.position = Vector3(0, 0.12, 0.002)
+	var bandmat := StandardMaterial3D.new()
+	bandmat.albedo_color = Color(0.7, 0.7, 0.68)
+	bandmat.roughness = 0.5
+	band.material_override = bandmat
+	holder.add_child(band)
 
 ## Swap the scanned material for the infected shader, and bake the rest-pose
 ## position into vertex colours (once per model) so the shader can place
@@ -163,6 +230,9 @@ func _infect(mi: MeshInstance3D, id: String, rnd: float) -> void:
 	_mat.set_shader_parameter("seed", rnd)
 	_mat.set_shader_parameter("blood", lerpf(0.45, 1.0, fmod(rnd * 7.3, 1.0)))
 	_mat.set_shader_parameter("bite", 1.0 if fmod(rnd * 3.1, 1.0) < 0.7 else 0.0)
+	var fix: Dictionary = MODEL_FIX.get(id, {})
+	for k in fix:
+		_mat.set_shader_parameter(k, fix[k])
 	var fx: Dictionary = INFECTION.get(look, INFECTION.get(variant, {}))
 	for k in fx:
 		_mat.set_shader_parameter(k, fx[k])

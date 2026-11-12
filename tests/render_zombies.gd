@@ -1,6 +1,7 @@
 extends SceneTree
 ## Line-up of rigged infected in different looks and clips, rendered to PNG.
-## xvfb-run godot --path . --rendering-driver vulkan --script tests/render_zombies.gd -- <out_dir> [frame_seconds]
+## xvfb-run godot --path . --rendering-driver vulkan --script tests/render_zombies.gd -- <out_dir> [close-up index | pN]
+## "pN" renders page N (six at a time) of the line-up; a number frames one model close up.
 var out := "/tmp"
 var t := 0.0
 var frames := 0
@@ -9,6 +10,7 @@ var cam: Camera3D
 var shots := [0.6, 1.4]
 var shot := 0
 var close_at := -1
+var page := 0
 
 const LINEUP := [
 	# look, variant, state, speed
@@ -18,9 +20,14 @@ const LINEUP := [
 	["jogger", "runner", "CHASE", 4.5],
 	["burnt", "burner", "CHASE", 0.8],
 	["spitter", "spitter", "PINNING", 0.0],
+	["nurse", "possum", "WANDER", 0.6],
+	["brute", "brute", "CHARGE", 3.0],
+	["bloated", "bloater", "WANDER", 0.5],
+	["screamer", "screamer", "IDLE", 0.0],
+	["riot", "riot", "WANDER", 0.7],
 	["office", "crawler", "CHASE", 0.5],
-	["nurse", "shambler", "DEAD", 0.0],
 ]
+const PAGE := 6
 
 const S := {"IDLE": 0, "WANDER": 1, "CHASE": 2, "ATTACK": 3, "STAGGER": 4, "DEAD": 6, "PINNING": 10, "CHARGE": 11}
 
@@ -29,7 +36,11 @@ func _initialize() -> void:
 	if a.size() > 0:
 		out = a[0]
 	if a.size() > 1:
-		close_at = int(a[1])
+		if a[1].begins_with("p"):
+			page = int(a[1].substr(1))
+		else:
+			close_at = int(a[1])
+			page = close_at / PAGE
 
 ## Built a few frames in, once the autoloads exist (the enemy scripts use them).
 func _build() -> void:
@@ -55,12 +66,12 @@ func _build() -> void:
 	floor.material_override.albedo_color = Color(0.2, 0.2, 0.2)
 	world.add_child(floor)
 	var enemy_db = load("res://scripts/enemies/enemy_db.gd")
-	for i in LINEUP.size():
+	for i in range(page * PAGE, mini((page + 1) * PAGE, LINEUP.size())):
 		var e: Array = LINEUP[i]
 		var holder := Node3D.new()
 		holder.name = "Z%d" % i
 		world.add_child(holder)
-		holder.position = Vector3((i - (LINEUP.size() - 1) / 2.0) * 1.5, 0, 0)
+		holder.position = Vector3((i % PAGE - (PAGE - 1) / 2.0) * 1.5, 0, 0)
 		holder.rotation.y = PI   # face the camera (enemies look down -Z)
 		var m = load("res://scripts/enemies/zombie_model.gd").new()
 		m.variant = e[1]
@@ -71,10 +82,10 @@ func _build() -> void:
 	cam = Camera3D.new()
 	cam.fov = 50
 	world.add_child(cam)
-	cam.position = Vector3(0, 1.6, 9.5)
+	cam.position = Vector3(0, 1.6, 8.0)
 	cam.look_at(Vector3(0, 0.9, 0))
 	if close_at >= 0:
-		var x: float = (close_at - (LINEUP.size() - 1) / 2.0) * 1.5
+		var x: float = (close_at % PAGE - (PAGE - 1) / 2.0) * 1.5
 		cam.position = Vector3(x + 0.75, 1.55, 2.6)
 		cam.look_at(Vector3(x + 0.75, 1.15, 0))
 	cam.make_current()
@@ -95,7 +106,7 @@ func _process(delta: float) -> bool:
 			continue
 		m.animate(S[e[2]], e[3], false, false)
 	if shot < shots.size() and t >= shots[shot]:
-		root.get_texture().get_image().save_png("%s/zombies_%s%d.png" % [out, "" if close_at < 0 else "c%d_" % close_at, shot])
+		root.get_texture().get_image().save_png("%s/zombies_%s%d.png" % [out, ("p%d_" % page) if close_at < 0 else "c%d_" % close_at, shot])
 		print("saved zombies_", shot)
 		shot += 1
 	if shot >= shots.size():
