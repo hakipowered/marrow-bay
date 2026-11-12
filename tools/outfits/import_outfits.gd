@@ -90,10 +90,29 @@ func _build(character: String, id: String) -> bool:
 		lib.add_animation(clip, a)
 	# Body shaping centres, carried from the base bone to the outfit bone.
 	var centers := []
-	for def in CharacterModel.REGIONS.get(character, []):
+	var defs: Array = CharacterModel.REGIONS.get(character, [])
+	for def in defs:
 		var bb := sb.find_bone(def["bone"])
 		var bo := so.find_bone(def["bone"])
 		centers.append(so.get_bone_global_rest(bo) * (sb.get_bone_global_rest(bb).affine_inverse() * def["c"]))
+	# The chest centres sit relative to the breasts themselves: the outfit's
+	# chest is often higher or fuller than the base model's, and a centre left
+	# low makes the size slider swell the ribs and the jiggle move the upper abs.
+	var chest := []
+	for i in defs.size():
+		if defs[i]["slider"] == "chest" and defs[i].has("spring"):
+			chest.append(i)
+	if chest.size() == 2:
+		sb.reset_bone_poses()
+		so.reset_bone_poses()
+		var mb: MeshInstance3D = base.find_children("*", "MeshInstance3D", true, false)[0]
+		var mo: MeshInstance3D = fit.find_children("*", "MeshInstance3D", true, false)[0]
+		var apex_b: Array = SkinPoints.chest_apex(SkinPoints.posed(mb), defs[chest[0]]["c"], defs[chest[1]]["c"])
+		var apex_o: Array = SkinPoints.chest_apex(SkinPoints.posed(mo), centers[chest[0]], centers[chest[1]])
+		for s in 2:
+			var was: Vector3 = centers[chest[s]]
+			centers[chest[s]] = apex_o[s] + (defs[chest[s]]["c"] - apex_b[s])
+			print("  chest centre %d: %s -> %s (apex %s)" % [s, was.snapped(Vector3.ONE * 0.1), centers[chest[s]].snapped(Vector3.ONE * 0.1), apex_o[s].snapped(Vector3.ONE * 0.1)])
 	lib.set_meta("region_centers", centers)
 	var save_path := "res://assets/characters/%s/outfits/%s/%s_anims.res" % [character, id, id]
 	var err := ResourceSaver.save(lib, save_path, ResourceSaver.FLAG_COMPRESS)

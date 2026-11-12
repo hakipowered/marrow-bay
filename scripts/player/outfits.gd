@@ -10,6 +10,9 @@ extends RefCounted
 ## The clip library is the base character's, retargeted onto the outfit's
 ## own bone rest by tools/outfits/import_outfits.gd; it also carries the body
 ## shaping centres moved onto that skeleton.
+## "sole": how far the outfit's soles stand above the floor in the idle pose
+## (heels), in metres; the model is lowered by that much. Measured with
+## tests/feet_check.gd.
 
 const DEFAULT := "default"
 
@@ -21,7 +24,7 @@ const CATALOGUE := {
 	"zegan": {
 		"default": {"name": "Paramedic", "desc": "Night-shift medic jacket, plate carrier and cargo trousers.", "tag": "classic"},
 		"biker": {"name": "Road Leather", "desc": "Worn biker jacket, white tee, jeans and work boots.", "tag": "classic", "shape": 0.0},
-		"riot": {"name": "Riot Unit", "desc": "Full black riot armour with pads and gloves.", "tag": "classic", "shape": 0.0},
+		"riot": {"name": "Riot Unit", "desc": "Full black riot armour with pads and gloves.", "tag": "classic", "shape": 0.0, "sole": 0.010},
 		"night_suit": {"name": "Night Suit", "desc": "Rain-damp three-piece suit and a loosened red tie.", "tag": "classic", "shape": 0.0},
 		"beach": {"name": "Beach Day", "desc": "Board shorts, dog tag and sneakers. Nothing else.", "tag": "hot", "shape": 0.0},
 	},
@@ -29,9 +32,9 @@ const CATALOGUE := {
 		"default": {"name": "Courier", "desc": "Red leather jacket, biker trousers and her courier bag.", "tag": "classic"},
 		"catsuit": {"name": "Black Catsuit", "desc": "Skin-tight glossy leather, zip down to the collarbone.", "tag": "hot", "shape": 0.0},
 		"street_heat": {"name": "Street Heat", "desc": "Cropped tank top, cut-off denim shorts and boots.", "tag": "hot", "shape": 0.0},
-		"red_dress": {"name": "Red Dress", "desc": "Tight red satin cocktail dress and heels.", "tag": "hot", "shape": 0.0},
+		"red_dress": {"name": "Red Dress", "desc": "Tight red satin cocktail dress and heels.", "tag": "hot", "shape": 0.0, "sole": 0.015},
 		"beach": {"name": "Beach Day", "desc": "Red bikini, thigh holster and combat boots.", "tag": "hot", "shape": 0.0},
-		"midnight_lace": {"name": "Midnight Lace", "desc": "Lace corset, stockings, satin gloves and heeled boots.", "tag": "hot", "shape": 0.0},
+		"midnight_lace": {"name": "Midnight Lace", "desc": "Lace corset, stockings, satin gloves and heeled boots.", "tag": "hot", "shape": 0.0, "sole": 0.032},
 	},
 }
 

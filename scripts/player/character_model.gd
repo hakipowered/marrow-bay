@@ -20,11 +20,15 @@ var _model: Node3D
 var _parts: Dictionary = {}
 var _t := 0.0
 var _current := ""
+var _sole_local := {}   # side -> [thigh bone, foot bone, point under the ankle in foot space]
+var _to_model := Transform3D()
 
 const BONE_SLIDERS := {
 	# slider -> [[bone name, axis scale weights]] (Meshy rig bone names)
 	"shoulders": [["LeftShoulder", Vector3(1, 0, 1)], ["RightShoulder", Vector3(1, 0, 1)]],
-	"legs": [["LeftUpLeg", Vector3(0, 1, 0)], ["RightUpLeg", Vector3(0, 1, 0)], ["LeftLeg", Vector3(0, 1, 0)], ["RightLeg", Vector3(0, 1, 0)]],
+	# Thighs only: the shin and foot inherit the thigh's scale, so the whole leg
+	# grows by the same factor (scaling the shin as well compounded to +56%).
+	"legs": [["LeftUpLeg", Vector3(0, 0.88, 0)], ["RightUpLeg", Vector3(0, 0.88, 0)]],
 	"muscle": [["LeftArm", Vector3(1, 0, 1)], ["RightArm", Vector3(1, 0, 1)], ["LeftForeArm", Vector3(0.6, 0, 0.6)], ["RightForeArm", Vector3(0.6, 0, 0.6)]],
 }
 
@@ -33,12 +37,12 @@ const BONE_SLIDERS := {
 ## inflate per character, which slider drives it, and spring settings.
 const REGIONS := {
 	"obcera": [
-		{"bone": "Spine01", "c": Vector3(8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 0.5, "spring": [190.0, 6.5, 0.026]},
-		{"bone": "Spine01", "c": Vector3(-8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 0.5, "spring": [190.0, 6.5, 0.026]},
-		{"bone": "Hips", "c": Vector3(8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.5, "spring": [240.0, 8.0, 0.016]},
-		{"bone": "Hips", "c": Vector3(-8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.5, "spring": [240.0, 8.0, 0.016]},
-		{"bone": "Spine02", "c": Vector3(0.0, 106.0, 4.0), "r": Vector3(22.0, 9.0, 16.0), "mask": 0.0, "base": -0.08, "slider": "waist", "range": 0.25},
-		{"bone": "Hips", "c": Vector3(0.0, 88.0, 3.0), "r": Vector3(24.0, 12.0, 18.0), "mask": 0.0, "base": 0.06, "slider": "hips", "range": 0.16},
+		{"bone": "Spine01", "c": Vector3(8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "spring": [190.0, 6.5, 0.026]},
+		{"bone": "Spine01", "c": Vector3(-8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "spring": [190.0, 6.5, 0.026]},
+		{"bone": "Hips", "c": Vector3(8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.8, "spring": [240.0, 8.0, 0.016]},
+		{"bone": "Hips", "c": Vector3(-8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.8, "spring": [240.0, 8.0, 0.016]},
+		{"bone": "Spine02", "c": Vector3(0.0, 106.0, 4.0), "r": Vector3(22.0, 9.0, 16.0), "mask": 0.0, "base": -0.08, "slider": "waist", "range": 0.6},
+		{"bone": "Hips", "c": Vector3(0.0, 88.0, 3.0), "r": Vector3(24.0, 12.0, 18.0), "mask": 0.0, "base": 0.06, "slider": "hips", "range": 0.4},
 	],
 	"zegan": [
 		{"bone": "Spine01", "c": Vector3(8.0, 124.0, 6.0), "r": Vector3(12.0, 12.0, 16.0), "mask": 1.0, "base": 0.0, "slider": "chest", "range": 0.22},
@@ -82,6 +86,7 @@ func _build(id: String) -> void:
 	_parts.clear()
 	_anim = null
 	_skel = null
+	_sole_local.clear()
 	_body_mat = null
 	_current = ""
 	_held = ""
@@ -131,6 +136,11 @@ func apply_customization(c: Dictionary) -> void:
 				var idx := _skel.find_bone(entry[0])
 				if idx >= 0:
 					_skel.set_bone_pose_scale(idx, Vector3.ONE + entry[1] * amount)
+		# Keep the soles on the floor: longer legs would push the feet through
+		# it, and some outfits' heels stand a little proud of the base model.
+		if _model:
+			_skel.force_update_all_bone_transforms()
+			_update_lift()
 		return
 	var pal: Dictionary = PALETTES.get(character, PALETTES["zegan"]).get(outfit, PALETTES[character]["default"])
 	for part in _parts:
@@ -144,6 +154,40 @@ func apply_customization(c: Dictionary) -> void:
 		_scale_part(leg, Vector3(1.0 + _slider("muscle") * 0.3, 1.0 + _slider("legs") * 0.2, 1.0 + _slider("muscle") * 0.3))
 	for arm in ["arm_l", "arm_r"]:
 		_scale_part(arm, Vector3(1.0 + _slider("muscle") * 0.4, 1, 1.0 + _slider("muscle") * 0.4))
+
+## Keeps the soles where they would be without the Legs slider: the thigh's
+## scale carries the shin and foot with it, so longer legs would push the
+## feet through the floor. Worked out on the current pose every frame (bent
+## knees lengthen less than straight ones) from a point under each ankle.
+func _update_lift() -> void:
+	if _sole_local.is_empty():
+		var chain := Transform3D()
+		var n: Node = _skel
+		while n != _model and n is Node3D:
+			chain = (n as Node3D).transform * chain
+			n = n.get_parent()
+		_to_model = Transform3D(_model.transform.basis, Vector3.ZERO) * chain
+		for side in ["Left", "Right"]:
+			var u := _skel.find_bone(side + "UpLeg")
+			var ft := _skel.find_bone(side + "Foot")
+			if u < 0 or ft < 0:
+				continue
+			var foot := _skel.get_bone_global_rest(ft)
+			var ankle := _to_model * foot.origin
+			var sole := _to_model.affine_inverse() * Vector3(ankle.x, 0.0, ankle.z)
+			_sole_local[side] = [u, ft, foot.affine_inverse() * sole]
+	var low_scaled := INF
+	var low_plain := INF
+	for side in _sole_local:
+		var e: Array = _sole_local[side]
+		var thigh := _skel.get_bone_global_pose(e[0])
+		var sole: Vector3 = _skel.get_bone_global_pose(e[1]) * e[2]
+		var undo := Basis.from_scale(Vector3.ONE / _skel.get_bone_pose_scale(e[0]))
+		var plain := thigh * Transform3D(undo, Vector3.ZERO) * thigh.affine_inverse() * sole
+		low_scaled = minf(low_scaled, (_to_model * sole).y)
+		low_plain = minf(low_plain, (_to_model * plain).y)
+	var lift := low_plain - low_scaled if low_scaled < INF else 0.0
+	_model.position.y = lift - float(Outfits.info(character, outfit).get("sole", 0.0))
 
 ## Where a bone is in the current pose, in this node's space, or null when
 ## the model has no skeleton or no such bone.
@@ -366,6 +410,8 @@ func _setup_body(m: Node3D, lib: AnimationLibrary = null) -> void:
 func _process(delta: float) -> void:
 	if _body_mat and delta > 0.0:
 		_update_regions(minf(delta, 0.05))
+	if _skel and _model and not is_equal_approx(_slider("legs"), 0.0):
+		_update_lift()
 
 func _update_regions(delta: float) -> void:
 	var n := 6
