@@ -1,5 +1,6 @@
 extends SceneTree
-## Checks the music state machine: menu, action on/off, boss, safe room, seamless loop.
+## Checks the music state machine: menu, action on/off (only for big fights
+## since 0.10), boss, safe room, seamless loop.
 
 var _t := 0.0
 var _step := 0
@@ -27,11 +28,16 @@ func _process(delta: float) -> bool:
 		1:
 			if _t > 0.2:
 				_check(music.current_track() == "", "no music when exploring")
-				music.threat = 4.0
+				music.threat = 4.0   # a few ordinary infected: the ambience carries it
+				_step = 15; _t = 0.0
+		15:
+			if _t > 0.2:
+				_check(music.current_track() == "", "no action music for a few shamblers")
+				music.threat = 7.0   # a brute, a charger, or a big breach
 				_step = 2; _t = 0.0
 		2:
 			if _t > 0.2:
-				_check(music.current_track() == "action", "action music with a pack chasing")
+				_check(music.current_track() == "action", "action music for a big fight")
 				music.threat = 0.0
 				_step = 3; _t = 0.0
 		3:

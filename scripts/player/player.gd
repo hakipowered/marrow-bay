@@ -66,7 +66,7 @@ var dead := false               # bled out / killed: the game-over sequence is r
 ## through her for the first ROLL_IFRAMES of it, it can be started out of a
 ## flinch, and it is how she breaks out of a crowd.
 const ROLL_DIST := 3.4
-const ROLL_PLAYBACK := 1.15
+const ROLL_PLAYBACK := CharacterModel.ROLL_PLAYBACK
 const ROLL_IFRAMES := 0.7
 var rolling := false
 @export var dodging := false   # inside the roll's invulnerable part (the host's zombies check it)

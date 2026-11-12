@@ -45,7 +45,7 @@ func _sweep() -> void:
 		q.motion = -n * 2.4
 		var r: PackedFloat32Array = space.cast_motion(q)
 		var free_way := r.size() > 0 and r[0] >= 0.999
-		print("  %s (%s, %.1f m wide): %s" % [d.name, Door.Kind.keys()[d.kind], d.width, "clear" if free_way else "BLOCKED at %.0f%% of the way" % (r[0] * 100.0)])
+		print("  %s (kind %d, %.1f m wide): %s" % [d.name, d.kind, d.width, "clear" if free_way else "BLOCKED at %.0f%% of the way" % (r[0] * 100.0)])
 		if not free_way:
 			fails.append(str(d.name))
 	if fails.is_empty():

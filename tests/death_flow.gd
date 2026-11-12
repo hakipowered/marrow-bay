@@ -204,5 +204,9 @@ func _check_move(what: String, want_anim: String, want_speed: float) -> void:
 		fails.append("%s plays %s" % [what, p.sync_anim])
 	if absf(gs - want_speed) > 0.4:
 		fails.append("%s speed %.2f, expected %.1f" % [what, gs, want_speed])
-	if scale < 0.95 and gs > 1.0:
-		fails.append("%s clip not sped up to match (x%.2f)" % [what, scale])
+	# The clip runs at ground speed / the stride its feet really cover, so
+	# the planted foot stays put (tests/foot_skate.gd checks the stride).
+	var nat: float = p.model.natural_speed(p.model._current)
+	var legs := clampf(gs / nat, 0.6, 1.7) if nat > 0.0 else 1.0
+	if gs > 1.0 and absf(absf(scale) - legs) > 0.05:
+		fails.append("%s clip at x%.2f, her stride needs x%.2f" % [what, scale, legs])

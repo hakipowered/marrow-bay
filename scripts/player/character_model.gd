@@ -343,7 +343,9 @@ var _natural := {}
 ## Aiming with a knife, hatchet or grenade: the combat stance when standing.
 const GUARD_ANIMS := {"idle": "combat/guard"}
 const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit", "roll": "combat/roll"}
-const STATE_SPEED := {"reload": 2.0, "combat/roll": Player.ROLL_PLAYBACK}
+## The dodge roll plays a little faster than the rig's clip (Player.roll).
+const ROLL_PLAYBACK := 1.15
+const STATE_SPEED := {"reload": 2.0, "combat/roll": ROLL_PLAYBACK}
 ## A survivor's own standing loop ("moves" library, CombatClips) when they
 ## have one; otherwise the shared rig idle.
 const OWN_IDLE := "moves/idle"

@@ -37,7 +37,7 @@ static func attach(anim: AnimationPlayer, skel: Skeleton3D, character: String, l
 			var path := "res://assets/characters/%s/%s_%s.res" % [character, character, src]
 			if not ResourceLoader.exists(path):
 				continue
-			var part := _retarget(load(path), skel, skel_path)
+			var part := _retarget(load(path), skel, skel_path, src != "combat")
 			for clip in part.get_animation_list():
 				out.add_animation(clip, part.get_animation(clip))
 			for m in part.get_meta_list():
@@ -68,7 +68,7 @@ static func _rest_signature(skel: Skeleton3D) -> String:
 	var b := skel.find_bone("Hips")
 	return "%s/%s" % [skel.get_bone_rest(a).origin if a >= 0 else Vector3.ZERO, skel.get_bone_rest(b).origin if b >= 0 else Vector3.ZERO]
 
-static func _retarget(src: AnimationLibrary, skel: Skeleton3D, skel_path: String) -> AnimationLibrary:
+static func _retarget(src: AnimationLibrary, skel: Skeleton3D, skel_path: String, grounded := false) -> AnimationLibrary:
 	var rest_q: Dictionary = src.get_meta("rest_q", {})
 	var rest_o: Dictionary = src.get_meta("rest_o", {})
 	var parents: Dictionary = src.get_meta("parents", {})
@@ -105,6 +105,8 @@ static func _retarget(src: AnimationLibrary, skel: Skeleton3D, skel_path: String
 					for k in a.track_get_key_count(t):
 						var p: Vector3 = a.track_get_key_value(t, k)
 						a.track_set_key_value(t, k, rd + pre * ((p - rs) * ratio))
+		if grounded:
+			_ground_on(a, skel)
 		out.add_animation(clip, a)
 		var tr: PackedVector2Array = src.get_meta("travel_" + clip, PackedVector2Array())
 		if not tr.is_empty():
@@ -113,3 +115,54 @@ static func _retarget(src: AnimationLibrary, skel: Skeleton3D, skel_path: String
 				scaled.append(Vector2(v.x, v.y * ratio))
 			out.set_meta("travel_" + clip, scaled)
 	return out
+
+## Stands a whole-body clip (the roll, a survivor's own idle) on the floor
+## of the skeleton that plays it, after retargeting: shifts the hips so the
+## lowest point of either foot (ankle or ball of the foot), at its lowest over
+## the clip, is as high as in this body's rest pose. Meshy's idle and roll
+## rigs carry the hips ~6 cm up and their legs aren't quite this body's,
+## which left Obcera's own idle hovering 8-9 cm over the floor.
+static func _ground_on(a: Animation, skel: Skeleton3D) -> void:
+	var rot := {}
+	var pos := {}
+	for t in a.get_track_count():
+		var bone := a.track_get_path(t).get_concatenated_subnames()
+		if a.track_get_type(t) == Animation.TYPE_ROTATION_3D:
+			rot[bone] = t
+		elif a.track_get_type(t) == Animation.TYPE_POSITION_3D:
+			pos[bone] = t
+	var hips := skel.find_bone("Hips")
+	if hips < 0 or not pos.has("Hips"):
+		return
+	var lift := INF
+	for tip in ["LeftFoot", "RightFoot", "LeftToeBase", "RightToeBase"]:
+		var bi := skel.find_bone(tip)
+		if bi < 0:
+			continue
+		var chain: Array[int] = []
+		var b := bi
+		while b >= 0:
+			chain.push_front(b)
+			b = skel.get_bone_parent(b)
+		var rest_y := skel.get_bone_global_rest(bi).origin.y
+		const N := 60
+		for i in N + 1:
+			var tm := a.length * i / N
+			var g := Transform3D()
+			for c in chain:
+				var n := skel.get_bone_name(c)
+				var r := skel.get_bone_rest(c)
+				var q: Quaternion = a.rotation_track_interpolate(rot[n], tm) if rot.has(n) else r.basis.get_rotation_quaternion()
+				var o: Vector3 = a.position_track_interpolate(pos[n], tm) if pos.has(n) else r.origin
+				g = g * Transform3D(Basis(q), o)
+			lift = minf(lift, g.origin.y - rest_y)
+	if lift == INF or absf(lift) < 0.0001:
+		return
+	# Straight down in skeleton space, whatever the hips' parent is.
+	var hp := skel.get_bone_parent(hips)
+	var down := Vector3(0, -lift, 0)
+	if hp >= 0:
+		down = skel.get_bone_global_rest(hp).basis.inverse() * down
+	var ht: int = pos["Hips"]
+	for k in a.track_get_key_count(ht):
+		a.track_set_key_value(ht, k, (a.track_get_key_value(ht, k) as Vector3) + down)
