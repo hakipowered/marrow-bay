@@ -7,7 +7,6 @@ var _status: Label
 var _code_edit: LineEdit
 var _char := "zegan"
 var _custom: Dictionary = {}
-var _preview_label: Label
 var _sliders := {}
 var _theme := Theme.new()
 var _logo: Label

@@ -1,13 +1,21 @@
 class_name CustomizeScreen
 extends Control
 ## Outfit and body screen: a lit, turning 3D preview of the survivor on the
-## left (drag to spin it), outfits grouped as Classic and Hot on the right,
-## then the body sliders. Every change shows on the model straight away.
+## left (drag to spin it, pinch or the view buttons to zoom from the whole
+## body to the face, pose buttons to see them stand, walk or run), outfits
+## grouped as Classic and Hot on the right, then the body sliders. Every
+## change shows on the model straight away.
 
 signal finished(custom: Dictionary)
 
 const SLIDERS := ["height", "shoulders", "chest", "waist", "hips", "legs", "muscle"]
 const TAGS := {"classic": "CLASSIC", "hot": "HOT"}
+## Preview camera views: label and zoom (0 whole body .. 1 face).
+const VIEWS := {"full": ["Full body", 0.0], "upper": ["Waist up", 0.5], "face": ["Face", 1.0]}
+## Preview poses: model state -> label.
+const POSES := {"idle": "Stand", "walk": "Walk", "run": "Run"}
+## Top of the head at height slider 0.5, in metres.
+const HEIGHTS := {"zegan": 1.83, "obcera": 1.76}
 
 var character := "zegan"
 var custom: Dictionary = {}
@@ -17,6 +25,19 @@ var spin := true
 var _model: CharacterModel
 var _turntable: Node3D
 var _yaw := 0.0
+var _cam: Camera3D
+var _zoom := 0.0
+var _zoom_target := 0.0
+var _pose := "idle"
+var _pose_buttons := {}
+var _view_buttons := {}
+var _touches := {}
+var _pinch := 0.0
+var _body_turn := 0.0
+var _body_turn_ready := false
+var _hips := Vector2.ZERO
+var _head := Vector3.INF
+var _head_follow := Vector3.INF
 var _idle_spin := 0.0   # seconds before the preview turns by itself again
 var _controls: VBoxContainer
 var _name: Label
@@ -42,6 +63,7 @@ func _ready() -> void:
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_stretch_ratio = 1.0
 	row.add_child(scroll)
 	_controls = VBoxContainer.new()
 	_controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -53,11 +75,26 @@ func _ready() -> void:
 # ---------- Preview ----------
 
 func _build_preview() -> Control:
+	# A framed stage: the 3D view fills it, with view and pose buttons on top.
+	var frame := PanelContainer.new()
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	frame.size_flags_stretch_ratio = 1.15
+	frame.custom_minimum_size = Vector2(820, 0)
+	var fs := StyleBoxFlat.new()
+	fs.bg_color = Color(0.018, 0.012, 0.012)
+	fs.border_color = Color(0.45, 0.08, 0.05, 0.8)
+	fs.set_border_width_all(3)
+	fs.set_corner_radius_all(10)
+	frame.add_theme_stylebox_override("panel", fs)
+	var stage := Control.new()
+	stage.clip_contents = true
+	frame.add_child(stage)
 	var box := SubViewportContainer.new()
 	box.stretch = true
-	box.custom_minimum_size = Vector2(860, 0)
-	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.set_anchors_preset(Control.PRESET_FULL_RECT)
 	box.gui_input.connect(_on_preview_input)
+	stage.add_child(box)
 	var vp := SubViewport.new()
 	vp.own_world_3d = true
 	vp.msaa_3d = Viewport.MSAA_4X
@@ -70,12 +107,15 @@ func _build_preview() -> Control:
 	env.ambient_light_color = Color(0.55, 0.5, 0.52)
 	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.09, 0.03, 0.03)
+	env.fog_density = 0.04
 	we.environment = env
 	vp.add_child(we)
 	# Key light from the front left, a red rim from behind, a cold fill.
 	var key := SpotLight3D.new()
 	key.transform = Transform3D(Basis(), Vector3(-1.6, 3.2, 2.6)).looking_at(Vector3(0, 0.9, 0))
-	key.light_energy = 6.0
+	key.light_energy = 4.2
 	key.spot_range = 8.0
 	key.spot_angle = 32.0
 	key.shadow_enabled = true
@@ -103,10 +143,9 @@ func _build_preview() -> Control:
 	ground.material_override = fm
 	ground.position.y = -0.01
 	vp.add_child(ground)
-	var cam := Camera3D.new()
-	cam.fov = 30.0
-	cam.transform = Transform3D(Basis(), Vector3(0, 1.1, 4.9)).looking_at(Vector3(0, 0.9, 0))
-	vp.add_child(cam)
+	_cam = Camera3D.new()
+	_cam.fov = 30.0
+	vp.add_child(_cam)
 	_turntable = Node3D.new()
 	vp.add_child(_turntable)
 	_model = CharacterModel.new()
@@ -115,27 +154,158 @@ func _build_preview() -> Control:
 	_turntable.add_child(_model)
 	# Face the camera: the model looks down -Z.
 	_yaw = PI
-	return box
+	# View buttons along the bottom, pose buttons along the top.
+	var top := _overlay_row(stage, true)
+	for p in POSES:
+		_pose_buttons[p] = _overlay_button(top, POSES[p], func(): _set_pose(p))
+	var bottom := _overlay_row(stage, false)
+	for v in VIEWS:
+		_view_buttons[v] = _overlay_button(bottom, VIEWS[v][0], func(): _set_view(v))
+	var hint := Label.new()
+	hint.text = "Drag to turn · pinch to zoom"
+	hint.add_theme_font_size_override("font_size", 24)
+	hint.add_theme_color_override("font_color", Color(0.7, 0.65, 0.6, 0.7))
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bottom.add_child(hint)
+	bottom.move_child(hint, 0)
+	_set_pose("idle")
+	_set_view("full")
+	_zoom = _zoom_target
+	return frame
+
+func _overlay_row(stage: Control, at_top: bool) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END if not at_top else BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_preset(Control.PRESET_TOP_WIDE if at_top else Control.PRESET_BOTTOM_WIDE)
+	row.offset_left = 20
+	row.offset_right = -20
+	if at_top:
+		row.offset_top = 20
+		row.offset_bottom = 100
+	else:
+		row.offset_top = -100
+		row.offset_bottom = -20
+	stage.add_child(row)
+	return row
+
+func _overlay_button(row: HBoxContainer, text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.toggle_mode = true
+	b.custom_minimum_size = Vector2(150, 76)
+	b.add_theme_font_size_override("font_size", 26)
+	b.pressed.connect(cb)
+	row.add_child(b)
+	return b
+
+func _set_pose(p: String) -> void:
+	_pose = p
+	for k in _pose_buttons:
+		_pose_buttons[k].set_pressed_no_signal(k == p)
+
+func _set_view(v: String) -> void:
+	_zoom_target = VIEWS[v][1]
+	for k in _view_buttons:
+		_view_buttons[k].set_pressed_no_signal(k == v)
+
+## Height of the top of the head for the current outfit and height slider.
+func _top() -> float:
+	return HEIGHTS.get(character, 1.8) * (_model.scale.y if _model else 1.0)
+
+func _frame_camera(delta: float) -> void:
+	_zoom = lerpf(_zoom, _zoom_target, 1.0 - exp(-delta * 7.0))
+	var h := _top()
+	# 0 = whole body, 0.5 = waist up, 1 = face.
+	var centre: float
+	var shown: float
+	if _zoom < 0.5:
+		var t := _zoom / 0.5
+		centre = lerpf(h * 0.5, h * 0.74, t)
+		shown = lerpf(h * 1.16, h * 0.62, t)
+	else:
+		var t := (_zoom - 0.5) / 0.5
+		centre = lerpf(h * 0.74, h * 0.92, t)
+		shown = lerpf(h * 0.62, h * 0.3, t)
+	# Close views follow the head, which the clips move about.
+	var x := 0.0
+	if _head != Vector3.INF:
+		var t := clampf((_zoom - 0.3) / 0.7, 0.0, 1.0)
+		_head_follow = _head_follow.lerp(_head, 1.0 - exp(-delta * 5.0)) if _head_follow != Vector3.INF else _head
+		x = _head_follow.x * t
+		centre = lerpf(centre, _head_follow.y + h * 0.035, t)
+	var dist := shown * 0.5 / tan(deg_to_rad(_cam.fov * 0.5))
+	_cam.transform = Transform3D(Basis(), Vector3(x, centre + shown * 0.06, dist)).looking_at(Vector3(x, centre, 0))
 
 func _on_preview_input(e: InputEvent) -> void:
-	var dx := 0.0
-	if e is InputEventScreenDrag:
-		dx = e.relative.x
-	elif e is InputEventMouseMotion and e.button_mask & MOUSE_BUTTON_MASK_LEFT:
-		dx = e.relative.x
-	if dx != 0.0:
-		_yaw += dx * 0.012
+	# Touch only: the desktop mouse is turned into touches by the project
+	# settings, and touches into mouse events, so reading both would double up.
+	if e is InputEventScreenTouch:
+		if e.pressed:
+			_touches[e.index] = e.position
+		else:
+			_touches.erase(e.index)
+		_pinch = 0.0
+	elif e is InputEventScreenDrag:
+		_touches[e.index] = e.position
+		if _touches.size() >= 2:
+			var pts: Array = _touches.values()
+			var d: float = pts[0].distance_to(pts[1])
+			if _pinch > 0.0:
+				_zoom_target = clampf(_zoom_target + (d - _pinch) * 0.0025, 0.0, 1.0)
+				_zoom = _zoom_target
+				_clear_view_buttons()
+			_pinch = d
+		else:
+			_yaw += e.relative.x * 0.012
 		_idle_spin = 3.0
+	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		_zoom_target = clampf(_zoom_target + (0.1 if e.button_index == MOUSE_BUTTON_WHEEL_UP else -0.1), 0.0, 1.0)
+		_clear_view_buttons()
+
+func _clear_view_buttons() -> void:
+	for k in _view_buttons:
+		_view_buttons[k].set_pressed_no_signal(is_equal_approx(VIEWS[k][1], _zoom_target))
 
 func _process(delta: float) -> void:
 	if _idle_spin > 0.0:
 		_idle_spin -= delta
 	elif spin:
 		_yaw += delta * 0.35
-	if _turntable:
-		_turntable.rotation.y = _yaw
 	if _model:
-		_model.play("idle", false)
+		_model.play(_pose, false)
+		_follow_body(delta)
+	if _turntable:
+		_turntable.rotation.y = _yaw - _body_turn
+	if _cam:
+		_frame_camera(delta)
+
+## Keeps the survivor on the turntable's axis with the chest to the camera
+## at the "front" angle, whatever the clip does with the hips and shoulders
+## (the idle stands half turned, the aim stance side on).
+func _follow_body(delta: float) -> void:
+	var hips = _model.bone_position("Hips")
+	var l = _model.bone_position("LeftArm")
+	var r = _model.bone_position("RightArm")
+	if hips == null or l == null or r == null:
+		return
+	var k := 1.0 - exp(-delta * 2.5)
+	var across: Vector3 = r - l
+	var turn := atan2(-across.z, across.x)
+	if _body_turn_ready:
+		_body_turn = lerp_angle(_body_turn, turn, k)
+		_hips = _hips.lerp(Vector2(hips.x, hips.z), k)
+	else:
+		_body_turn = turn
+		_hips = Vector2(hips.x, hips.z)
+		_body_turn_ready = true
+	_model.position = -Vector3(_hips.x, 0.0, _hips.y) * _model.scale.x
+	var head = _model.bone_position("Head")
+	if head != null:
+		_head = _model.to_global(head)
 
 # ---------- Controls ----------
 

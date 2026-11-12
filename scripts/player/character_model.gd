@@ -141,6 +141,16 @@ func apply_customization(c: Dictionary) -> void:
 	for arm in ["arm_l", "arm_r"]:
 		_scale_part(arm, Vector3(1.0 + _slider("muscle") * 0.4, 1, 1.0 + _slider("muscle") * 0.4))
 
+## Where a bone is in the current pose, in this node's space, or null when
+## the model has no skeleton or no such bone.
+func bone_position(bone: String) -> Variant:
+	if not _skel or not _skel.is_inside_tree():
+		return null
+	var i := _skel.find_bone(bone)
+	if i < 0:
+		return null
+	return to_local(_skel.global_transform * _skel.get_bone_global_pose(i).origin)
+
 func _scale_part(name: String, s: Vector3) -> void:
 	if _parts.has(name):
 		_parts[name]["mesh"].scale = s
