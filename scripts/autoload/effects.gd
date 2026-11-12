@@ -59,6 +59,9 @@ func _sprite_mat(tex: Texture2D, additive: bool, boost := 1.0, soft := 0.0) -> S
 	m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	# Without this a particle's scale (scale_amount, scale curves) is thrown
+	# away and every sprite is drawn the size of its quad.
+	m.billboard_keep_scale = true
 	m.particles_anim_h_frames = 2
 	m.particles_anim_v_frames = 2
 	m.particles_anim_loop = false
@@ -183,11 +186,11 @@ func _light(pos: Vector3, color: Color, energy: float, range_m: float, secs: flo
 func muzzle_flash(pos: Vector3, dir: Vector3, weapon_id := "") -> void:
 	var s: float = FLASH_SIZE.get(weapon_id, 1.0) * randf_range(0.85, 1.15)
 	dir = dir.normalized()
-	var blast := _axial_mat(true, 0.22 * s, Color(1.0, 0.72, 0.38), 1.5, MUZZLE_TEX, 0, 2)
-	_burst(pos, _quad(1.0, 0.22 * s, true), blast, {"amount": 1, "life": 0.055, "dir": dir, "spread": 0.0,
+	var blast := _axial_mat(true, 0.24 * s, Color(1.0, 0.72, 0.38), 1.5, MUZZLE_TEX, 0, 2)
+	_burst(pos, _quad(1.0, 0.24 * s, true), blast, {"amount": 1, "life": 0.055, "dir": dir, "spread": 0.0,
 		"vmin": 0.01, "vmax": 0.01, "gravity": Vector3.ZERO, "align": true})
 	_burst(pos, _quad(1, 1), _sprite_mat(MUZZLE_TEX, true, 1.4), {"amount": 1, "life": 0.045, "spread": 0.0,
-		"vmin": 0.0, "vmax": 0.0, "gravity": Vector3.ZERO, "smin": 0.07 * s, "smax": 0.09 * s,
+		"vmin": 0.0, "vmax": 0.0, "gravity": Vector3.ZERO, "smin": 0.12 * s, "smax": 0.15 * s,
 		"color": Color(1.0, 0.78, 0.5),
 		"amin": 0.0, "amax": 360.0, "frame_min": 0.5, "frame_max": 0.99})
 	_light(pos + dir * 0.15, Color(1.0, 0.72, 0.4), 3.5 * s, 4.0 + 2.0 * s, 0.05)
@@ -244,6 +247,11 @@ func blood(pos: Vector3, normal: Vector3, dir := Vector3.ZERO, amount := 1.0) ->
 	if normal == Vector3.ZERO:
 		normal = -dir
 	var a := clampf(amount, 0.3, 2.5)
+	# Hitboxes sit inside the body, so the hit point is under the skin: start
+	# the entry side's blood a little toward the shooter and the exit side's
+	# beyond the far side, where the camera can see them.
+	var front := pos - dir * 0.12
+	var back := pos + dir * 0.22
 	# More pellets into the same body in the same frame add drops and a
 	# stain, not another cloud each.
 	var frame := Engine.get_process_frames()
@@ -252,7 +260,7 @@ func blood(pos: Vector3, normal: Vector3, dir := Vector3.ZERO, amount := 1.0) ->
 	_blood_pos = pos
 	if extra:
 		var d2 := _axial_mat(false, 0.03, Color(0.5, 0.02, 0.02), 1.0, null, 0, 1, 0.6)
-		_burst(pos, _quad(1.0, 0.1), d2, {"amount": 5, "life": 0.7, "life_rand": 0.5,
+		_burst(back, _quad(1.0, 0.1), d2, {"amount": 5, "life": 0.7, "life_rand": 0.5,
 			"dir": (dir + Vector3.UP * 0.3).normalized(), "spread": 40.0, "vmin": 1.8, "vmax": 4.5, "align": true,
 			"additive": false, "smin": 0.6, "smax": 1.2})
 		_blood_stains(pos, dir, a)
@@ -274,19 +282,19 @@ func blood(pos: Vector3, normal: Vector3, dir := Vector3.ZERO, amount := 1.0) ->
 		spray_o["dir"] = (dir + side * 0.65 * k[0] + Vector3.UP * randf_range(0.0, 0.25)).normalized()
 		spray_o["smin"] = k[1] * a
 		spray_o["smax"] = k[1] * 1.25 * a
-		_burst(pos, _quad(1.0, 0.75, true), spray, spray_o)
+		_burst(back, _quad(1.0, 0.75, true), spray, spray_o)
 	# Back out of the entry wound, smaller.
 	spray_o["dir"] = (normal + side * 0.4 + Vector3(0, 0.15, 0)).normalized()
 	spray_o["smin"] = 0.35 * a
 	spray_o["smax"] = 0.45 * a
-	_burst(pos, _quad(1.0, 0.75, true), spray, spray_o)
+	_burst(front, _quad(1.0, 0.75, true), spray, spray_o)
 	# A fine red mist hanging where the round went in.
-	_burst(pos, _quad(1, 1), _sprite_mat(SPRAY_TEX, false, 1.0), {"amount": 1, "life": 0.45, "life_rand": 0.3,
-		"dir": dir, "spread": 40.0, "vmin": 0.3, "vmax": 0.8, "damp": 3.0, "gravity": Vector3(0, -0.6, 0),
-		"smin": 0.28 * a, "smax": 0.38 * a, "scurve": [[0, 0.5], [1, 1.4]], "amin": 0.0, "amax": 360.0, "additive": false,
-		"ramp": [[0.0, Color(1, 1, 1, 0.7)], [1.0, Color(1, 1, 1, 0.0)]]})
+	_burst(front, _quad(1, 1), _sprite_mat(SPRAY_TEX, false, 1.0), {"amount": 2, "life": 0.5, "life_rand": 0.3,
+		"dir": (normal + Vector3.UP * 0.2).normalized(), "spread": 50.0, "vmin": 0.2, "vmax": 0.5, "damp": 3.0, "gravity": Vector3(0, -0.6, 0),
+		"smin": 0.45 * a, "smax": 0.6 * a, "scurve": [[0, 0.45], [1, 1.5]], "amin": 0.0, "amax": 360.0, "additive": false,
+		"ramp": [[0.0, Color(1, 1, 1, 0.8)], [0.5, Color(1, 1, 1, 0.6)], [1.0, Color(1, 1, 1, 0.0)]]})
 	var drop := _axial_mat(false, 0.03, Color(0.55, 0.02, 0.02), 1.0, null, 0, 1, 0.6)
-	_burst(pos, _quad(1.0, 0.1), drop, {"amount": int(18 * a), "life": 0.75, "life_rand": 0.5,
+	_burst(back, _quad(1.0, 0.1), drop, {"amount": int(18 * a), "life": 0.75, "life_rand": 0.5,
 		"dir": (dir + Vector3.UP * 0.35).normalized(), "spread": 50.0, "vmin": 1.8, "vmax": 4.8, "align": true,
 		"additive": false, "smin": 0.6, "smax": 1.3})
 	_blood_stains(pos, dir, a)
@@ -324,7 +332,10 @@ func make_fire(extents := Vector3(0.3, 0.05, 0.3), strength := 1.0, smoke := tru
 	flames.lifetime = 0.85
 	flames.randomness = 0.3
 	flames.draw_pass_1 = _quad(1, 1)
-	flames.material_override = _sprite_mat(FIRE_TEX, true, 1.35, 0.3)
+	# Alpha-blended flame photos: layered, they stay orange and yellow
+	# instead of adding up to a white blob.
+	flames.material_override = _sprite_mat(FIRE_TEX, false, 1.25, 0.3)
+	flames.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
 	flames.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	flames.visibility_aabb = AABB(-extents - Vector3(1, 0.5, 1) * k, extents * 2.0 + Vector3(2, 3.5, 2) * k)
 	var pm := ParticleProcessMaterial.new()
@@ -510,7 +521,7 @@ func _make_stream(length: float) -> Node3D:
 		pm.gravity = Vector3(0, 2.2, 0)
 		pm.scale_min = 0.8 * layer[3]
 		pm.scale_max = 1.25 * layer[3]
-		pm.scale_curve = _curve_tex([[0, 0.08], [0.25, 0.45], [1, 1.25]])
+		pm.scale_curve = _curve_tex([[0, 0.2], [0.25, 0.55], [1, 1.25]])
 		pm.angle_min = -180.0
 		pm.angle_max = 180.0
 		pm.angular_velocity_min = -90.0
@@ -620,18 +631,18 @@ func explosion(pos: Vector3, radius: float) -> void:
 		flash_burst(pos)
 		return
 	var r := radius
-	_burst(pos + Vector3.UP * 0.3, _quad(1, 1), _sprite_mat(FIREBALL_TEX, true, 1.2, 0.3), {"amount": 10, "life": 0.8,
+	_burst(pos + Vector3.UP * 0.3, _quad(1, 1), _sprite_mat(FIREBALL_TEX, false, 1.25, 0.3), {"amount": 12, "life": 0.9,
 		"life_rand": 0.3, "dir": Vector3.UP, "spread": 180.0, "vmin": 0.6 * r, "vmax": 1.3 * r, "damp": 2.5 * r,
-		"gravity": Vector3(0, 1.5, 0), "smin": 0.55 * r, "smax": 0.8 * r, "scurve": [[0, 0.3], [0.3, 1.0], [1, 1.15]],
-		"amin": 0.0, "amax": 360.0, "sphere": 0.2 * r,
-		"ramp": [[0.0, Color(1, 0.95, 0.85, 1)], [0.3, Color(1, 0.62, 0.25, 0.95)], [0.7, Color(0.7, 0.2, 0.05, 0.5)], [1.0, Color(0.2, 0.05, 0.02, 0)]]})
-	_burst(pos + Vector3.UP * 0.2, _quad(1, 1), _sprite_mat(FIRE_TEX, true, 1.6, 0.3), {"amount": 10, "life": 0.55,
+		"gravity": Vector3(0, 1.5, 0), "smin": 0.36 * r, "smax": 0.52 * r, "scurve": [[0, 0.3], [0.3, 1.0], [1, 1.15]],
+		"amin": 0.0, "amax": 360.0, "sphere": 0.2 * r, "additive": false,
+		"ramp": [[0.0, Color(1, 0.95, 0.85, 1)], [0.3, Color(1, 0.72, 0.42, 0.95)], [0.7, Color(0.5, 0.22, 0.1, 0.7)], [1.0, Color(0.14, 0.1, 0.08, 0)]]})
+	_burst(pos + Vector3.UP * 0.2, _quad(1, 1), _sprite_mat(FIRE_TEX, true, 1.0, 0.3), {"amount": 10, "life": 0.55,
 		"life_rand": 0.4, "dir": Vector3.UP, "spread": 70.0, "vmin": 1.0 * r, "vmax": 2.0 * r, "damp": 3.0 * r,
 		"gravity": Vector3(0, 2.0, 0), "smin": 0.25 * r, "smax": 0.4 * r, "amin": -20.0, "amax": 20.0,
 		"ramp": [[0.0, Color(1, 0.9, 0.7, 1)], [0.6, Color(1, 0.45, 0.12, 0.8)], [1.0, Color(0.5, 0.1, 0.02, 0)]]})
 	_burst(pos + Vector3.UP * 0.5, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.5), {"amount": 24, "life": 4.5,
 		"life_rand": 0.35, "explosiveness": 0.8, "dir": Vector3.UP, "spread": 45.0, "vmin": 0.5, "vmax": 0.3 * r + 1.0,
-		"damp": 0.8, "gravity": Vector3(0.2, 0.45, 0), "smin": 0.45 * r, "smax": 0.7 * r, "scurve": [[0, 0.4], [1, 1.7]],
+		"damp": 0.8, "gravity": Vector3(0.2, 0.45, 0), "smin": 0.32 * r, "smax": 0.5 * r, "scurve": [[0, 0.4], [1, 1.7]],
 		"amin": 0.0, "amax": 360.0, "sphere": 0.3 * r, "additive": false,
 		"ramp": [[0.0, Color(0.05, 0.045, 0.04, 0.0)], [0.12, Color(0.07, 0.06, 0.055, 0.6)], [0.6, Color(0.1, 0.1, 0.1, 0.35)], [1.0, Color(0.14, 0.14, 0.14, 0.0)]]})
 	var sparks := _axial_mat(true, 0.02, Color(1.0, 0.7, 0.35), 3.0, null, 0, 1, 0.9)
