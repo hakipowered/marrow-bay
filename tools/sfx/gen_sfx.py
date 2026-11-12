@@ -69,6 +69,7 @@ SOUNDS = {
     "glass_break": (2, 1.2, -15, "a pane of glass shattering, shards falling"),
     "grenade_bounce": (2, 0.6, -18, "a metal grenade bouncing and rolling on concrete"),
     "power_down": (1, 2.0, -18, "electrical power failing, lights buzzing off with a dying hum"),
+    "roll_whoosh": (2, 0.9, -19, "a person diving into a quick forward roll on a hard floor: fast cloth rustle and whoosh, then a soft body thump and gear rattle"),
     "game_over_sting": (1, 5.0, -15, "a dark orchestral horror sting: one deep low brass and timpani hit, dissonant strings swelling, a distant mournful choir, then fading slowly to silence"),
     # The stalker
     "stalker_step": (3, 0.8, -15, "one very heavy boot footstep on a hard floor, deep thud"),

@@ -61,6 +61,19 @@ var cutscene_pose := false
 @export var sync_speed := 0.0   # real ground speed, so the partner's legs match too
 var dead := false               # bled out / killed: the game-over sequence is running
 @export var sync_weapon := ""
+## Dodge roll: a dive along the stick (or the way she faces) that carries her
+## ROLL_DIST metres in about a second and comes up running. Blows pass
+## through her for the first ROLL_IFRAMES of it, it can be started out of a
+## flinch, and it is how she breaks out of a crowd.
+const ROLL_DIST := 3.4
+const ROLL_PLAYBACK := 1.15
+const ROLL_IFRAMES := 0.7
+var rolling := false
+@export var dodging := false   # inside the roll's invulnerable part (the host's zombies check it)
+var _roll_t := 0.0
+var _roll_dir := Vector3.ZERO
+var _roll_cd := 0.0
+var _roll_key := false
 
 var pivot: Node3D
 var spring: SpringArm3D
@@ -195,7 +208,7 @@ func _setup_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_speed", ":sync_weapon", ":downed", ":pinned"]:
+	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_speed", ":sync_weapon", ":downed", ":pinned", ":dodging"]:
 		cfg.add_property(NodePath(prop))
 		cfg.property_set_replication_mode(NodePath(prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -221,6 +234,10 @@ func _physics_process(delta: float) -> void:
 		if fmod(_burn_t, 0.5) < delta:
 			apply_damage(3.0)
 	slowed_for = max(slowed_for - delta, 0.0)
+	_roll_cd = maxf(_roll_cd - delta, 0.0)
+	if downed or pinned or input_locked:
+		rolling = false
+		dodging = false
 	if downed:
 		_downed_t += delta
 		sync_anim = "downed"
@@ -259,6 +276,10 @@ func _physics_process(delta: float) -> void:
 	spring.spring_length = lerp(spring.spring_length, near, 10 * delta)
 	camera.fov = lerp(camera.fov, 52.0 if gun_aim else (62.0 if aiming else 68.0), 10 * delta)
 
+	if rolling:
+		_tick_roll(delta)
+		_tick_shake(delta)
+		return
 	# Move relative to camera
 	var basis_y := Basis(Vector3.UP, yaw)
 	var dir := basis_y * Vector3(move_input.x, 0, move_input.y)
@@ -312,7 +333,61 @@ func _physics_process(delta: float) -> void:
 	_tick_weapon(delta)
 	_update_focus()
 
+## Starts a dodge roll (the HUD's ROLL button, Space on a keyboard).
+func roll() -> void:
+	if rolling or _roll_cd > 0.0 or downed or pinned or input_locked or cutscene_pose or dead:
+		return
+	if model._anim == null or not model._anim.has_animation("combat/roll"):
+		return
+	var d := Basis(Vector3.UP, yaw) * Vector3(move_input.x, 0, move_input.y)
+	if d.length() < 0.2:
+		d = -body.global_transform.basis.z
+	_roll_dir = (d * Vector3(1, 0, 1)).normalized()
+	body.rotation.y = atan2(-_roll_dir.x, -_roll_dir.z)
+	rolling = true
+	dodging = true
+	_roll_t = 0.0
+	_hit_stun = 0.0
+	_knock = Vector3.ZERO
+	_attack_lock = 0.0
+	fire_held = false
+	Sfx.play_at("roll_whoosh", global_position + Vector3.UP, "", -5.0, 4.0)
+
+func _tick_roll(delta: float) -> void:
+	var anim := model._anim
+	var length := anim.get_animation("combat/roll").length
+	var total := CombatClips.travel(anim, "roll", length)
+	var k := ROLL_DIST / total if total > 0.5 else 0.0
+	var t0 := _roll_t * ROLL_PLAYBACK
+	_roll_t += delta
+	var t1 := minf(_roll_t * ROLL_PLAYBACK, length)
+	var step := (CombatClips.travel(anim, "roll", t1) - CombatClips.travel(anim, "roll", t0)) * k
+	if k == 0.0:
+		step = ROLL_DIST / (length / ROLL_PLAYBACK) * delta
+	velocity.x = _roll_dir.x * step / delta
+	velocity.z = _roll_dir.z * step / delta
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
+	move_and_slide()
+	body.rotation.y = atan2(-_roll_dir.x, -_roll_dir.z)
+	sync_yaw = body.rotation.y
+	sync_pitch = pitch
+	sync_aiming = false
+	sync_anim = "roll"
+	sync_speed = 0.0
+	model.play("roll", false)
+	if t0 < length * 0.42 and t1 >= length * 0.42:
+		Sfx.play_at("body_fall", global_position + Vector3.UP * 0.4, "", -9.0, 4.0)   # shoulder meets the floor
+	dodging = t1 < length * ROLL_IFRAMES
+	if t1 >= length - 0.06:
+		rolling = false
+		dodging = false
+		_roll_cd = 0.25
+
 func _read_keyboard() -> void:
+	var space := Input.is_physical_key_pressed(KEY_SPACE)
+	if space and not _roll_key:
+		roll()
+	_roll_key = space
 	# Desktop testing; touch HUD writes the same fields.
 	var k := Vector2(
 		float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
@@ -724,6 +799,8 @@ func receive_item(id: String, n: int, rounds: int, from_name: String) -> void:
 func apply_damage(amount: float, from: Node = null) -> void:
 	if Cheats.on("god_mode") or downed:
 		return
+	if dodging and (amount >= 9.0 or from is Zombie):
+		return   # rolled through it
 	var lvl := get_tree().get_first_node_in_group("level")
 	if lvl and lvl.get("game_over"):
 		return

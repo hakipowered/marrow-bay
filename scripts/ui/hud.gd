@@ -92,6 +92,9 @@ func _ready() -> void:
 			_cycle_weapon())
 	var heal := _button(root, "HEAL", Vector2(-660, -420), Vector2(160, 110))
 	heal.pressed.connect(_quick_heal)
+	# Dodge roll, next to AIM where the thumb already is.
+	var roll := _button(root, "ROLL", Vector2(-700, -230), Vector2(180, 160))
+	roll.button_down.connect(func(): if player: player.roll())
 
 	_crosshair = Crosshair.new()
 	_crosshair.set_anchors_preset(Control.PRESET_FULL_RECT)

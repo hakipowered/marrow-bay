@@ -15,11 +15,13 @@ extends RefCounted
 const LIB := "combat"
 static var _cache: Dictionary = {}
 
+## Source libraries, each from its own Meshy rig: the melee and throw clips,
+## and whole-body moves (the dodge roll, tools/import_move_clips.gd). Both
+## end up in the one "combat" library.
+const SOURCES := ["combat", "moves"]
+
 static func attach(anim: AnimationPlayer, skel: Skeleton3D, character: String) -> void:
 	if anim == null or skel == null or anim.has_animation_library(LIB):
-		return
-	var path := "res://assets/characters/%s/%s_combat.res" % [character, character]
-	if not ResourceLoader.exists(path):
 		return
 	var model_root: Node = anim.get_node_or_null(anim.root_node)
 	if model_root == null:
@@ -27,8 +29,35 @@ static func attach(anim: AnimationPlayer, skel: Skeleton3D, character: String) -
 	var skel_path := str(model_root.get_path_to(skel))
 	var key := "%s|%s|%d|%s" % [character, skel_path, skel.get_bone_count(), _rest_signature(skel)]
 	if not _cache.has(key):
-		_cache[key] = _retarget(load(path), skel, skel_path)
-	anim.add_animation_library(LIB, _cache[key])
+		var out := AnimationLibrary.new()
+		for src in SOURCES:
+			var path := "res://assets/characters/%s/%s_%s.res" % [character, character, src]
+			if not ResourceLoader.exists(path):
+				continue
+			var lib := _retarget(load(path), skel, skel_path)
+			for clip in lib.get_animation_list():
+				out.add_animation(clip, lib.get_animation(clip))
+			for m in lib.get_meta_list():
+				out.set_meta(m, lib.get_meta(m))
+		_cache[key] = out
+	if not (_cache[key] as AnimationLibrary).get_animation_list().is_empty():
+		anim.add_animation_library(LIB, _cache[key])
+
+## How far a move carries the body forward by time t (metres), on the
+## skeleton that plays it; 0 when the move has no travel recorded.
+static func travel(anim: AnimationPlayer, clip: String, t: float) -> float:
+	if anim == null or not anim.has_animation_library(LIB):
+		return 0.0
+	var c: PackedVector2Array = anim.get_animation_library(LIB).get_meta("travel_" + clip, PackedVector2Array())
+	if c.is_empty():
+		return 0.0
+	if t <= c[0].x:
+		return c[0].y
+	for i in range(1, c.size()):
+		if c[i].x >= t:
+			var f := (t - c[i - 1].x) / maxf(c[i].x - c[i - 1].x, 0.0001)
+			return lerpf(c[i - 1].y, c[i].y, f)
+	return c[c.size() - 1].y
 
 static func _rest_signature(skel: Skeleton3D) -> String:
 	# Outfits differ in their arm rest; two bones are enough to tell them apart.
@@ -74,4 +103,10 @@ static func _retarget(src: AnimationLibrary, skel: Skeleton3D, skel_path: String
 						var p: Vector3 = a.track_get_key_value(t, k)
 						a.track_set_key_value(t, k, rd + pre * ((p - rs) * ratio))
 		out.add_animation(clip, a)
+		var tr: PackedVector2Array = src.get_meta("travel_" + clip, PackedVector2Array())
+		if not tr.is_empty():
+			var scaled := PackedVector2Array()
+			for v in tr:
+				scaled.append(Vector2(v.x, v.y * ratio))
+			out.set_meta("travel_" + clip, scaled)
 	return out

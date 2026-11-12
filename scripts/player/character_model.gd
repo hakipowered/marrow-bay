@@ -323,7 +323,8 @@ var move_speed := 0.0
 var _natural := {}
 ## Aiming with a knife, hatchet or grenade: the combat stance when standing.
 const GUARD_ANIMS := {"idle": "combat/guard"}
-const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit"}
+const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit", "roll": "combat/roll"}
+const STATE_SPEED := {"reload": 2.0, "combat/roll": Player.ROLL_PLAYBACK}
 var _one_shot := false
 var _held := ""   # one-shot clip finished and holding its last pose (knocked down)
 var _cancel_at := -1.0   # a combat clip may give way to movement after this point
@@ -337,7 +338,7 @@ func play(state: String, aiming: bool) -> void:
 	if _anim and anim in STATE_CLIPS.values():
 		if _current != anim and _held != anim:
 			_anim.speed_scale = 1.0
-			_anim.play(anim, 0.15, 2.0 if anim == "reload" else 1.0)
+			_anim.play(anim, 0.08 if anim == "combat/roll" else 0.15, STATE_SPEED.get(anim, 1.0))
 			_current = anim
 			_held = anim if anim == "knockdown" else ""
 		return
