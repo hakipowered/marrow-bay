@@ -53,8 +53,7 @@ static func regions(model: CharacterModel) -> Array:
 	var out := []
 	for rg in model._regions:
 		var def: Dictionary = rg["def"]
-		var rest := model._skel.get_bone_global_rest(rg["bone"])
-		out.append({"c": rest * rg["local"], "r": def["r"], "fwd": (rest.basis * rg["fwd_local"]).normalized(),
+		out.append({"c": def["c"], "r": def["r"], "fwd": rg["fwd"], "axis": def.get("axis", Vector3.ZERO),
 			"mask": def["mask"], "inflate": model._region_inflate(def), "chest": def["slider"] == "chest",
 			"group": def.get("group", 0)})
 	return out
@@ -81,7 +80,8 @@ static func shaped(v: Vector3, regs: Array, chest: float) -> Vector3:
 		w *= share
 		var f := (rel + Vector3.ONE * 1e-4).normalized().dot(g["fwd"])
 		var m := lerpf(1.0, smoothstep(-0.25, 0.35, f), g["mask"])
-		var grow: Vector3 = rel.lerp(g["fwd"] * rel.length(), 0.35 * g["mask"])
+		var out_dir: Vector3 = rel - g["axis"] * rel.dot(g["axis"])
+		var grow: Vector3 = out_dir.lerp(g["fwd"] * out_dir.length(), 0.35 * g["mask"])
 		add += grow * (chest if g["chest"] else g["inflate"]) * m * w
 	return v + add
 

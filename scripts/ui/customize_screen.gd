@@ -1,10 +1,11 @@
 class_name CustomizeScreen
 extends Control
-## Outfit and body screen: a lit, turning 3D preview of the survivor on the
-## left (drag to spin it, pinch or the view buttons to zoom from the whole
-## body to the face, pose buttons to see them stand, walk or run), outfits
-## grouped as Classic and Hot on the right, then the body sliders. Every
-## change shows on the model straight away.
+## Outfit and body screen: a lit 3D preview of the survivor on the left
+## (drag to turn it, pinch or the view buttons to zoom from the whole body to
+## the face, pose buttons to hold them still or see them stand, walk or run,
+## Turn to let it spin by itself), outfits grouped as Classic and Hot on the
+## right, then the body sliders. Every change shows on the model straight
+## away. It opens still and facing front, so slider changes can be judged.
 
 signal finished(custom: Dictionary)
 
@@ -12,15 +13,16 @@ const SLIDERS := ["height", "shoulders", "chest", "waist", "hips", "legs", "musc
 const TAGS := {"classic": "CLASSIC", "hot": "HOT"}
 ## Preview camera views: label and zoom (0 whole body .. 1 face).
 const VIEWS := {"full": ["Full body", 0.0], "upper": ["Waist up", 0.5], "face": ["Face", 1.0]}
-## Preview poses: model state -> label.
-const POSES := {"idle": "Stand", "walk": "Walk", "run": "Run"}
+## Preview poses: model state -> label. "still" holds the standing clip's
+## first moment.
+const POSES := {"still": "Still", "idle": "Stand", "walk": "Walk", "run": "Run"}
 ## Top of the head at height slider 0.5, in metres.
 const HEIGHTS := {"zegan": 1.83, "obcera": 1.76}
 
 var character := "zegan"
 var custom: Dictionary = {}
-## Turn slowly when nobody is dragging the preview.
-var spin := true
+## Turn slowly when nobody is dragging the preview (the Turn button).
+var spin := false
 
 var _model: CharacterModel
 var _turntable: Node3D
@@ -28,8 +30,9 @@ var _yaw := 0.0
 var _cam: Camera3D
 var _zoom := 0.0
 var _zoom_target := 0.0
-var _pose := "idle"
+var _pose := "still"
 var _pose_buttons := {}
+var _spin_button: Button
 var _view_buttons := {}
 var _touches := {}
 var _pinch := 0.0
@@ -158,6 +161,11 @@ func _build_preview() -> Control:
 	var top := _overlay_row(stage, true)
 	for p in POSES:
 		_pose_buttons[p] = _overlay_button(top, POSES[p], func(): _set_pose(p))
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(18, 0)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(gap)
+	_spin_button = _overlay_button(top, "Turn", func(): set_spin(not spin))
 	var bottom := _overlay_row(stage, false)
 	for v in VIEWS:
 		_view_buttons[v] = _overlay_button(bottom, VIEWS[v][0], func(): _set_view(v))
@@ -170,7 +178,8 @@ func _build_preview() -> Control:
 	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bottom.add_child(hint)
 	bottom.move_child(hint, 0)
-	_set_pose("idle")
+	_set_pose("still")
+	set_spin(spin)
 	_set_view("full")
 	_zoom = _zoom_target
 	return frame
@@ -196,7 +205,7 @@ func _overlay_button(row: HBoxContainer, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.toggle_mode = true
-	b.custom_minimum_size = Vector2(150, 76)
+	b.custom_minimum_size = Vector2(132, 76)
 	b.add_theme_font_size_override("font_size", 26)
 	b.pressed.connect(cb)
 	row.add_child(b)
@@ -206,6 +215,13 @@ func _set_pose(p: String) -> void:
 	_pose = p
 	for k in _pose_buttons:
 		_pose_buttons[k].set_pressed_no_signal(k == p)
+
+## Lets the preview turn by itself, or holds it where it was dragged to.
+func set_spin(on: bool) -> void:
+	spin = on
+	_idle_spin = 0.0
+	if _spin_button:
+		_spin_button.set_pressed_no_signal(on)
 
 func _set_view(v: String) -> void:
 	_zoom_target = VIEWS[v][1]
@@ -276,7 +292,10 @@ func _process(delta: float) -> void:
 	elif spin:
 		_yaw += delta * 0.35
 	if _model:
-		_model.play(_pose, false)
+		if _pose == "still":
+			_model.hold_still("idle")
+		else:
+			_model.play(_pose, false)
 		_follow_body(delta)
 	if _turntable:
 		_turntable.rotation.y = _yaw - _body_turn
