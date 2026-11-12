@@ -119,7 +119,8 @@ func _build_hitboxes(h: float) -> void:
 func _physics_process(delta: float) -> void:
 	model.animate(state, velocity.length(), crippled, head_gone)
 	_groan_t -= delta
-	if _groan_t <= 0 and state not in [S.DEAD, S.PLAY_DEAD, S.HIDDEN]:
+	# Only the host voices groans; the RPC plays them on every phone.
+	if _groan_t <= 0 and is_multiplayer_authority() and state not in [S.DEAD, S.PLAY_DEAD, S.HIDDEN]:
 		_groan_t = _rng.randf_range(3.5, 9.0) if state != S.CHASE else _rng.randf_range(1.8, 4.0)
 		_groan.rpc(_sound_id("chase" if state == S.CHASE else "idle"))
 	if not multiplayer.is_server() or state == S.DEAD:
