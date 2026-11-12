@@ -177,9 +177,16 @@ func apply_customization(c: Dictionary) -> void:
 
 ## Keeps the soles where they would be without the Legs slider: the thigh's
 ## scale carries the shin and foot with it, so longer legs would push the
-## feet through the floor. Worked out on the current pose every frame (bent
-## knees lengthen less than straight ones) from a point under each ankle.
-func _update_lift() -> void:
+## feet through the floor. Measured on the current pose from a point under
+## each ankle, but only followed while a foot is down and then smoothly:
+## snapping to it every frame made the whole body bob up and down as the
+## knees bent and the lower foot changed sides (up to 5 cm on top of the
+## clip's own bounce at full Legs). A slider change, and the first frames
+## of a new body while its clip takes hold, snap straight to it.
+var _lift := 0.0
+var _lift_snaps := 0
+
+func _update_lift(delta := 0.0) -> void:
 	if _sole_local.is_empty():
 		var chain := Transform3D()
 		var n: Node = _skel
@@ -206,8 +213,13 @@ func _update_lift() -> void:
 		var plain := thigh * Transform3D(undo, Vector3.ZERO) * thigh.affine_inverse() * sole
 		low_scaled = minf(low_scaled, (_to_model * sole).y)
 		low_plain = minf(low_plain, (_to_model * plain).y)
-	var lift := low_plain - low_scaled if low_scaled < INF else 0.0
-	_model.position.y = lift - float(Outfits.info(character, outfit).get("sole", 0.0))
+	var need := low_plain - low_scaled if low_scaled < INF else 0.0
+	if delta <= 0.0 or _lift_snaps > 0:
+		_lift = need
+		_lift_snaps = maxi(_lift_snaps - 1, 0) if delta > 0.0 else 3
+	elif low_plain < 0.05:
+		_lift = lerpf(_lift, need, 1.0 - exp(-delta / 0.3))
+	_model.position.y = _lift - float(Outfits.info(character, outfit).get("sole", 0.0))
 
 ## Where a bone is in the current pose, in this node's space, or null when
 ## the model has no skeleton or no such bone.
@@ -661,7 +673,7 @@ func _process(delta: float) -> void:
 	if _body_mat and delta > 0.0:
 		_update_regions(minf(delta, 0.05))
 	if _skel and _model and not is_equal_approx(_slider("legs"), 0.0):
-		_update_lift()
+		_update_lift(delta)
 
 ## How far a region grows for the current sliders. Above the middle a region
 ## with a "max" heads for it, so the top of the slider is the same size on
