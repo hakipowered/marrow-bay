@@ -13,7 +13,7 @@ signal died
 
 const WALK_SPEED := 2.4
 const RUN_SPEED := 4.6
-const AIM_SPEED := 1.3
+const AIM_SPEED := 2.0   # walking while aiming (and shooting) still keeps pace
 const GRAVITY := 18.0
 const SHOULDER_OFFSET := Vector3(0.55, 1.55, 0.0)
 const CAM_DIST := 2.4
@@ -69,14 +69,19 @@ var muzzle: Node3D
 var interact_ray: RayCast3D
 var held: HeldWeapon
 
-## Knife combo and hatchet chop: [clip, speed, seconds until the blade lands].
+## Knife combo and hatchet chop: [clip, playback speed, clip time when the
+## blade meets the target]. The contact times are where the hand sweeps
+## through the front of the body at full speed (traced from the clips), so the
+## hit, the blood and the sound land on the frame the blade does.
 const MELEE_MOVES := {
-	"knife": [["slash", 1.6, 0.36], ["slash_back", 1.6, 0.41], ["thrust", 1.5, 0.37]],
-	"hatchet": [["chop", 1.25, 0.8]],
+	"knife": [["slash", 1.6, 0.46], ["slash_back", 1.6, 0.46], ["thrust", 1.5, 0.19]],
+	"hatchet": [["chop", 1.25, 1.0]],
 }
 const THROW_SPEED := 1.3
 const THROW_RELEASE := 0.74   # seconds into the throw clip at that speed
 var _swing_t := -1.0      # until the current swing lands
+var _hip_t := 0.0         # gun raised from the hip after FIRE without AIM
+const HIP_HOLD := 0.7     # how long the gun stays up after a hip shot
 var _throw_t := -1.0      # until the grenade leaves the hand
 var _attack_lock := 0.0   # feet planted while swinging or throwing
 var _combo := 0
@@ -247,6 +252,9 @@ func _physics_process(delta: float) -> void:
 	var basis_y := Basis(Vector3.UP, yaw)
 	var dir := basis_y * Vector3(move_input.x, 0, move_input.y)
 	var speed := AIM_SPEED if aiming else (RUN_SPEED if running else WALK_SPEED)
+	_hip_t = maxf(_hip_t - delta, 0.0)
+	if _hip_t > 0.0:
+		speed = minf(speed, WALK_SPEED)   # no sprinting with the gun up
 	if slowed_for > 0:
 		speed *= 0.4
 	if _attack_lock > 0.0:
@@ -262,18 +270,19 @@ func _physics_process(delta: float) -> void:
 
 	if _attack_lock > 0.0:
 		body.rotation.y = lerp_angle(body.rotation.y, _face_yaw, 22 * delta)
-	elif aiming or fire_held:
+	elif aiming or fire_held or _hip_t > 0.0:
 		body.rotation.y = lerp_angle(body.rotation.y, yaw, 18 * delta)
 	elif dir.length() > 0.1:
 		body.rotation.y = lerp_angle(body.rotation.y, atan2(-dir.x, -dir.z), 10 * delta)
 
 	sync_yaw = body.rotation.y
 	sync_pitch = pitch
-	sync_aiming = aiming
-	sync_anim = "run" if (running and dir.length() > 0.1) else ("walk" if dir.length() > 0.1 else "idle")
+	var raised := aiming or _hip_t > 0.0
+	sync_aiming = raised
+	sync_anim = "run" if (running and _hip_t <= 0.0 and dir.length() > 0.1) else ("walk" if dir.length() > 0.1 else "idle")
 	if _reloading > 0.0 and dir.length() <= 0.1:
 		sync_anim = "reload"
-	model.play(sync_anim, aiming)
+	model.play(sync_anim, raised)
 
 	_tick_weapon(delta)
 	_update_focus()
@@ -408,7 +417,12 @@ func _tick_weapon(delta: float) -> void:
 	if w.is_empty():
 		return
 	var melee: bool = w["kind"] == "melee"
-	var wants: bool = fire_held and (aiming or melee)
+	# Without AIM a gun fires from the hip: the gun comes up, she turns to
+	# where the camera looks, and the shot goes once she faces it.
+	if fire_held and not aiming and not melee:
+		_hip_t = HIP_HOLD
+	var facing: bool = aiming or melee or absf(angle_difference(body.rotation.y, yaw)) < deg_to_rad(20.0)
+	var wants: bool = fire_held and facing
 	if _burst_left > 0 and _cooldown <= 0:
 		_fire_once(w)
 		_burst_left -= 1
@@ -449,6 +463,8 @@ func _fire_once(w: Dictionary) -> void:
 	_emit_ammo()
 	var origin := camera.global_position
 	var aim_dir := -camera.global_transform.basis.z
+	if not aiming:
+		aim_dir = _hip_assist(origin, aim_dir)
 	var shots := []
 	var pellets: int = w.get("pellets", 1)
 	for i in pellets:
@@ -460,6 +476,25 @@ func _fire_once(w: Dictionary) -> void:
 	held.fired(_recoil(w))
 	Combat.fire(self, inventory.equipped, origin, shots, from)
 	_rpc_action.rpc("shot", inventory.equipped, 1.0)
+
+## Hip-fire on a phone: a shot within a few degrees of an infected's body
+## bends onto it, so firing without aiming still lands. Aimed shots go
+## exactly where the dot is.
+func _hip_assist(origin: Vector3, dir: Vector3) -> Vector3:
+	var best := dir
+	var best_ang := deg_to_rad(7.0)
+	for z in get_tree().get_nodes_in_group("zombies"):
+		if not (z is Node3D) or z.get("state") in [Zombie.S.DEAD, Zombie.S.HIDDEN, Zombie.S.PLAY_DEAD]:
+			continue
+		var chest: Vector3 = z.global_position + Vector3.UP * (0.35 if z.get("crippled") else 1.2)
+		var to := chest - origin
+		if to.length() > 22.0:
+			continue
+		var ang := dir.angle_to(to)
+		if ang < best_ang:
+			best_ang = ang
+			best = to.normalized()
+	return best
 
 ## Where shots leave: the gun's muzzle when one is in hand.
 func _muzzle_pos() -> Vector3:
@@ -482,11 +517,12 @@ func _start_swing(w: Dictionary) -> void:
 	_combo += 1
 	_lock_target = _melee_target(float(w.get("range", 1.8)) + 1.4)
 	_face_toward(_lock_target)
-	model.play_combat(m[0], m[1], (m[2] + 0.14) * m[1])
-	_swing_t = m[2]
-	_attack_lock = m[2] + 0.14
-	_combo_window = m[2] + 0.6
-	_cooldown = maxf(float(w["rate"]), m[2] + 0.08)
+	var lands: float = m[2] / m[1]   # seconds from now
+	model.play_combat(m[0], m[1], m[2] + 0.14 * m[1])
+	_swing_t = lands
+	_attack_lock = lands + 0.14
+	_combo_window = lands + 0.6
+	_cooldown = maxf(float(w["rate"]), lands + 0.08)
 	Combat.play_shot_sound(inventory.equipped, global_position + Vector3.UP * 1.3)
 	_rpc_action.rpc("swing", m[0], m[1])
 
@@ -686,16 +722,53 @@ func use_item(id: String) -> bool:
 
 # ---------- Interaction ----------
 
+## What she can use right now: an item at her feet first (items lie on the
+## floor, under the chest-high reach ray that finds doors), else whatever
+## that ray meets.
 func _update_focus() -> void:
-	var hit: Object = interact_ray.get_collider() if interact_ray.is_colliding() else null
-	var target: Node = null
-	if hit and hit.has_method("interact_text"):
-		target = hit
-	elif hit and hit.get_parent() and hit.get_parent().has_method("interact_text"):
-		target = hit.get_parent()
+	var target: Node = _nearest_pickup()
+	if target == null:
+		var hit: Object = interact_ray.get_collider() if interact_ray.is_colliding() else null
+		if hit and hit.has_method("interact_text"):
+			target = hit
+		elif hit and hit.get_parent() and hit.get_parent().has_method("interact_text"):
+			target = hit.get_parent()
 	if target != _focus:
 		_focus = target
 		interact_prompt.emit(_focus.interact_text(self) if _focus else "")
+
+const PICKUP_REACH := 1.5
+
+## Closest item within reach, roughly in front (or right underfoot), on this
+## floor and not behind a wall.
+func _nearest_pickup() -> Node:
+	var fwd := -body.global_transform.basis.z
+	var eye := global_position + Vector3.UP * 1.0
+	var space := get_world_3d().direct_space_state
+	var best: Node = null
+	var best_score := INF
+	for p in get_tree().get_nodes_in_group("pickups"):
+		if not (p is Node3D) or p.get("_taken"):
+			continue
+		var to: Vector3 = p.global_position - global_position
+		if to.y < -0.6 or to.y > 1.8:
+			continue
+		to.y = 0.0
+		var d := to.length()
+		if d > PICKUP_REACH:
+			continue
+		var ang := fwd.angle_to(to / d) if d > 0.05 else 0.0
+		if d > 0.7 and ang > deg_to_rad(100.0):
+			continue
+		var score := d + ang * 0.4
+		if score >= best_score:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(eye, p.global_position + Vector3.UP * 0.15, 1, [get_rid()])
+		if not space.intersect_ray(q).is_empty():
+			continue
+		best_score = score
+		best = p
+	return best
 
 func interact() -> void:
 	if pinned:
