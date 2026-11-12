@@ -2,7 +2,9 @@ extends Node
 ## Game music. One track plays at a time and changes with a crossfade.
 ## Each track loops by fading into its own start a few seconds before the end,
 ## so there is never a gap. In game the track is chosen by priority:
-## boss fight > action (a pack of infected or the Tallyman on you) > safe room > none.
+## boss fight > action (a big fight: a brute, a crowd, the Tallyman on you) > safe room > none.
+## Ordinary infected get no music, only the ambience and a low string bed
+## (HorrorDirector): a couple of shamblers aren't a battle.
 ## With no track, only the HorrorDirector's ambience plays.
 
 const DIR := "res://assets/audio/music/%s.ogg"
@@ -12,8 +14,8 @@ const LOOP_OVERLAP := 4.0
 const BOSS_THEMES := {"brood_mother": "boss_1"}
 ## Action music starts at this threat score and stops after it has stayed
 ## below ACTION_OFF for ACTION_HOLD seconds.
-const ACTION_ON := 3.0
-const ACTION_OFF := 1.5
+const ACTION_ON := 6.0
+const ACTION_OFF := 3.0
 const ACTION_HOLD := 9.0
 
 var in_game := false

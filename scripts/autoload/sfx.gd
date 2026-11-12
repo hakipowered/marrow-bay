@@ -52,6 +52,36 @@ func attach(id: String, parent: Node3D, volume_db := 0.0, unit := 8.0) -> AudioS
 	a.finished.connect(a.queue_free)
 	return a
 
+## A creature's voice, carried on it: full only up close (unit metres), it
+## fades with distance and is gone by max_dist, and it comes through a wall
+## or a door muffled and quieter. Groans from across the level used to sound
+## as if they were in the player's ear.
+func voice(id: String, parent: Node3D, volume_db := 0.0, unit := 3.0, max_dist := 26.0) -> AudioStreamPlayer3D:
+	var v := _variants(id)
+	if v.is_empty() or not parent.is_inside_tree():
+		return null
+	var ear := parent.get_viewport().get_camera_3d()
+	var mouth := parent.global_position + Vector3.UP * 1.4
+	if ear and ear.global_position.distance_to(mouth) > max_dist:
+		return null   # out of earshot: don't spend a voice on it
+	var a := AudioStreamPlayer3D.new()
+	a.stream = v.pick_random()
+	a.volume_db = volume_db
+	a.unit_size = unit
+	a.max_distance = max_dist
+	a.pitch_scale = randf_range(0.9, 1.1)
+	a.bus = "SFX"
+	if ear:
+		var q := PhysicsRayQueryParameters3D.create(ear.global_position, mouth, 1)
+		if not parent.get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			a.volume_db -= 8.0
+			a.attenuation_filter_cutoff_hz = 900.0
+	parent.add_child(a)
+	a.position = Vector3.UP * 1.4
+	a.play()
+	a.finished.connect(a.queue_free)
+	return a
+
 ## Interface sounds (bag open, select, combine). Not positional, and they
 ## play while the game is paused.
 func ui(id: String, volume_db := -6.0) -> void:

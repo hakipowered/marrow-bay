@@ -41,6 +41,17 @@ var _shield_hp := 0.0     # riot shield: cracks under fire, then breaks off
 ## Meshy punch clip: the arms are fully out at 1.5 s of clip time.
 const ATTACK_STRIKE := 1.5
 const POISE := 1.4
+## After a blow lands on a survivor, no infected can land another on her for
+## this long (milliseconds), so a crowd, or one zombie with her back to a
+## wall, can't chain hits into a stun lock. Kept on the host, which runs
+## every strike.
+const GRACE_MS := 1300
+## The one who landed the blow steps back from her, so a survivor pinned
+## against a wall or a crate gets room to move.
+var _recoil_t := 0.0
+## Voices: a groan, then a pause before the next. Across the whole horde only
+## one groan starts at a time, so a crowd murmurs instead of droning.
+static var _last_groan_ms := 0
 var agent: NavigationAgent3D
 var model: ZombieModel
 var _hitboxes: Array = []
@@ -132,10 +143,18 @@ func _build_hitboxes(h: float) -> void:
 func _physics_process(delta: float) -> void:
 	model.animate(state, velocity.length(), crippled, head_gone)
 	_groan_t -= delta
-	# Only the host voices groans; the RPC plays them on every phone.
-	if _groan_t <= 0 and is_multiplayer_authority() and state not in [S.DEAD, S.PLAY_DEAD, S.HIDDEN]:
-		_groan_t = _rng.randf_range(3.5, 9.0) if state != S.CHASE else _rng.randf_range(1.8, 4.0)
-		_groan.rpc(_sound_id("chase" if state == S.CHASE else "idle"))
+	# Only the host voices groans; the RPC plays them on every phone. Each
+	# one is followed by a pause, and only one of the horde starts at a time.
+	if _groan_t <= 0 and is_multiplayer_authority() and state not in [S.DEAD, S.PLAY_DEAD, S.HIDDEN, S.ATTACK]:
+		var now := Time.get_ticks_msec()
+		var p := _nearest_player()
+		var near := p != null and global_position.distance_to(p.global_position) < 22.0
+		if not near or now - _last_groan_ms < (1600 if state == S.CHASE else 2800):
+			_groan_t = _rng.randf_range(0.8, 2.0)   # someone else is talking, or nobody to hear
+		else:
+			_last_groan_ms = now
+			_groan_t = _rng.randf_range(4.5, 9.0) if state == S.CHASE else _rng.randf_range(8.0, 16.0)
+			_groan.rpc(_sound_id("chase" if state == S.CHASE else "idle"))
 	if not multiplayer.is_server() or state == S.DEAD:
 		return
 	_attack_cd -= delta
@@ -176,7 +195,8 @@ func _physics_process(delta: float) -> void:
 			_charge_t -= delta
 			velocity = _charge_dir * 5.4
 			for p in get_tree().get_nodes_in_group("players"):
-				if p.global_position.distance_to(global_position) < 1.3:
+				if p.global_position.distance_to(global_position) < 1.3 and _clear_line(p) and _can_strike(p):
+					_mark_struck(p)
 					_rpc_hurt_player.rpc(p.get_path(), data["dmg"] * 1.3)
 					_charge_t = 0
 			if _charge_t <= 0 or get_slide_collision_count() > 0:
@@ -205,12 +225,12 @@ func _chase(delta: float, speed_mult: float) -> void:
 	if data.get("screams") and _special_cd <= 0 and dist < 12.0:
 		_special_cd = 14.0
 		_scream()
-	if data.has("ranged") and dist < data["range"] and dist > 3.0 and _special_cd <= 0:
+	if data.has("ranged") and dist < data["range"] and dist > 3.0 and _special_cd <= 0 and _clear_line(target):
 		_special_cd = 3.5
 		_spit.rpc(target.global_position + Vector3.UP)
 		velocity = Vector3.ZERO
 		return
-	if data.get("charge") and dist > 4.0 and dist < 12.0 and _special_cd <= 0:
+	if data.get("charge") and dist > 4.0 and dist < 12.0 and _special_cd <= 0 and _clear_line(target):
 		_special_cd = 8.0
 		_charge_dir = (target.global_position - global_position) * Vector3(1, 0, 1)
 		_charge_dir = _charge_dir.normalized()
@@ -219,7 +239,9 @@ func _chase(delta: float, speed_mult: float) -> void:
 		_groan.rpc("brute_roar")
 		return
 	var reach: float = data["reach"] * (0.8 if crippled and not data.get("crawl") else 1.0)
-	if dist < reach and _attack_cd <= 0 and _flinch_t <= 0:
+	# Only swings at someone it can actually reach: not through a wall, a
+	# door or a shelf (it keeps walking round instead).
+	if dist < reach and _attack_cd <= 0 and _flinch_t <= 0 and _clear_line(target):
 		_begin_attack()
 		return
 	var spd: float = (0.35 if crippled and not data.get("crawl") else data["speed"]) * speed_mult * _speed_f
@@ -354,6 +376,11 @@ func _tick_attack(delta: float) -> void:
 	velocity.z = 0.0
 	_attack_t += delta
 	if _struck:
+		if _recoil_t > 0.0:
+			_recoil_t -= delta
+			var back := global_transform.basis.z
+			velocity.x = back.x * 1.8
+			velocity.z = back.z * 1.8
 		if _attack_t >= _atk["windup"] + _atk["recover"]:
 			state = S.CRAWL if crippled else S.CHASE
 		return
@@ -378,11 +405,13 @@ func _strike() -> void:
 		var to := target.global_position - global_position
 		to.y = 0.0
 		var in_front := to.length() < 0.5 or (-global_transform.basis.z).dot(to.normalized()) > 0.3
-		if to.length() < data["reach"] + 0.35 and in_front:
+		if to.length() < data["reach"] + 0.35 and in_front and _clear_line(target) and _can_strike(target):
 			hit = target
 	_rpc_swipe.rpc()
 	if hit == null:
 		return
+	_mark_struck(hit)
+	_recoil_t = 0.35
 	if data.get("pins") and not hit.pinned:
 		_pinned = hit
 		state = S.PINNING
@@ -394,11 +423,29 @@ func _strike() -> void:
 	if data.get("ankle_grab"):
 		_slow_player.rpc(hit.get_path(), 1.5)
 
+## Nothing solid between this one and the survivor: a wall, a door, a
+## shelf. Two lines, at the knees and the chest, so a counter or a low crate
+## doesn't stop a swing over it, and a crawler still reaches her legs.
+func _clear_line(to: Node3D) -> bool:
+	var space := get_world_3d().direct_space_state
+	for h in [0.5, 1.3]:
+		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * h, to.global_position + Vector3.UP * h, 1)
+		q.exclude = [get_rid()]
+		if space.intersect_ray(q).is_empty():
+			return true
+	return false
+
+func _can_strike(p: Node) -> bool:
+	return Time.get_ticks_msec() - int(p.get_meta("struck_ms", -100000)) >= GRACE_MS and not p.get("dodging")
+
+func _mark_struck(p: Node) -> void:
+	p.set_meta("struck_ms", Time.get_ticks_msec())
+
 @rpc("authority", "unreliable", "call_local")
 func _rpc_swipe() -> void:
 	if data.get("quadruped"):
 		return   # the snap is in its attack snarl
-	Sfx.play_at("brute_slam" if variant == "brute" else "zombie_swipe", global_position + Vector3.UP * 1.2 - global_transform.basis.z * 0.5, "", 0.0, 7.0)
+	Sfx.play_at("brute_slam" if variant == "brute" else "zombie_swipe", global_position + Vector3.UP * 1.2 - global_transform.basis.z * 0.5, "", 0.0, 3.5)
 
 @rpc("authority", "reliable", "call_local")
 func _set_pinned(path: NodePath, on: bool) -> void:
@@ -540,7 +587,8 @@ func _rpc_scream() -> void:
 func _rpc_die() -> void:
 	state = S.DEAD
 	model.die(head_gone)
-	Sfx.play_at(_sound_id("death"), global_position, "zombie_death", 0.0, 9.0)
+	if Sfx.voice(_sound_id("death"), self, 0.0, 3.0, 26.0) == null:
+		Sfx.voice("zombie_death", self, 0.0, 3.0, 26.0)
 	if data.get("death_gas"):
 		Sfx.play_at("bloater_burst", global_position, "", 6.0, 12.0)
 
@@ -568,4 +616,4 @@ func _shield_break() -> void:
 
 @rpc("authority", "unreliable", "call_local")
 func _groan(kind: String) -> void:
-	Sfx.attach(kind, self, 3.0 if kind.ends_with("alert") or kind.ends_with("attack") else 0.0, 7.0)
+	Sfx.voice(kind, self, 3.0 if kind.ends_with("alert") or kind.ends_with("attack") else 0.0, 3.5 if kind.ends_with("alert") or kind.ends_with("attack") else 2.5, 30.0 if variant == "brute" else 24.0)
