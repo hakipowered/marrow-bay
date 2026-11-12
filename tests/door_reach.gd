@@ -21,6 +21,10 @@ func _process(_d: float) -> bool:
 		return false
 	if frames == 60:
 		p = get_first_node_in_group("players")
+		# Story beats fire when she walks into their boxes (the frosted pane
+		# is right by the reading room door) and would move her mid-check.
+		for beat in ["intro", "gates", "warden", "glass"]:
+			root.get_node("GameState").set_flag("story_" + beat)
 		for zz in get_nodes_in_group("zombies"):
 			zz.queue_free()
 		for d in get_nodes_in_group("doors"):

@@ -5,12 +5,22 @@ class_name RoomBuilder
 ##   id, pos: Vector3 (floor corner), size: Vector3 (w, h, d),
 ##   floor, wall, ceiling: texture slots, wainscot: slot or "",
 ##   look: {tint, grime_amount, stain_amount, wetness, ...} (surface shader params),
-##   openings: {"n": [[offset, width, height]], "s": [...], "e": [...], "w": [...]},
+##   openings: {"n": [[offset, width, height, {frame}]], "s": [...], "e": [...], "w": [...]},
 ##   outdoor: bool (no ceiling), trim: Color,
 ##   windows: {"n": [[offset, width, sill, top, {boards, moon, frame}]]} (moonlit, optional planks),
+##   skip_walls: ["e"] (a neighbour's wall stands there), wall_range: {"e": [from, to]} (only that
+##   stretch of the side gets a wall), wall_inset: {"s": 0.25} (see below),
 ##   pilasters: {sides, spacing, width, depth, slot}, beams: {axis "x"|"z"|"both", spacing, depth, width, slot},
 ##   decals: {"blood": n, "stain": n, "scorch": n, "wall_blood": n}, papers: n, probe: bool
 ## }
+##
+## Two rooms must never both build a wall in the same place: the renderer
+## can't tell which is in front and the two textures flicker through each
+## other in big triangles. Either one room skips that side, or one insets its
+## wall (wall_inset = WALL_T) so it stands flush against the neighbour's,
+## back to back. A doorway or window through such a double wall gets one
+## frame from the inset room, deep enough to line both walls; the neighbour
+## leaves its own out ({"frame": false}). tests/wall_overlap.gd checks this.
 
 const WALL_T := 0.25
 
@@ -49,10 +59,12 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 		# neighbour's wall without the two fighting over the same pixels.
 		var origin: Vector3 = sides[side][0] + _inward(side) * r.get("wall_inset", {}).get(side, 0.0)
 		var axis: Vector3 = sides[side][1]
-		var length: float = sides[side][2]
+		var span: Array = r.get("wall_range", {}).get(side, [0.0, sides[side][2]])
+		var length: float = span[1]
 		var ops: Array = []
 		for op in openings.get(side, []):
-			ops.append({"at": op[0], "w": op[1], "h": op[2] if op.size() > 2 else 2.3, "window": false})
+			var o: Dictionary = op[3] if op.size() > 3 else {}
+			ops.append({"at": op[0], "w": op[1], "h": op[2] if op.size() > 2 else 2.3, "window": false, "frame": o.get("frame", true)})
 		# Windows that overlap along the wall form one column (one pane per
 		# storey, each with its own width): a narrow ground-floor window under
 		# a wide upper one shares the gap in the wall instead of the wall
@@ -76,7 +88,7 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 			c["panes"].sort_custom(func(a, b): return a[0] < b[0])
 			ops.append(c)
 		ops.sort_custom(func(a, b): return a["at"] < b["at"])
-		var cursor := 0.0
+		var cursor: float = span[0]
 		for op in ops:
 			var at: float = op["at"]
 			var w: float = op["w"]
@@ -95,15 +107,17 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 				_wall_run(root, r, origin, axis, at, at + w, y, size.y, wall_mat, base, side)
 			else:
 				_wall_run(root, r, origin, axis, at, at + w, op["h"], size.y, wall_mat, base, side)  # lintel
-				_door_frame(root, r, origin, axis, at, w, op["h"], side)
+				if op["frame"]:
+					_door_frame(root, r, origin, axis, at, w, op["h"], side)
 			cursor = at + w
 		_wall_run(root, r, origin, axis, cursor, length, 0.0, size.y, wall_mat, base, side)
 		if not r.get("outdoor", false):
 			# One continuous crown moulding per wall, also over windows and doors.
 			var inward := _inward(side)
 			var trim_col: Color = r.get("trim", Color(0.12, 0.08, 0.06))
-			var c := origin + axis * (length / 2) + inward * (WALL_T / 2 + 0.05) + Vector3(0, size.y - 0.1, 0)
-			_box(root, c, Vector3(length if axis.x != 0 else 0.1, 0.2, length if axis.z != 0 else 0.1), Mats.trim(trim_col.lightened(0.6), 0.6), false)
+			var run: float = span[1] - span[0]
+			var c: Vector3 = origin + axis * ((span[0] + span[1]) / 2) + inward * (WALL_T / 2 + 0.05) + Vector3(0, size.y - 0.1, 0)
+			_box(root, c, Vector3(run if axis.x != 0 else 0.1, 0.2, run if axis.z != 0 else 0.1), Mats.trim(trim_col.lightened(0.6), 0.6), false)
 	_dress(root, r, size, base)
 	return root
 
@@ -128,18 +142,23 @@ static func _window(root: Node3D, r: Dictionary, origin: Vector3, axis: Vector3,
 	var center := origin + axis * (at + w / 2) + Vector3(0, sill + h / 2, 0)
 	var along := func(l: float, hh: float, d: float) -> Vector3:
 		return Vector3(l if axis.x != 0 else d, hh, l if axis.z != 0 else d)
-	var frame_col: Color = opts.get("frame", Color(0.1, 0.07, 0.05))
+	var frame_col: Color = opts.get("frame_color", Color(0.1, 0.07, 0.05))
 	var fm := Mats.trim(frame_col, 0.5)
-	var depth := WALL_T + 0.06
-	# Frame and stone sill.
-	_box(root, center + Vector3(0, -h / 2 - 0.04, 0) + inward * 0.06, along.call(w + 0.3, 0.08, WALL_T + 0.18), Mats.trim(Color(0.42, 0.4, 0.37), 0.7), false)
-	_box(root, center + Vector3(0, h / 2, 0), along.call(w + 0.1, 0.1, depth), fm, false)
-	for e in [-1.0, 1.0]:
-		_box(root, center + axis * (e * w / 2), along.call(0.1, h, depth), fm, false)
-	# Mullions.
-	_box(root, center, along.call(0.05, h, 0.06), fm, false)
-	for k in [1, 2]:
-		_box(root, center + Vector3(0, -h / 2 + h * k / 3.0, 0), along.call(w, 0.05, 0.06), fm, false)
+	# Through a double wall (this room's wall inset against a neighbour's)
+	# the frame and sill line both walls; the neighbour builds none.
+	var inset: float = r.get("wall_inset", {}).get(side, 0.0)
+	var depth := WALL_T + 0.06 + inset
+	var reveal := -inward * (inset / 2)
+	if opts.get("frame", true):
+		# Frame and stone sill.
+		_box(root, center + reveal + Vector3(0, -h / 2 - 0.04, 0) + inward * 0.06, along.call(w + 0.3, 0.08, WALL_T + 0.18 + inset), Mats.trim(Color(0.42, 0.4, 0.37), 0.7), false)
+		_box(root, center + reveal + Vector3(0, h / 2, 0), along.call(w + 0.1, 0.1, depth), fm, false)
+		for e in [-1.0, 1.0]:
+			_box(root, center + reveal + axis * (e * w / 2), along.call(0.1, h, depth), fm, false)
+		# Mullions.
+		_box(root, center, along.call(0.05, h, 0.06), fm, false)
+		for k in [1, 2]:
+			_box(root, center + Vector3(0, -h / 2 + h * k / 3.0, 0), along.call(w, 0.05, 0.06), fm, false)
 	# Glass.
 	var glass := MeshInstance3D.new()
 	var q := QuadMesh.new()
@@ -226,6 +245,7 @@ static func _dress(root: Node3D, r: Dictionary, size: Vector3, base: Dictionary)
 			var origin: Vector3 = {"n": Vector3.ZERO, "s": Vector3(0, 0, size.z), "w": Vector3.ZERO, "e": Vector3(size.x, 0, 0)}[side]
 			var axis := Vector3(1, 0, 0) if side in ["n", "s"] else Vector3(0, 0, 1)
 			var inward := _inward(side)
+			origin += inward * r.get("wall_inset", {}).get(side, 0.0)
 			var blocked: Array = []
 			for op in r.get("openings", {}).get(side, []):
 				blocked.append([op[0] - pw, op[0] + op[1] + pw])
@@ -279,6 +299,7 @@ static func _dress(root: Node3D, r: Dictionary, size: Vector3, base: Dictionary)
 		var inward := _inward(side)
 		var along := rng.randf_range(1.0, (size.x if side in ["n", "s"] else size.z) - 1.0)
 		var p: Vector3 = {"n": Vector3(along, 0, WALL_T / 2), "s": Vector3(along, 0, size.z - WALL_T / 2), "w": Vector3(WALL_T / 2, 0, along), "e": Vector3(size.x - WALL_T / 2, 0, along)}[side]
+		p += inward * r.get("wall_inset", {}).get(side, 0.0)
 		var d := Decal.new()
 		d.texture_albedo = _decal_tex("blood", rng)
 		var s := rng.randf_range(0.7, 1.6)
@@ -363,15 +384,18 @@ static func _wall_run(root: Node3D, r: Dictionary, origin: Vector3, axis: Vector
 		_box(root, center + inward * (WALL_T / 2 + 0.05) + Vector3(0, wh - center.y, 0), thin.call(0.07, 0.07), Mats.trim(trim_col, 0.35), false)
 	_box(root, center + inward * (WALL_T / 2 + 0.03) + Vector3(0, 0.07 - center.y, 0), thin.call(0.14, 0.05), Mats.trim(trim_col, 0.5), false)
 
-static func _door_frame(root: Node3D, r: Dictionary, origin: Vector3, axis: Vector3, at: float, width: float, h: float, _side: String) -> void:
+static func _door_frame(root: Node3D, r: Dictionary, origin: Vector3, axis: Vector3, at: float, width: float, h: float, side: String) -> void:
 	if r.get("outdoor", false):
 		return
 	var col: Color = r.get("trim", Color(0.12, 0.08, 0.06))
-	var depth := WALL_T + 0.08
+	# Through a double wall the frame lines both walls (see the header).
+	var inset: float = r.get("wall_inset", {}).get(side, 0.0)
+	var depth := WALL_T + 0.08 + inset
+	var reveal := -_inward(side) * (inset / 2)
 	for edge in [at, at + width]:
-		var c: Vector3 = origin + axis * edge + Vector3(0, h / 2, 0)
+		var c: Vector3 = origin + reveal + axis * edge + Vector3(0, h / 2, 0)
 		_box(root, c, Vector3(0.1 if axis.x != 0 else depth, h, 0.1 if axis.z != 0 else depth), Mats.trim(col, 0.4), false)
-	var top := origin + axis * (at + width / 2) + Vector3(0, h + 0.05, 0)
+	var top := origin + reveal + axis * (at + width / 2) + Vector3(0, h + 0.05, 0)
 	_box(root, top, Vector3(width + 0.2 if axis.x != 0 else depth, 0.12, width + 0.2 if axis.z != 0 else depth), Mats.trim(col, 0.4), false)
 
 static func _box(root: Node3D, center: Vector3, ext: Vector3, mat: Material, collide: bool) -> void:

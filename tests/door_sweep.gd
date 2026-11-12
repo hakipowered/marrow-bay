@@ -24,6 +24,14 @@ func _process(_d: float) -> bool:
 		_sweep()
 	return false
 
+## Walks her capsule through each opened doorway in 5 cm steps, from 0.85 m
+## on one side to 0.85 m on the other, along the middle and (for doors wider
+## than 1.6 m) near both edges. At each step she stands on whatever floor is
+## under her (so she goes up kerb ramps the way she does in play), and the
+## step fails if there is no floor or her body overlaps anything solid.
+const REACH := 0.85
+const STEP := 0.05
+
 func _sweep() -> void:
 	var fails := []
 	var space: PhysicsDirectSpaceState3D = root.get_world_3d().direct_space_state
@@ -37,19 +45,41 @@ func _sweep() -> void:
 	await physics_frame
 	for d in doors:
 		var n: Vector3 = d.global_transform.basis.z.normalized()
-		var from: Vector3 = d.global_position + Vector3.UP * 0.95 + n * 1.2
-		var q := PhysicsShapeQueryParameters3D.new()
-		q.shape = cap
-		q.collision_mask = 1
-		q.transform = Transform3D(Basis(), from)
-		q.motion = -n * 2.4
-		var r: PackedFloat32Array = space.cast_motion(q)
-		var free_way := r.size() > 0 and r[0] >= 0.999
-		print("  %s (kind %d, %.1f m wide): %s" % [d.name, d.kind, d.width, "clear" if free_way else "BLOCKED at %.0f%% of the way" % (r[0] * 100.0)])
-		if not free_way:
+		var across: Vector3 = d.global_transform.basis.x.normalized()
+		var lanes := [0.0]
+		if d.width > 1.6:
+			lanes = [-(d.width / 2 - 0.45), 0.0, d.width / 2 - 0.45]
+		var verdict := "clear"
+		for lane in lanes:
+			var why := _walk(space, cap, d.global_position + across * lane, n)
+			if why != "":
+				verdict = "BLOCKED %s (%+.1f m from the middle)" % [why, lane]
+				break
+		print("  %s (kind %d, %.1f m wide): %s" % [d.name, d.kind, d.width, verdict])
+		if verdict != "clear":
 			fails.append(str(d.name))
 	if fails.is_empty():
 		print("DOORS OK (%d doors)" % doors.size())
 	else:
 		print("DOORS FAIL: ", fails)
 	quit(0 if fails.is_empty() else 1)
+
+## "" if she gets through, else where and by what she was stopped.
+func _walk(space: PhysicsDirectSpaceState3D, cap: CapsuleShape3D, at: Vector3, n: Vector3) -> String:
+	var steps := int(round(REACH * 2 / STEP))
+	for i in steps + 1:
+		var off := REACH - i * STEP
+		var p := at + n * off
+		var ray := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 0.6, p + Vector3.DOWN * 0.6, 1)
+		var floor_hit := space.intersect_ray(ray)
+		if floor_hit.is_empty():
+			return "no floor at %+.2f m" % off
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = cap
+		q.collision_mask = 1
+		q.transform = Transform3D(Basis(), floor_hit["position"] + Vector3.UP * (0.05 + cap.height / 2))
+		var hits := space.intersect_shape(q, 1)
+		if not hits.is_empty():
+			var c: Object = hits[0]["collider"]
+			return "at %+.2f m by %s" % [off, str(c.get_path()) if c is Node else str(c)]
+	return ""

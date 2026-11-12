@@ -336,8 +336,9 @@ func _great_hall() -> void:
 		"wall_look": {"tile_size": 3.0, "tint": Color(0.78, 0.74, 0.66), "stain_amount": 0.6},
 		"look": {"grime_amount": 0.45},
 		"windows": {"n": [
-			[3.6, 1.8, 1.5, 3.7, {"boards": 3, "moon": 2.2}],
-			[18.6, 1.8, 1.5, 3.7, {"boards": 3, "moon": 2.2}],
+			# The courtyard's wall stands against this one and frames these two.
+			[3.6, 1.8, 1.5, 3.7, {"boards": 3, "moon": 2.2, "frame": false}],
+			[18.6, 1.8, 1.5, 3.7, {"boards": 3, "moon": 2.2, "frame": false}],
 			[2.0, 2.6, 5.6, 8.2, {"moon": 3.5, "reach": 10.0}],
 			[7.2, 2.6, 5.6, 8.2, {"moon": 3.5, "reach": 10.0}],
 			[14.2, 2.6, 5.6, 8.2, {"moon": 3.5, "reach": 10.0}],
@@ -443,10 +444,12 @@ func _west_corridor() -> void:
 		"floor_look": {"tile_size": 1.6},
 		"wall_look": {"tile_size": 2.0, "tint": Color(0.78, 0.82, 0.76), "stain_amount": 0.7},
 		"look": {"grime_amount": 0.7},
-		"openings": {"n": [[8.0, 1.2, 2.3]]},
+		# The reading room's wall stands back to back with the north wall and
+		# frames the doorway and the pane through both (RoomBuilder header).
+		"openings": {"n": [[8.0, 1.2, 2.3, {"frame": false}]]},
 		"skip_walls": ["e"],
 		# Frosted pane into the reading room (Chapter1Story fills it).
-		"windows": {"n": [[4.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0}]]},
+		"windows": {"n": [[4.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0, "frame": false}]]},
 	})
 	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(11.6, 0, 0.4), 0)
 	var tube := RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(4, 3.35, 1.5), 90, 1.0, false)
@@ -465,7 +468,11 @@ func _reading_room() -> void:
 		"floor_look": {"tile_size": 2.0, "roughness_mul": 0.7},
 		"wall_look": {"tile_size": 2.2, "tint": Color(0.75, 0.85, 0.75), "stain_amount": 0.6},
 		"openings": {"s": [[10.0, 1.2, 2.3]]},   # lines up with the corridor's doorway (x -16.0 .. -14.8)
-		"skip_walls": ["e"],
+		# South wall: back to back with the corridor's (one wall in the same
+		# place as another flickers through it). East: the Great Hall's wall
+		# closes z -2 .. 5; this room closes the rest itself.
+		"wall_inset": {"s": RoomBuilder.WALL_T},
+		"wall_range": {"e": [0.0, 5.0]},
 		"windows": {"w": [[2.4, 1.6, 1.3, 3.7, {"moon": 2.6, "boards": 2}], [7.6, 1.6, 1.3, 3.7, {"moon": 2.6}]],
 			"s": [[6.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0}]]},
 		"beams": {"axis": "z", "spacing": 3.0, "slot": "archive_wainscot", "depth": 0.3},
@@ -478,8 +485,8 @@ func _reading_room() -> void:
 		_bookshelf(r, Vector3(13.4, 0, 3.2 + i * 1.6), -90)
 	RoomBuilder.prop(r, "lantern_chandelier_01", Vector3(4.5, 4.5, 6.0), 0, 1.0, false)
 	RoomBuilder.prop(r, "lantern_chandelier_01", Vector3(9.5, 4.5, 6.0), 0, 1.0, false)
-	RoomBuilder.prop(r, "hanging_picture_frame_03", Vector3(5.0, 2.3, 11.84), 180, 1.3, false)
-	RoomBuilder.prop(r, "ornate_mirror_01", Vector3(8.0, 2.2, 11.85), 180, 1.0, false)
+	RoomBuilder.prop(r, "hanging_picture_frame_03", Vector3(5.0, 2.3, 11.59), 180, 1.3, false)
+	RoomBuilder.prop(r, "ornate_mirror_01", Vector3(8.0, 2.2, 11.6), 180, 1.0, false)
 	RoomBuilder.prop(r, "wooden_ladder", Vector3(6.2, 0, 1.2), 10)
 	RoomBuilder.prop(r, "book_encyclopedia_set_01", Vector3(2.2, 0.0, 9.4), 70, 1.0, false)
 	RoomBuilder.prop(r, "book_encyclopedia_set_01", Vector3(2.5, 0.0, 9.0), 120, 1.0, false)
@@ -573,6 +580,7 @@ func _boiler_room() -> void:
 		"wall_look": {"tile_size": 2.0},
 		"look": {"grime_amount": 0.9, "grime_height": 1.4, "wetness": 0.3},
 		"skip_walls": ["w"],
+		"wall_inset": {"n": RoomBuilder.WALL_T},   # back to back with the Great Hall's south wall
 	})
 	RoomBuilder.prop(r, "portable_generator", Vector3(5, 0, 5), 30)
 	RoomBuilder.prop(r, "power_box_01", Vector3(9.8, 1.4, 3), -90, 1.0, false)
