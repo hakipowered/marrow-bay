@@ -443,7 +443,7 @@ func _reading_room() -> void:
 		"trim": Color(0.2, 0.11, 0.06),
 		"floor_look": {"tile_size": 2.0, "roughness_mul": 0.7},
 		"wall_look": {"tile_size": 2.2, "tint": Color(0.75, 0.85, 0.75), "stain_amount": 0.6},
-		"openings": {"s": [[10.6, 1.2, 2.3]]},
+		"openings": {"s": [[10.0, 1.2, 2.3]]},   # lines up with the corridor's doorway (x -16.0 .. -14.8)
 		"skip_walls": ["e"],
 		"windows": {"w": [[2.4, 1.6, 1.3, 3.7, {"moon": 2.6, "boards": 2}], [7.6, 1.6, 1.3, 3.7, {"moon": 2.6}]],
 			"s": [[6.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0}]]},

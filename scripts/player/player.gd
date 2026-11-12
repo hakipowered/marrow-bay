@@ -81,6 +81,10 @@ var camera: Camera3D
 var body: Node3D
 var model: CharacterModel
 var flashlight: SpotLight3D
+## Render layer of the survivor's own meshes: lit and seen as usual, but
+## left out of the chest lamp's shadows.
+const SELF_LAYER := 1 << 10
+var _tag_t := 0.0
 var muzzle: Node3D
 var interact_ray: RayCast3D
 var held: HeldWeapon
@@ -141,14 +145,24 @@ func _ready() -> void:
 	muzzle.position = Vector3(0.22, 1.4, -0.6)
 	body.add_child(muzzle)
 
+	# Chest lamp: a wide soft beam tipped down to light the floor and walls
+	# ahead, following the camera's pitch (see _aim_flashlight). Her own body
+	# and the gun in her hands don't throw shadows into it (they used to
+	# blot out the middle of the beam), and the light falls off gently so a
+	# wall right in front of her isn't a blown-out white disc.
 	flashlight = SpotLight3D.new()
-	flashlight.position = Vector3(0.18, 1.45, -0.2)
-	flashlight.spot_range = 16.0
-	flashlight.spot_angle = 28.0
-	flashlight.light_energy = 2.2
+	flashlight.position = Vector3(0.08, 1.5, -0.32)
+	flashlight.rotation.x = -0.3
+	flashlight.spot_range = 20.0
+	flashlight.spot_angle = 36.0
+	flashlight.spot_attenuation = 0.55
+	flashlight.spot_angle_attenuation = 0.75
+	flashlight.light_energy = 1.7
 	flashlight.light_color = Color(1.0, 0.95, 0.85)
 	flashlight.shadow_enabled = true
+	flashlight.shadow_caster_mask = 0xFFFFF & ~SELF_LAYER
 	body.add_child(flashlight)
+	model.outfit_loaded.connect(func(_o): _tag_self.call_deferred())
 
 	pivot = Node3D.new()
 	pivot.position = Vector3(0, SHOULDER_OFFSET.y, 0)
@@ -176,6 +190,9 @@ func _ready() -> void:
 	interact_ray.target_position = Vector3(0, 0, -2.2)
 	interact_ray.collision_mask = 16
 	interact_ray.collide_with_areas = true
+	# Pressed right up against a door she is inside its interact box; without
+	# this the ray started inside it and found nothing until she stepped back.
+	interact_ray.hit_from_inside = true
 	interact_ray.position.y = 1.1
 	body.add_child(interact_ray)
 
@@ -226,6 +243,7 @@ func _physics_process(delta: float) -> void:
 		_downed_t = _downed_t + delta if downed else 0.0
 		model.move_speed = sync_speed
 		model.play(sync_anim, sync_aiming)
+		_aim_flashlight(delta, sync_pitch)
 		return
 	_sync_inventory(delta)
 	rescue_area.collision_layer = 16 if (downed or pinned) else 0
@@ -332,6 +350,23 @@ func _physics_process(delta: float) -> void:
 
 	_tick_weapon(delta)
 	_update_focus()
+	_aim_flashlight(delta, pitch)
+
+## The lamp tips with the camera: down at the floor when looking down, level
+## when aiming ahead, never straight into the ceiling.
+func _aim_flashlight(delta: float, cam_pitch: float) -> void:
+	var want := clampf(cam_pitch * 0.85 - 0.14, -1.0, 0.35)
+	flashlight.rotation.x = lerp_angle(flashlight.rotation.x, want, minf(12.0 * delta, 1.0))
+	_tag_t -= delta
+	if _tag_t <= 0.0:
+		_tag_t = 1.0
+		_tag_self()
+
+func _tag_self() -> void:
+	if body == null:
+		return
+	for n in body.find_children("*", "GeometryInstance3D", true, false):
+		(n as GeometryInstance3D).layers |= SELF_LAYER
 
 ## Starts a dodge roll (the HUD's ROLL button, Space on a keyboard).
 func roll() -> void:
@@ -444,6 +479,7 @@ func equip(id: String) -> void:
 
 func _show_weapon(id: String) -> void:
 	held.set_weapon(id)
+	_tag_self.call_deferred()
 	model.hold = held.hold if held.hold != "" else "gun"
 	if is_multiplayer_authority():
 		sync_weapon = id

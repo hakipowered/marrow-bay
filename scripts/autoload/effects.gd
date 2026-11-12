@@ -426,6 +426,50 @@ func make_fire(extents := Vector3(0.3, 0.05, 0.3), strength := 1.0, smoke := tru
 		_flickers.append([l, l.light_energy])
 	return root
 
+## A low cloud of sickly yellow-green gas (a bloater bursting): slow,
+## rolling smoke puffs that hug the floor and fill radius metres, thinning
+## at the edges. Call stop() via set_emitting(false) on the returned
+## particles to let it drift away.
+func gas_cloud(radius: float) -> GPUParticles3D:
+	var g := GPUParticles3D.new()
+	g.amount = clampi(int(radius * 9.0), 14, 34)
+	g.lifetime = 3.2
+	g.randomness = 0.35
+	g.preprocess = 1.2   # already billowing when it appears
+	g.draw_pass_1 = _quad(1, 1)
+	g.material_override = _sprite_mat(SMOKE_TEX, false, 1.0, 0.6)
+	g.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	g.visibility_aabb = AABB(Vector3(-radius - 3, -1, -radius - 3), Vector3(radius * 2 + 6, 6, radius * 2 + 6))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(radius * 0.7, 0.35, radius * 0.7)
+	pm.direction = Vector3.UP
+	pm.spread = 80.0
+	pm.initial_velocity_min = 0.05
+	pm.initial_velocity_max = 0.3
+	pm.gravity = Vector3(0, 0.06, 0)
+	pm.damping_min = 0.2
+	pm.damping_max = 0.5
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 1.2
+	pm.turbulence_noise_scale = 3.0
+	pm.turbulence_influence_min = 0.03
+	pm.turbulence_influence_max = 0.08
+	pm.scale_min = 1.3
+	pm.scale_max = 2.3
+	pm.scale_curve = _curve_tex([[0, 0.55], [1, 1.35]])
+	pm.angle_min = 0.0
+	pm.angle_max = 360.0
+	pm.angular_velocity_min = -12.0
+	pm.angular_velocity_max = 12.0
+	pm.anim_offset_max = 1.0
+	pm.color_ramp = _ramp_tex([[0.0, Color(0.42, 0.5, 0.12, 0.0)], [0.2, Color(0.46, 0.56, 0.14, 0.42)],
+		[0.65, Color(0.38, 0.46, 0.12, 0.3)], [1.0, Color(0.3, 0.36, 0.1, 0.0)]])
+	g.process_material = pm
+	g.position = Vector3(0, 0.45, 0)
+	return g
+
 func _curve_tex(points: Array) -> CurveTexture:
 	var t := CurveTexture.new()
 	t.curve = _curve(points)
