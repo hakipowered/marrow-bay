@@ -12,6 +12,7 @@ var _sliders := {}
 var _theme := Theme.new()
 var _logo: Label
 var _bg: ColorRect
+var _art: TextureRect
 var _pulse := 0.0
 var _beat_avg := 0.0
 
@@ -24,6 +25,16 @@ func _ready() -> void:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 	_bg = bg
+	# Key art behind the menu: the city under the red moon, dimmed so the
+	# buttons stay readable. It brightens on the beats of the theme.
+	if ResourceLoader.exists("res://assets/ui/title_bg.jpg"):
+		_art = TextureRect.new()
+		_art.texture = load("res://assets/ui/title_bg.jpg")
+		_art.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		_art.modulate = Color(0.5, 0.5, 0.5)
+		add_child(_art)
 	Music.play_menu()
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -56,6 +67,9 @@ func _build_theme() -> void:
 	_theme.set_font_size("font_size", "Label", 32)
 	_theme.set_font_size("font_size", "LineEdit", 48)
 	_theme.set_color("font_color", "Label", Color(0.92, 0.88, 0.8))
+	# Dark outline so text reads over the key art.
+	_theme.set_color("font_outline_color", "Label", Color(0, 0, 0, 0.9))
+	_theme.set_constant("outline_size", "Label", 10)
 
 func _clear() -> void:
 	for c in _panel.get_children():
@@ -67,6 +81,10 @@ func _title(text: String, size := 84) -> Label:
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", Color(0.75, 0.12, 0.08))
+	l.add_theme_constant_override("outline_size", 22)
+	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	l.add_theme_constant_override("shadow_offset_x", 0)
+	l.add_theme_constant_override("shadow_offset_y", 6)
 	_panel.add_child(l)
 	return l
 
@@ -79,10 +97,13 @@ func _process(delta: float) -> void:
 	var hit: float = clamp((e - _beat_avg) * 4.0, 0.0, 1.0) * 0.75 + e * 0.25
 	_pulse = max(hit, move_toward(_pulse, 0.0, delta * 2.2))
 	if is_instance_valid(_logo):
-		_logo.add_theme_color_override("font_color", Color(0.55, 0.07, 0.05).lerp(Color(1.0, 0.24, 0.14), _pulse))
+		_logo.add_theme_color_override("font_color", Color(0.78, 0.09, 0.06).lerp(Color(1.0, 0.3, 0.18), _pulse))
 		_logo.pivot_offset = _logo.size * 0.5
 		_logo.scale = Vector2.ONE * (1.0 + _pulse * 0.035)
 	_bg.color = Color(0.03, 0.02, 0.02).lerp(Color(0.09, 0.015, 0.012), _pulse * 0.8)
+	if is_instance_valid(_art):
+		var v := 0.45 + _pulse * 0.2
+		_art.modulate = Color(v + _pulse * 0.08, v, v)
 
 func _btn(text: String, cb: Callable) -> Button:
 	var b := Button.new()
