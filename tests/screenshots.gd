@@ -4,6 +4,9 @@ extends SceneTree
 var frames := 0
 var shots := [
 	["street", Vector3(-4, 1.7, -20), Vector3(14, 1.2, -27)],
+	["street_signs", Vector3(-10, 1.7, -22), Vector3(-4, 2.8, -29.5)],
+	["street_east", Vector3(-14, 1.8, -24), Vector3(15, 2.0, -20)],
+	["kerb", Vector3(0, 1.8, -24.5), Vector3(2, 0.0, -28.5)],
 	["courtyard", Vector3(0, 1.7, -12.5), Vector3(0, 1.5, -2)],
 	["great_hall", Vector3(3, 1.8, -1.0), Vector3(-4, 2.2, 12)],
 	["great_hall_north", Vector3(2, 1.8, 13), Vector3(-2, 4.0, -2)],

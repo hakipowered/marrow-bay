@@ -21,6 +21,9 @@ uniform float stain_amount = 0.35;        // water stains from the ceiling
 uniform float variation = 0.18;           // big-scale tone variation
 uniform float wetness = 0.0;
 uniform float blend_sharpness = 6.0;
+uniform float puddles = 0.0;              // standing water on floors (outdoor)
+uniform float rain = 0.0;                 // raindrop ripples in the puddles
+uniform float wall_wet = 0.0;             // rain running down outdoor walls
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -40,6 +43,18 @@ float fbm(vec2 p) {
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	wnrm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+}
+
+// One layer of raindrop rings: each cell holds one drop at a random spot and
+// time; returns the slope of the ring wave in the cell.
+vec2 ripple_layer(vec2 p, float t) {
+	vec2 c = floor(p);
+	vec2 d = fract(p) - 0.5 - (vec2(hash(c + 3.1), hash(c + 7.7)) - 0.5) * 0.4;
+	float ph = fract(t + hash(c));
+	float r = length(d) + 1e-4;
+	float x = r - ph * 0.42;
+	float amp = (1.0 - ph) * (1.0 - ph) * exp(-x * x * 1600.0);
+	return d / r * amp * sin(x * 90.0);
 }
 
 vec4 tri(sampler2D t, vec3 p, vec3 w) {
@@ -66,9 +81,31 @@ void fragment() {
 	float dirt = clamp(grime + stain + floor_dirt, 0.0, 0.9);
 	alb = mix(alb, alb * vec3(0.38, 0.33, 0.27), dirt);
 
+	float rough = clamp(mix(arm.g * roughness_mul + dirt * 0.15, 0.08, wetness * w.y * smoothstep(0.4, 0.6, big)), 0.03, 1.0);
+	// Rain-soaked: every outdoor surface gets darker and glossier, walls
+	// in streaks running down from the top.
+	if (wall_wet > 0.0) {
+		float streak = fbm(vec2((wpos.x + wpos.z) * 4.0, wpos.y * 0.25 - TIME * 0.05));
+		float wwet = wall_wet * is_wall * smoothstep(0.35, 0.7, streak);
+		alb *= 1.0 - 0.35 * wwet;
+		rough = mix(rough, 0.12, wwet);
+	}
+	// Standing water in the low spots of the floor, with drops landing in it.
+	if (puddles > 0.0 && w.y > 0.5) {
+		float pm = smoothstep(0.47, 0.41, fbm(wpos.xz * 0.32 + 11.0)) * puddles * w.y;
+		alb = mix(alb, alb * 0.42, pm * 0.85);
+		rough = mix(rough, 0.02, pm);
+		n = mix(n, vec3(0.5, 0.5, 1.0), pm * 0.9);
+		if (rain > 0.0) {
+			vec2 rp = ripple_layer(wpos.xz * 4.5, TIME * 1.3) + ripple_layer(wpos.xz * 4.5 + 0.5, TIME * 1.3 + 0.37)
+				+ ripple_layer(wpos.xz * 4.5 + vec2(0.25, 0.71), TIME * 1.3 + 0.71);
+			n.xy += rp * 0.3 * rain * pm;
+		}
+	}
+
 	ALBEDO = alb;
 	AO = arm.r;
-	ROUGHNESS = clamp(mix(arm.g * roughness_mul + dirt * 0.15, 0.08, wetness * w.y * smoothstep(0.4, 0.6, big)), 0.03, 1.0);
+	ROUGHNESS = rough;
 	METALLIC = arm.b;
 	NORMAL_MAP = n;
 	NORMAL_MAP_DEPTH = normal_strength;

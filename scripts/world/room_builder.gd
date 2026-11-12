@@ -270,14 +270,27 @@ static func _dress(root: Node3D, r: Dictionary, size: Vector3, base: Dictionary)
 		d.basis = Basis(right, up, right.cross(up)).rotated(up, rng.randf() * TAU)
 	var papers: int = r.get("papers", 0)
 	if papers > 0:
-		var pm := Mats.trim(Color(0.78, 0.76, 0.7), 0.9)
-		var pm2 := Mats.trim(Color(0.66, 0.62, 0.52), 0.9)
+		# Printed, wet and trodden-on paper: a newspaper, an evacuation
+		# flyer and an archive document, each with a cut-out torn outline.
+		var wet: bool = r.get("outdoor", false)
+		var pmats: Array = []
+		var psizes := [Vector2(0.34, 0.45), Vector2(0.21, 0.28), Vector2(0.21, 0.28)]
+		for k in range(1, 4):
+			var m := StandardMaterial3D.new()
+			m.albedo_texture = load("res://assets/textures/papers/paper_%d.png" % k)
+			m.albedo_color = Color(0.42, 0.41, 0.4) if wet else Color(0.78, 0.76, 0.72)
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+			m.alpha_scissor_threshold = 0.5
+			m.roughness = 0.45 if wet else 0.9
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			pmats.append(m)
 		for i in papers:
 			var mi := MeshInstance3D.new()
 			var pq := PlaneMesh.new()
-			pq.size = Vector2(0.21, 0.297)
+			var k := rng.randi() % 3
+			pq.size = psizes[k] * rng.randf_range(0.85, 1.1)
 			mi.mesh = pq
-			mi.material_override = pm if i % 3 else pm2
+			mi.material_override = pmats[k]
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mi.position = Vector3(rng.randf_range(0.6, size.x - 0.6), 0.006 + i * 0.0004, rng.randf_range(0.6, size.z - 0.6))
 			mi.rotation.y = rng.randf() * TAU

@@ -62,14 +62,15 @@ func _street() -> void:
 	var r := RoomBuilder.build(self, {
 		"id": "AshgroveStreet", "pos": Vector3(-20, 0, -30), "size": Vector3(40, 9, 16),
 		"floor": "street_road", "wall": "facade_brick", "outdoor": true,
-		"floor_look": {"tile_size": 4.0, "wetness": 0.8},
-		"wall_look": {"tile_size": 3.0, "grime_amount": 0.7, "grime_height": 1.4},
+		"floor_look": {"tile_size": 4.0, "wetness": 0.8, "puddles": 1.0, "rain": 1.0},
+		"wall_look": {"tile_size": 3.0, "grime_amount": 0.7, "grime_height": 1.4, "wall_wet": 1.0},
 		"look": {"variation": 0.3},
 		"openings": {"s": [[18.0, 4.0, 9.0]]},
 		"skip_walls": ["e", "w"],
 		"windows": _facade_windows(40.0, "ashgrove"),
 		"decals": {"blood": 4, "stain": 8, "scorch": 2},
 		"papers": 30,
+		"probe": true,
 	})
 	_street_dressing(r)
 	# Sidewalk strips on both sides.
@@ -78,14 +79,24 @@ func _street() -> void:
 		var b := BoxMesh.new()
 		b.size = Vector3(40, 0.18, 3)
 		mi.mesh = b
-		mi.material_override = Mats.surface("sidewalk", {"tile_size": 1.5, "wetness": 0.6, "grime_amount": 0.5})
+		mi.material_override = Mats.surface("sidewalk", {"tile_size": 1.5, "wetness": 0.7, "grime_amount": 0.5, "puddles": 0.6, "rain": 1.0})
 		mi.position = Vector3(20, 0.09, z)
 		r.add_child(mi)
+		# Collision with a gentle ramp on both long edges, so players and
+		# the infected walk up the kerb instead of stopping against it.
 		var sb := StaticBody3D.new()
 		var cs := CollisionShape3D.new()
-		var bs := BoxShape3D.new()
-		bs.size = b.size
-		cs.shape = bs
+		var hx: float = b.size.x / 2.0
+		var hy: float = b.size.y / 2.0
+		var hz: float = b.size.z / 2.0
+		var ramp := 0.55
+		var pts := PackedVector3Array()
+		for sx in [-hx, hx]:
+			pts.append_array([Vector3(sx, hy, -hz), Vector3(sx, hy, hz),
+				Vector3(sx, -hy, -hz - ramp), Vector3(sx, -hy, hz + ramp)])
+		var shape := ConvexPolygonShape3D.new()
+		shape.points = pts
+		cs.shape = shape
 		sb.add_child(cs)
 		sb.position = mi.position
 		r.add_child(sb)
@@ -188,29 +199,37 @@ func _street_dressing(r: Node3D) -> void:
 		band.material_override = Mats.trim(Color(0.36, 0.33, 0.3), 0.8)
 		band.position = Vector3(cx, 3.3, z + inward * 0.18)
 		r.add_child(band)
-	# Neon shop signs: each one lights the wet street in its own colour.
+	# Shop signs: real sign boards (weathered metal, neon tubes, a backlit
+	# lightbox, a hotel blade sign) whose glow lights the wet street.
 	var signs := [
-		[Vector3(5, 3.0, 0.3), "PHARMACY", Color(0.2, 1.0, 0.45), true],
-		[Vector3(13, 3.0, 0.3), "PAWN & LOAN", Color(1.0, 0.25, 0.2), false],
-		[Vector3(27, 3.0, 0.3), "24H DINER", Color(1.0, 0.55, 0.85), true],
-		[Vector3(35, 3.0, 0.3), "RAGOON CITY TRANSIT", Color(0.35, 0.7, 1.0), false],
-		[Vector3(30, 3.0, 15.7), "HOTEL VESPER", Color(1.0, 0.75, 0.3), true],
+		# [texture, centre, height, light colour, flickers]
+		["pharmacy", Vector3(5, 3.15, 0.42), 0.72, Color(0.25, 1.0, 0.45), true],
+		["pawn", Vector3(13, 3.15, 0.42), 0.85, Color(1.0, 0.25, 0.2), false],
+		["diner", Vector3(27, 3.15, 0.42), 0.8, Color(1.0, 0.45, 0.8), true],
+		["transit", Vector3(35, 3.15, 0.42), 0.85, Color(0.35, 0.65, 1.0), false],
 	]
 	for sg in signs:
-		var lbl := Label3D.new()
-		lbl.text = sg[1]
-		lbl.font_size = 96
-		lbl.pixel_size = 0.0045
-		lbl.modulate = sg[2] * 2.2
-		lbl.outline_size = 0
-		lbl.shaded = false
-		lbl.double_sided = false
-		lbl.position = sg[0]
-		if sg[0].z > 8.0:
-			lbl.rotation_degrees.y = 180
-		r.add_child(lbl)
-		var l := RoomBuilder.light(r, sg[0] + Vector3(0, -0.6, 1.2 if sg[0].z < 8.0 else -1.2), sg[2], 0.9, 5.0, false, sg[3])
+		var mat := _sign_material(sg[0])
+		var h: float = sg[2]
+		var tex: Texture2D = mat.albedo_texture
+		var w: float = h * float(tex.get_width()) / tex.get_height()
+		_sign_board(r, sg[1], Vector2(w, h), mat, 0.0)
+		var l := RoomBuilder.light(r, sg[1] + Vector3(0, -0.5, 1.1), sg[3], 0.9, 5.5, false, sg[4])
 		l.light_specular = 1.4
+		if sg[4]:
+			l.set("linked", [mat])
+	# Hotel blade sign sticking out over the south pavement, readable from
+	# down the street in both directions.
+	var hmat := _sign_material("hotel")
+	var htex: Texture2D = hmat.albedo_texture
+	var hh := 2.7
+	var hw := hh * float(htex.get_width()) / htex.get_height()
+	_sign_board(r, Vector3(30, 5.3, 15.25), Vector2(hw, hh), hmat, 90.0, true)
+	for y in [4.3, 6.3]:
+		RoomBuilder._box(r, Vector3(30, y, 15.65), Vector3(0.06, 0.06, 0.75), Mats.trim(Color(0.15, 0.14, 0.13), 0.6, 0.7), false)
+	var hl := RoomBuilder.light(r, Vector3(30, 4.6, 14.4), Color(1.0, 0.7, 0.3), 1.0, 6.0, false, true)
+	hl.light_specular = 1.4
+	hl.set("linked", [hmat])
 	# Facade details.
 	for at in [[8.5, 4.8, 0.3, 0.0], [22.0, 7.5, 0.3, 0.0], [32.0, 4.6, 15.7, 180.0], [4.0, 7.4, 15.7, 180.0]]:
 		RoomBuilder.prop(r, "exterior_aircon_unit", Vector3(at[0], at[1], at[2]), at[3], 1.0, false)
@@ -241,7 +260,7 @@ func _street_dressing(r: Node3D) -> void:
 		var beyond := RoomBuilder.build(r, {
 			"id": "AshgroveBeyond%s" % ("W" if e[0] < 0 else "E"), "pos": Vector3(-14.0 if e[0] < 0 else 40.0, 0, 0), "size": Vector3(14, 11, 16),
 			"floor": "street_road", "wall": "facade_painted" if e[0] < 0 else "facade_brick", "outdoor": true,
-			"floor_look": {"tile_size": 4.0, "wetness": 0.8}, "wall_look": {"tile_size": 3.0, "grime_amount": 0.8},
+			"floor_look": {"tile_size": 4.0, "wetness": 0.8, "puddles": 1.0, "rain": 1.0}, "wall_look": {"tile_size": 3.0, "grime_amount": 0.8, "wall_wet": 1.0},
 			"skip_walls": ["e"] if e[0] < 0 else ["w"],
 			"windows": {"n": [[3.0, 1.3, 3.8, 5.6, {"moon": 0.0, "opaque": true, "lit": e[0] > 0}], [8.0, 1.3, 6.6, 8.3, {"moon": 0.0, "opaque": true}]],
 				"s": [[5.0, 1.3, 3.8, 5.6, {"moon": 0.0, "opaque": true}], [10.0, 1.3, 6.6, 8.3, {"moon": 0.0, "opaque": true, "lit": true}]]},
@@ -253,15 +272,15 @@ func _street_dressing(r: Node3D) -> void:
 		if e[0] > 0:
 			# A car still burning at the east end.
 			RoomBuilder.light(beyond, Vector3(7.0, 1.4, 6.0), Color(1.0, 0.42, 0.12), 3.2, 10.0, true, true)
-		_rain(beyond, Vector3(7, 10, 8), Vector3(6.5, 0, 7.5))
+		_rain(beyond, Vector3(7, 10, 8), Vector3(6.5, 0, 7.5), false)
 
 # ---------------- Courtyard (open area) ----------------
 func _courtyard() -> void:
 	var r := RoomBuilder.build(self, {
 		"id": "ArchiveCourtyard", "pos": Vector3(-10, 0, -14), "size": Vector3(20, 6, 12),
 		"floor": "courtyard_floor", "wall": "alley_wall", "outdoor": true,
-		"floor_look": {"tile_size": 2.5, "wetness": 0.7},
-		"wall_look": {"tile_size": 2.5, "grime_amount": 0.8, "grime_height": 1.8},
+		"floor_look": {"tile_size": 2.5, "wetness": 0.7, "puddles": 0.8, "rain": 1.0},
+		"wall_look": {"tile_size": 2.5, "grime_amount": 0.8, "grime_height": 1.8, "wall_wet": 0.8},
 		"openings": {"s": [[8.8, 2.4, 3.2]]},
 		# North side is the street's wall; south wall sits flush against the hall.
 		"skip_walls": ["n"],
@@ -547,33 +566,45 @@ func _bookshelf(r: Node3D, at: Vector3, rot: float) -> void:
 			if rng.randf() < 0.25:
 				b.rotation_degrees.z = rng.randf_range(-12, 12)
 
+## Sign face material from assets/textures/signs/<id>.jpg (board) and
+## <id>_emit.jpg (the parts that glow).
+func _sign_material(id: String) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = load("res://assets/textures/signs/%s.jpg" % id)
+	m.roughness = 0.55
+	m.metallic = 0.2
+	m.emission_enabled = true
+	m.emission_texture = load("res://assets/textures/signs/%s_emit.jpg" % id)
+	m.emission_energy_multiplier = 2.6
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	return m
+
+## A sign box: dark metal casing with the printed face on the front (and on
+## the back too for a blade sign). `rot` turns it about Y.
+func _sign_board(parent: Node3D, at: Vector3, face: Vector2, mat: Material, rot: float, two_sided := false) -> Node3D:
+	var n := Node3D.new()
+	n.position = at
+	n.rotation_degrees.y = rot
+	parent.add_child(n)
+	var depth := 0.14
+	RoomBuilder._box(n, Vector3.ZERO, Vector3(face.x + 0.06, face.y + 0.06, depth), Mats.trim(Color(0.1, 0.1, 0.1), 0.5, 0.6), false)
+	for side in ([1.0, -1.0] if two_sided else [1.0]):
+		var q := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = face
+		q.mesh = qm
+		q.material_override = mat
+		q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		q.position = Vector3(0, 0, side * (depth / 2 + 0.004))
+		if side < 0:
+			q.rotation_degrees.y = 180
+		n.add_child(q)
+	return n
+
 ## Rain over an outdoor area. `top` is the local centre of the emitter (just
 ## under the sky), `extents` the half-size of the area it covers.
-func _rain(parent: Node3D, top: Vector3, extents: Vector3) -> void:
-	var p := GPUParticles3D.new()
-	p.amount = int(clampf(extents.x * extents.z * 7.0, 400.0, 2500.0))
-	p.lifetime = 1.0
-	p.visibility_aabb = AABB(Vector3(-extents.x - 2, -top.y - 1, -extents.z - 2), Vector3(extents.x * 2 + 4, top.y + 2, extents.z * 2 + 4))
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(extents.x, 0.2, extents.z)
-	pm.direction = Vector3(0.1, -1, 0)
-	pm.spread = 3.0
-	pm.initial_velocity_min = 11.0
-	pm.initial_velocity_max = 14.0
-	pm.gravity = Vector3(0, -6, 0)
-	p.process_material = pm
-	var m := QuadMesh.new()
-	m.size = Vector2(0.012, 0.35)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(0.7, 0.75, 0.85, 0.35)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
-	m.material = mat
-	p.draw_pass_1 = m
-	p.position = top
-	parent.add_child(p)
+func _rain(parent: Node3D, top: Vector3, extents: Vector3, sound := true) -> void:
+	Rain.add(parent, top, extents, sound)
 
 
 # ---------------- Scripted horror ----------------
