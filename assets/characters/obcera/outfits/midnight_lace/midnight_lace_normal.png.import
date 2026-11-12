@@ -1,0 +1,39 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://jj5gxcccps4t"
+path.s3tc="res://.godot/imported/midnight_lace_normal.png-7e75889dbde7205d7edebced4be406ce.s3tc.ctex"
+path.etc2="res://.godot/imported/midnight_lace_normal.png-7e75889dbde7205d7edebced4be406ce.etc2.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
+}
+generator_parameters={
+"md5": "37cfafb00a54b2bb4dd8bb86f4db22a5"
+}
+
+[deps]
+
+source_file="res://assets/characters/obcera/outfits/midnight_lace/midnight_lace_normal.png"
+dest_files=["res://.godot/imported/midnight_lace_normal.png-7e75889dbde7205d7edebced4be406ce.s3tc.ctex", "res://.godot/imported/midnight_lace_normal.png-7e75889dbde7205d7edebced4be406ce.etc2.ctex"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=1
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=0

@@ -7,7 +7,6 @@ var _status: Label
 var _code_edit: LineEdit
 var _char := "zegan"
 var _custom: Dictionary = {}
-var _preview_label: Label
 var _sliders := {}
 var _theme := Theme.new()
 var _logo: Label
@@ -87,7 +86,7 @@ func _ready() -> void:
 	_panel.custom_minimum_size = Vector2(760, 0)
 	_panel.add_theme_constant_override("separation", 20)
 	center.add_child(_panel)
-	_custom = GameState.default_customization(_char)
+	_custom = GameState.look(_char)
 	Net.session_ready.connect(_on_session_ready)
 	Net.partner_joined.connect(_on_partner_joined)
 	Net.session_failed.connect(func(r): _set_status("Connection problem: " + r))
@@ -212,7 +211,7 @@ func _continue_menu() -> void:
 		if d.is_empty():
 			continue
 		var label := "%s  ·  %s  ·  %s" % ["Saved game" if slot == "slot1" else "Autosave", str(d.get("checkpoint", "")).capitalize().replace("_", " "), str(d.get("timestamp", "")).replace("T", " ")]
-		_btn(label, func(): SaveSystem.apply_snapshot(d); _character_select("solo_or_host_resume"))
+		_btn(label, func(): SaveSystem.apply_snapshot(d); _custom = GameState.look(_char); _character_select("solo_or_host_resume"))
 	_btn("Back", _home)
 
 func _character_select(next: String) -> void:
@@ -228,7 +227,7 @@ func _character_select(next: String) -> void:
 		b.custom_minimum_size = Vector2(340, 160)
 		b.toggle_mode = true
 		b.button_pressed = c == _char
-		b.pressed.connect(func(): _char = c; _custom = GameState.default_customization(c); _character_select(next))
+		b.pressed.connect(func(): _char = c; _custom = GameState.look(c); _character_select(next))
 		row.add_child(b)
 	var bio := Label.new()
 	bio.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -237,7 +236,7 @@ func _character_select(next: String) -> void:
 		"obcera": "Obcera. Motorcycle courier who knows every back alley of RaGoon City. Fast, loud, fearless, and the best shot in any room she walks into.",
 	}[_char]
 	_panel.add_child(bio)
-	_btn("Customize %s" % _char.capitalize(), func(): _customize(next))
+	_btn("Outfit & Body:  %s" % Outfits.display_name(_char, _custom.get("outfit", Outfits.DEFAULT)), func(): _customize(next))
 	var go_text := {"solo": "Start", "host": "Create Room", "join": "Next", "solo_or_host_resume": "Resume Solo"}.get(next, "Start")
 	_btn(go_text, func(): _go(next))
 	if next == "solo_or_host_resume":
@@ -245,37 +244,21 @@ func _character_select(next: String) -> void:
 	_btn("Back", _home)
 
 func _customize(next: String) -> void:
-	_clear()
-	_title("%s · LOOK" % _char.to_upper(), 56)
-	var outfits := HBoxContainer.new()
-	outfits.alignment = BoxContainer.ALIGNMENT_CENTER
-	_panel.add_child(outfits)
-	for o in CharacterModel.outfits(_char):
-		var b := Button.new()
-		b.text = o.capitalize().replace("_", " ")
-		b.toggle_mode = true
-		b.button_pressed = _custom.get("outfit") == o
-		b.pressed.connect(func(): _custom["outfit"] = o; _customize(next))
-		outfits.add_child(b)
-	for s in ["height", "shoulders", "chest", "waist", "hips", "legs", "muscle"]:
-		var h := HBoxContainer.new()
-		var l := Label.new()
-		l.text = s.capitalize()
-		l.custom_minimum_size = Vector2(220, 0)
-		h.add_child(l)
-		var sl := HSlider.new()
-		sl.min_value = 0.0
-		sl.max_value = 1.0
-		sl.step = 0.01
-		sl.value = float(_custom.get(s, 0.5))
-		sl.custom_minimum_size = Vector2(480, 60)
-		sl.value_changed.connect(func(v): _custom[s] = v)
-		h.add_child(sl)
-		_panel.add_child(h)
-	_btn("Reset", func(): _custom = GameState.default_customization(_char); _customize(next))
-	_btn("Done", func(): _character_select(next))
+	# Full-screen outfit and body screen with a live 3D preview.
+	var screen := CustomizeScreen.new()
+	screen.character = _char
+	screen.custom = _custom.duplicate()
+	screen.finished.connect(func(c: Dictionary):
+		_custom = c
+		GameState.set_look(_char, c)
+		screen.queue_free()
+		_panel.get_parent().visible = true
+		_character_select(next))
+	_panel.get_parent().visible = false
+	add_child(screen)
 
 func _go(next: String) -> void:
+	GameState.set_look(_char, _custom)
 	GameState.customization_by_peer[1] = _custom
 	match next:
 		"solo", "solo_or_host_resume":

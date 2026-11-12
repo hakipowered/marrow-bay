@@ -46,6 +46,11 @@ var _struggle := 0
 var _downed_t := 0.0
 const REVIVE_WINDOW := 30.0
 var rescue_area: Area3D
+## Set by Cutscenes while a scene plays: no moving, aiming or shooting.
+var input_locked := false
+## Set by a story scene that is animating this body itself (standing up from
+## the wreck, a gesture): the usual idle/walk playback leaves it alone.
+var cutscene_pose := false
 
 # Synced to the partner.
 @export var sync_yaw := 0.0
@@ -188,6 +193,8 @@ func _setup_sync() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
+		if cutscene_pose:
+			return
 		body.rotation.y = lerp_angle(body.rotation.y, sync_yaw, 0.35)
 		if sync_weapon != held.weapon_id:
 			_show_weapon(sync_weapon)
@@ -211,6 +218,17 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		sync_anim = "hit"
 		model.play("hit", false)
+		return
+	if input_locked:
+		move_input = Vector2.ZERO
+		look_delta = Vector2.ZERO
+		fire_held = false
+		aiming = false
+		velocity = Vector3.ZERO
+		sync_aiming = false
+		sync_anim = "idle"
+		if not cutscene_pose:
+			model.play("idle", false)
 		return
 	_read_keyboard()
 	# Look
@@ -270,7 +288,7 @@ func _read_keyboard() -> void:
 		running = Input.is_physical_key_pressed(KEY_SHIFT)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_multiplayer_authority():
+	if not is_multiplayer_authority() or input_locked:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		look_delta += event.relative

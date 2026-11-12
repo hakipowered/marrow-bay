@@ -19,9 +19,37 @@ var world_flags: Dictionary = {}
 ## peer_id -> inventory snapshot, filled from the players on save.
 var inventories: Dictionary = {}
 var play_time_sec: float = 0.0
+## This phone's own look per character (outfit + body sliders), kept between
+## sessions in LOOKS_PATH. The character select edits these; co-op sends
+## them to the host, and saves carry the look each survivor had.
+var looks: Dictionary = {}
+const LOOKS_PATH := "user://looks.json"
+
+func _ready() -> void:
+	if FileAccess.file_exists(LOOKS_PATH):
+		var d = JSON.parse_string(FileAccess.get_file_as_string(LOOKS_PATH))
+		if d is Dictionary:
+			looks = d
 
 func _process(delta: float) -> void:
 	play_time_sec += delta
+
+## The saved look for a character, filled out with defaults.
+func look(character: String) -> Dictionary:
+	var c := default_customization(character)
+	var saved: Variant = looks.get(character, {})
+	if saved is Dictionary:
+		for k in saved:
+			if c.has(k):
+				c[k] = saved[k]
+	c["outfit"] = Outfits.resolve(character, c.get("outfit", Outfits.DEFAULT))
+	return c
+
+func set_look(character: String, c: Dictionary) -> void:
+	looks[character] = c.duplicate()
+	var f := FileAccess.open(LOOKS_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(looks, "\t"))
 
 static func default_customization(character: String) -> Dictionary:
 	return {

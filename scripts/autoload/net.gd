@@ -95,7 +95,7 @@ func _wait_for_id(character: String) -> void:
 		session_ready.emit()
 	else:
 		session_ready.emit()
-		_rpc_register.rpc_id(1, character, GameState.customization_by_peer.get(multiplayer.get_unique_id(), {}))
+		_rpc_register.rpc_id(1, character, _my_looks(character))
 
 func host_lan(character: String) -> void:
 	close()
@@ -116,11 +116,20 @@ func join_lan(ip: String, character: String) -> void:
 	multiplayer.multiplayer_peer = peer
 	await multiplayer.connected_to_server
 	GameState.character_by_peer[multiplayer.get_unique_id()] = character
-	_rpc_register.rpc_id(1, character, GameState.customization_by_peer.get(multiplayer.get_unique_id(), {}))
+	_rpc_register.rpc_id(1, character, _my_looks(character))
 
-## Joiner tells host its character; host resolves conflicts and broadcasts the roster.
+## The joiner's saved look for both survivors, since the host may hand it
+## the other one when both picked the same.
+func _my_looks(_character: String) -> Dictionary:
+	var out := {}
+	for c in GameState.CHARACTERS:
+		out[c] = GameState.look(c)
+	return out
+
+## Joiner tells host its character and looks; host resolves a clash, then
+## broadcasts who plays whom and what each survivor wears.
 @rpc("any_peer", "reliable")
-func _rpc_register(character: String, custom: Dictionary) -> void:
+func _rpc_register(character: String, looks: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
@@ -128,7 +137,10 @@ func _rpc_register(character: String, custom: Dictionary) -> void:
 	if character == host_char:
 		character = GameState.partner_character(host_char)
 	GameState.character_by_peer[id] = character
-	GameState.customization_by_peer[id] = custom
+	var custom: Variant = looks.get(character, {})
+	GameState.customization_by_peer[id] = custom if custom is Dictionary and not custom.is_empty() else GameState.default_customization(character)
+	if not GameState.customization_by_peer.has(1):
+		GameState.customization_by_peer[1] = GameState.look(host_char)
 	_rpc_roster.rpc(GameState.character_by_peer, GameState.customization_by_peer)
 
 @rpc("authority", "reliable", "call_local")

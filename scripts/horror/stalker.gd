@@ -94,7 +94,8 @@ func _ready() -> void:
 func _build_model() -> Node3D:
 	var path := "res://assets/characters/tallyman/tallyman.glb"
 	if ResourceLoader.exists(path):
-		return load(path).instantiate()
+		# Rigged model with his clips and the hooked pole (scripts/story/story_actor.gd).
+		return StoryActor.new("tallyman")
 	var root := Node3D.new()
 	var coat := Mats.trim(Color(0.04, 0.04, 0.045), 0.15)  # wet rubber
 	var brass := Mats.trim(Color(0.45, 0.33, 0.15), 0.35, 0.9)
@@ -163,10 +164,25 @@ func _voice_done() -> void:
 		_breath.volume_db = 0.0
 		_breath.play()
 
+var _last_pos := Vector3.ZERO
+var _anim_state := ""
+
+## Walk or stand, from how far he actually moved (the same on every phone).
+func _animate(delta: float) -> void:
+	var moved := global_position.distance_to(_last_pos) / maxf(delta, 0.001)
+	_last_pos = global_position
+	if not (_model is StoryActor) or _anim_state in ["attack", "hit"]:
+		return
+	var want := "stalk" if moved > 0.3 else "idle"
+	if want != _anim_state:
+		_anim_state = want
+		_model.play(want, 0.35)
+
 func _physics_process(delta: float) -> void:
 	visible = active
 	if not active:
 		return
+	_animate(delta)
 	_step_t -= delta * (velocity.length() / SPEED)
 	if _step_t <= 0 and velocity.length() > 0.2:
 		_step_t = 0.85
@@ -217,6 +233,7 @@ func _nearest() -> Node3D:
 @rpc("authority", "reliable", "call_local")
 func _swing(path: NodePath) -> void:
 	Sfx.play_at("stalker_swing", global_position + Vector3.UP * 1.5, "", 4.0, 12.0)
+	_one_shot("attack", 1.6)
 	await get_tree().create_timer(0.6).timeout
 	var p := get_node_or_null(path)
 	if p and p.is_multiplayer_authority() and p.global_position.distance_to(global_position) < 2.2:
@@ -233,6 +250,7 @@ func take_hit(dmg: float, _weapon_id: String, zone: String, _dir: Vector3) -> vo
 @rpc("authority", "reliable", "call_local")
 func _kneel() -> void:
 	Sfx.play_at("stalker_kneel", global_position, "", 4.0, 14.0)
+	_one_shot("hit", 4.0)
 	var t := create_tween()
 	t.tween_property(_model, "position:y", -0.5, 0.4)
 	t.tween_interval(3.4)
@@ -240,3 +258,10 @@ func _kneel() -> void:
 
 func hear_noise(_pos: Vector3) -> void:
 	pass
+
+func _one_shot(clip: String, hold: float) -> void:
+	if not (_model is StoryActor):
+		return
+	_anim_state = clip
+	_model.play(clip, 0.15)
+	get_tree().create_timer(hold).timeout.connect(func(): _anim_state = "")

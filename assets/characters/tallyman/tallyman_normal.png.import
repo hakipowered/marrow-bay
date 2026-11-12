@@ -1,0 +1,39 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://ctdjyswkrk3ew"
+path.s3tc="res://.godot/imported/tallyman_normal.png-8e1a13c77c08ba07e1ce10f3231caa81.s3tc.ctex"
+path.etc2="res://.godot/imported/tallyman_normal.png-8e1a13c77c08ba07e1ce10f3231caa81.etc2.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
+}
+generator_parameters={
+"md5": "5184650a21d4c20890a601ca6b04bc86"
+}
+
+[deps]
+
+source_file="res://assets/characters/tallyman/tallyman_normal.png"
+dest_files=["res://.godot/imported/tallyman_normal.png-8e1a13c77c08ba07e1ce10f3231caa81.s3tc.ctex", "res://.godot/imported/tallyman_normal.png-8e1a13c77c08ba07e1ce10f3231caa81.etc2.ctex"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=1
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=0

@@ -1,0 +1,61 @@
+{
+  "_doc": "Outfit concept prompts. make_concepts.py edits an A-pose render of the in-game model (tests/render_reference.gd) into each outfit, front then back; the pair goes to Meshy image-to-3D with rig on. Keys are the outfit ids used in the game (scripts/player/outfits.gd). Nano Banana refuses swimwear and corsets, so those use Seedream (\"engine\": \"seedream\").",
+  "keep": {
+    "zegan": "Keep exactly the same man: identical face, short dark hair, stubble, skin tone, height, build and body proportions.",
+    "obcera": "Keep exactly the same adult woman: identical face, makeup, long black high ponytail, skin tone, height and her curvy athletic figure with full bust, narrow waist and wide hips."
+  },
+  "common": "Keep the exact same A-pose with both arms held away from the body and hands open and empty, feet slightly apart. Full body from the top of the head to the soles of the feet, centred, on a plain light grey studio background with soft even lighting and no shadows on the background. Photorealistic high-detail video game character render with realistic fabric, leather and skin materials. No weapons in hands, no props, no text.",
+  "outfits": {
+    "zegan": {
+      "biker": {
+        "name": "Road Leather",
+        "prompt": "Change only his clothes: a worn black leather biker jacket with silver zips, open over a plain white crew-neck t-shirt, dark indigo jeans with a brown leather belt, and scuffed brown leather lace-up boots. Bare hands.",
+        "texture": "black leather jacket, white cotton t-shirt, indigo denim jeans, brown leather boots and belt"
+      },
+      "night_suit": {
+        "name": "Night Suit",
+        "prompt": "Change only his clothes: a tailored charcoal three-piece suit with the jacket buttoned, white dress shirt, a loosened dark red tie, black leather oxford shoes, and a slim black wristwatch. Bare hands. The suit is a little rain-damp and dusty at the hems.",
+        "texture": "charcoal wool suit, white cotton shirt, dark red silk tie, black leather shoes"
+      },
+      "beach": {
+        "name": "Beach Day",
+        "prompt": "Change only his clothes: he is shirtless with a fit, toned torso and realistic chest hair, wearing knee-length red and white patterned board shorts, a black military dog tag on a chain around his neck, a black sports watch, and grey canvas sneakers. Keep the tattoo sleeve on his right forearm.",
+        "texture": "tanned skin, red and white board shorts, grey canvas sneakers, steel dog tag"
+      },
+      "riot": {
+        "name": "Riot Unit",
+        "prompt": "Change only his clothes: a black police riot unit uniform with a black ballistic vest covered in pouches, shoulder pads, black long-sleeve combat shirt, black cargo trousers with hard knee pads, black tactical gloves and black combat boots. No helmet, face fully visible.",
+        "texture": "matte black ballistic nylon, black hard plastic pads, black leather boots and gloves"
+      }
+    },
+    "obcera": {
+      "catsuit": {
+        "name": "Black Catsuit",
+        "prompt": "Change only her clothes: a glossy black leather catsuit that fits her figure closely, with the front zip pulled down to just below the collarbone, a black leather belt with a thigh holster strap on her right thigh, black leather gloves and black heeled combat boots.",
+        "texture": "glossy black leather catsuit, silver zip, black leather belt and boots"
+      },
+      "street_heat": {
+        "name": "Street Heat",
+        "prompt": "Change only her clothes: a tight white cropped tank top that shows her toned midriff and navel, high-waisted frayed light blue denim cut-off short shorts, a brown leather belt, a brown leather holster strap on her right thigh, fingerless black gloves and black lace-up combat boots.",
+        "texture": "white cotton crop top, light blue frayed denim shorts, brown leather belt and thigh strap, black boots"
+      },
+      "beach": {
+        "name": "Beach Day",
+        "prompt": "Change only her clothes: a red two-piece bikini with a supportive triangle top and side-tie bottoms, a thin black tactical holster strap on her right thigh, a black sports watch, and black ankle-high combat boots. Swimwear fully covers the intimate areas.",
+        "texture": "glossy red bikini fabric, black nylon thigh strap, black leather ankle boots, sun-kissed skin",
+        "engine": "seedream"
+      },
+      "midnight_lace": {
+        "name": "Midnight Lace",
+        "prompt": "Change only her clothes: a black lace corset top with satin trim, black high-waisted hot pants, black thigh-high stockings with lace bands, long black satin gloves and black heeled ankle boots.",
+        "texture": "black satin and lace corset, black satin hot pants, sheer black stockings with lace bands, black satin gloves, black heeled boots",
+        "engine": "seedream"
+      },
+      "red_dress": {
+        "name": "Red Dress",
+        "prompt": "Change only her clothes: a short, tight red satin cocktail dress with thin shoulder straps and a sweetheart neckline, hem at mid-thigh, a thin black leather holster strap visible on her right thigh below the hem, and black strappy high heels. Bare arms.",
+        "texture": "glossy red satin dress, black leather thigh strap, black patent heels"
+      }
+    }
+  }
+}
