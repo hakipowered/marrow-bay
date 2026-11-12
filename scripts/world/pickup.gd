@@ -22,6 +22,7 @@ func _ready() -> void:
 	if pickup_id != "" and GameState.has_flag("taken:" + pickup_id):
 		queue_free()
 		return
+	add_to_group("pickups")   # found by distance (see Player._nearest_pickup)
 	var model := ItemVisual.build(item)
 	add_child(model)
 	var col := _color()

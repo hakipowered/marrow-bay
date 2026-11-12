@@ -56,6 +56,14 @@ var _align := {}      # hold -> Basis, hand frame to weapon frame
 var _kick := 0.0
 var _flash: MeshInstance3D
 var _flash_t := 0.0
+var _rot := Quaternion.IDENTITY   # hand-to-weapon turn now, eased between holds
+var _rot_at := 0                  # usec of the last easing step
+var _snap := true                 # jump straight to the hold (new weapon or body)
+var _long := false                # a long gun hangs lower than a pistol
+
+## Clips where the weapon is up and working; anything else (standing, walking,
+## running) carries it lowered at her side.
+const RAISED_ANIMS := ["shoot_walk", "run_shoot", "reload"]
 
 func _ready() -> void:
 	top_level = true
@@ -87,6 +95,9 @@ func set_weapon(id: String) -> void:
 	if _gun == null:
 		return
 	muzzle_local = _gun.get_meta("muzzle", Vector3(0, 0, -0.2))
+	var box: AABB = _gun.get_meta("aabb", AABB())
+	_long = box.size.z > 0.55
+	_snap = true
 	add_child(_gun)
 	_flash.position = muzzle_local + Vector3(0, 0, -0.06)
 
@@ -131,11 +142,32 @@ func _follow() -> void:
 	var pose := _skel.get_bone_global_pose(_hand)
 	var hb := (_skel.global_basis * pose.basis).orthonormalized()
 	var at := _skel.global_transform * pose.origin
-	var b: Basis = hb * _align.get(weapon_id, _align.get(hold, Basis.IDENTITY))
+	var want := _target_align().get_rotation_quaternion()
+	var now := Time.get_ticks_usec()
+	if _snap:
+		_rot = want
+		_snap = false
+	else:
+		_rot = _rot.slerp(want, 1.0 - exp(-16.0 * clampf((now - _rot_at) / 1e6, 0.0, 0.1)))
+	_rot_at = now
+	var b: Basis = hb * Basis(_rot)
 	var t := Transform3D(b, at + hb * PALM)
 	if _kick > 0.0:
 		t = t * Transform3D(Basis(Vector3.RIGHT, _kick * 0.22), Vector3(0, 0, _kick * 0.035))
 	global_transform = t
+
+## The hold for what the body is doing: aimed or guarding (the solved pose
+## for this weapon), else lowered at her side.
+func _target_align() -> Basis:
+	var raised := true
+	if model._anim:
+		var cur := String(model._anim.current_animation)
+		raised = cur.begins_with("combat/") or cur.begins_with("stance/") or cur in RAISED_ANIMS
+	if not raised:
+		var low: String = ("long_low" if _long else "gun_low") if hold == "gun" else hold + "_low"
+		if _align.has(low):
+			return _align[low]
+	return _align.get(weapon_id, _align.get(hold, Basis.IDENTITY))
 
 func _bind(sk: Skeleton3D) -> void:
 	if is_instance_valid(_skel) and _skel.skeleton_updated.is_connected(_follow):
@@ -155,12 +187,22 @@ func _bind(sk: Skeleton3D) -> void:
 	_align["gun"] = _solve("stance/aim", 0.5, ahead, to_root)
 	_align["blade"] = _solve("combat/guard", 0.3, ahead * Basis(Vector3.RIGHT, 0.35), to_root)
 	_align["palm"] = _solve("combat/guard", 0.3, ahead * Basis(Vector3.RIGHT, -0.6), to_root)
+	# Lowered at her side while standing, walking or running: the muzzle ahead
+	# and down (a long gun steeper, so its stock clears the hip), the knife tip
+	# down. Pointing along the leg, as the aim hold does, hides them.
+	_align["gun_low"] = _solve("idle", 0.5, ahead * Basis(Vector3.RIGHT, LOW_PITCH[0]), to_root)
+	_align["long_low"] = _solve("idle", 0.5, ahead * Basis(Vector3.RIGHT, LOW_PITCH[1]), to_root)
+	_align["blade_low"] = _solve("idle", 0.5, ahead * Basis(Vector3.RIGHT, LOW_PITCH[2]), to_root)
+	_snap = true
 	# Weapons that sit better lined up with their own swing.
 	for id in MODELS:
 		if MODELS[id].has("align"):
 			var al: Array = MODELS[id]["align"]
 			var yaw: float = al[3] if al.size() > 3 else 0.0
 			_align[id] = _solve(al[0], al[1], ahead * Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, al[2]), to_root)
+
+## Pitch of the lowered holds (radians below level): pistol, long gun, blade.
+const LOW_PITCH := [-0.75, -1.2, -1.0]
 
 ## Hand-to-weapon rotation that makes the weapon face `want` (in the model
 ## root's space) when the clip is at time t.

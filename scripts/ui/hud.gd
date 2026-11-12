@@ -21,6 +21,7 @@ var _fire_btn: Button
 var _call_btn: Button
 var _call_pressed_at := 0.0
 var _theme := Theme.new()
+var _crosshair: Crosshair
 
 func _ready() -> void:
 	add_to_group("hud")
@@ -91,6 +92,11 @@ func _ready() -> void:
 			_cycle_weapon())
 	var heal := _button(root, "HEAL", Vector2(-660, -420), Vector2(160, 110))
 	heal.pressed.connect(_quick_heal)
+
+	_crosshair = Crosshair.new()
+	_crosshair.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_crosshair)
 
 	_prompt = _button(root, "", Vector2(-180, -180), Vector2(360, 110), true)
 	_prompt.anchor_left = 0.5
@@ -185,7 +191,7 @@ func _label(parent: Control, pos: Vector2, size: int) -> Label:
 	return l
 
 func _button(parent: Control, text: String, offset: Vector2, size: Vector2, center := false, top := false) -> Button:
-	var b := Button.new()
+	var b := TouchButton.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	if not center:
@@ -222,6 +228,7 @@ func _show_ammo(in_mag: int, reserve: int) -> void:
 	_ammo.add_theme_color_override("font_color", Color(1.0, 0.45, 0.35) if in_mag == 0 else Color(0.93, 0.9, 0.84))
 
 func _process(_d: float) -> void:
+	_crosshair.update_from(player)
 	if _weapon_pressed_at > 0.0 and not _weapon_long and (Time.get_ticks_msec() - _weapon_pressed_at) > 450.0:
 		_weapon_long = true
 		_weapon_pressed_at = 0.0
