@@ -21,6 +21,12 @@ func _ready() -> void:
 		if p.is_multiplayer_authority():
 			hud.bind_player(p)
 	Net.partner_left.connect(_on_partner_left)
+	# Story: tell the host this phone has the level, so cutscenes start for
+	# both players together.
+	Cutscenes.level_ready()
+
+func _exit_tree() -> void:
+	Cutscenes.level_left()
 
 func _bake_navigation() -> void:
 	var nav := NavigationRegion3D.new()

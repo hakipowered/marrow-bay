@@ -1,6 +1,8 @@
 extends SceneTree
 ## Builds res://assets/characters/<id>/<id>_anims.res from the rigged Meshy clips
 ## dropped in res://build_tmp/anims/<id>/ (walk.glb, run.glb, a0..a9.glb).
+## Any other <clip>.glb in that folder is added under its file name
+## (the story characters use idle.glb, stalk.glb, attack.glb and so on).
 ## Usage: godot --headless --path . --script tools/import_character.gd -- zegan obcera
 ## Infected use an "enemies/" prefix (enemies/mechanic) and the zombie clip set,
 ## rigged with Meshy ids 650, 644, 0, 214, 389, 386, 178, 183, 344, 340.
@@ -15,8 +17,10 @@ const ZOMBIE_CLIPS := {
 	"a0": "shamble", "a1": "sprint", "a2": "idle", "a3": "attack", "a4": "grab",
 	"a5": "scream", "a6": "hit", "a7": "death", "a8": "rise", "a9": "crawl",
 }
-const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl", "attack"]
-const IN_PLACE := ["walk", "run", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl"]
+const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl", "attack",
+		"stalk", "casual_walk", "injured_walk", "look_around"]
+const IN_PLACE := ["walk", "run", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl",
+		"stalk", "casual_walk", "injured_walk"]
 
 func _initialize() -> void:
 	for id in OS.get_cmdline_user_args():
@@ -34,7 +38,13 @@ func _build(id: String) -> void:
 		names.append(skel.get_bone_name(i))
 	print(id, " skeleton path: ", base.get_path_to(skel), " bones: ", names)
 	var lib := AnimationLibrary.new()
+	var files := {}
 	for f in clips:
+		files[f] = clips[f]
+	for fn in DirAccess.get_files_at("res://build_tmp/anims/%s" % id):
+		if fn.get_extension() == "glb" and not files.has(fn.get_basename()):
+			files[fn.get_basename()] = fn.get_basename()
+	for f in files:
 		var path := "res://build_tmp/anims/%s/%s.glb" % [id, f]
 		if not ResourceLoader.exists(path):
 			print("  missing ", path)
@@ -47,7 +57,7 @@ func _build(id: String) -> void:
 				src = ap.get_animation(n)
 				break
 		var anim: Animation = src.duplicate(true)
-		var clip: String = clips[f]
+		var clip: String = files[f]
 		anim.loop_mode = Animation.LOOP_LINEAR if clip in LOOPING else Animation.LOOP_NONE
 		# Retarget track paths so they resolve from the base model's AnimationPlayer root.
 		var ap_root: Node = ap.get_node(ap.root_node)

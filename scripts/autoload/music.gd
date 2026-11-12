@@ -18,6 +18,8 @@ const ACTION_HOLD := 9.0
 
 var in_game := false
 var in_safe_room := false
+## A cutscene's score. While set it wins over everything else.
+var override_track := ""
 var boss := ""
 var threat := 0.0
 
@@ -101,6 +103,8 @@ func _process(delta: float) -> void:
 			want = "action"
 		elif in_safe_room:
 			want = "safe_room"
+		if override_track != "":
+			want = override_track
 		_set_track(want)
 	_loop_check()
 	_run_fades(delta)
