@@ -7,7 +7,7 @@
 #
 # Quick pass: the level probe (holes out of the level, infected placed inside
 # props or falling through the floor, items no one can pick up), the
-# existing rule tests (doors, crowd, death flow, story, weapons, music), the
+# existing rule tests (walls, doors, crowd, death flow, story, weapons, music), the
 # bot's weapon / bag / save / death sections, and the co-op tests with two
 # copies of the game through a local relay (needs node and the ws package:
 # `npm i ws` anywhere and point NODE_PATH at its node_modules, or install it
@@ -43,6 +43,7 @@ run() {
 
 echo "Playtest ($MODE) on $(git rev-parse --short HEAD 2>/dev/null)"
 run smoke_level      120 --script tests/smoke_level.gd
+run wall_overlap     120 --script tests/wall_overlap.gd
 run level_probe      180 --fixed-fps 60 --script tests/playtest.gd -- only probe
 run door_sweep       180 --script tests/door_sweep.gd
 run door_reach       180 --script tests/door_reach.gd
@@ -78,6 +79,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	PORT=$RELAY_PORT node relay/local_relay.js > "$LOGS/relay.log" 2>&1 &
 	RELAY=$!
 	sleep 1
+	coop coop_peer tests/coop_peer.gd
 	coop coop_story tests/coop_story.gd
 	coop coop_death tests/coop_death.gd
 	coop coop_playtest tests/playtest_coop.gd

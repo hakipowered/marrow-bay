@@ -7,6 +7,19 @@ var frames := 0
 var outfits_ok := false
 var stage := 0
 var t0 := 0
+var t_play := -1.0
+var saw_scene := false
+var _done := {}
+
+func _secs() -> float:
+	return (Time.get_ticks_msec() - t0) / 1000.0
+
+## True the first time `cond` holds for this name, then never again.
+func _once(name: String, cond: bool) -> bool:
+	if not cond or _done.has(name):
+		return false
+	_done[name] = true
+	return true
 
 func _initialize() -> void:
 	role = OS.get_cmdline_user_args()[0]
@@ -22,7 +35,7 @@ func _process(_d: float) -> bool:
 	frames += 1
 	var net = root.get_node("Net")
 	var gs = root.get_node("GameState")
-	if Time.get_ticks_msec() - t0 > 40000:
+	if Time.get_ticks_msec() - t0 > 60000:
 		print(role, " TIMEOUT stage ", stage)
 		quit(1)
 	match stage:
@@ -57,6 +70,7 @@ func _process(_d: float) -> bool:
 			# below wait for it, since nobody can move or aim during a scene.
 			var cs = root.get_node_or_null("Cutscenes")
 			if cs and cs.active:
+				saw_scene = true
 				if frames % 10 == 0:
 					cs._on_skip_pressed()
 				frames = mini(frames, 100)
@@ -78,7 +92,12 @@ func _process(_d: float) -> bool:
 				outfits_ok = worn.get("zegan") == "riot" and worn.get("obcera") == "red_dress"
 				if role == "join":
 					root.get_node("CallOuts").call_partner(true)
-			if frames == 200:
+			# The rest runs on each phone's clock from the moment the intro ended
+			# there (frame counts drift apart between the two processes).
+			if t_play < 0.0 and (saw_scene or frames >= 120):
+				t_play = _secs()
+			var t := _secs() - t_play if t_play >= 0.0 else 0.0
+			if _once("lamp", t > 2.5):
 				# Each phone draws the partner's flashlight tipped by the
 				# partner's synced aim, not stuck level.
 				var seen := 0
@@ -95,30 +114,32 @@ func _process(_d: float) -> bool:
 					print(role, " LAMP SYNC FAILED: no partner in the level")
 					quit(1)
 					return false
-			if frames == 205 or frames == 215:
-				# Both walk up to the middle of the co-op vault door and press
-				# (host first, partner a moment later): each takes a free
-				# wheel, it stays shut for one alone, and opens for both.
-				var mine := (frames == 205) == (role == "host")
+			# Both press the middle of the co-op vault door, the host first and
+			# the partner 0.9 s later (inside the door's 1.5 s window): each
+			# takes a free wheel, it stays shut for one alone, and opens for both.
+			if _once("host_press", t > 3.0 and role == "host") or _once("join_press", t > 3.9 and role == "join"):
+				print(role, ": pressing the vault door at %.2f s" % t)
 				for p in get_nodes_in_group("players"):
-					if p.is_multiplayer_authority() and mine:
+					if p.is_multiplayer_authority():
 						get_first_node_in_group("level").get_node("Door_vault_door").interact(p, -2)
-			if frames == 211 or frames == 238:
+			var after_one := _once("check_one", t > 3.5)
+			if after_one or _once("check_both", t > 5.5):
 				var vault = get_first_node_in_group("level").get_node("Door_vault_door")
-				print(role, ": vault door open after %s: %s" % ["one press" if frames == 211 else "both", vault.is_open])
-				if vault.is_open != (frames == 238):
+				print(role, ": vault door open after %s: %s" % ["one press" if after_one else "both", vault.is_open])
+				if vault.is_open == after_one:
 					print(role, " COOP DOOR FAILED")
 					quit(1)
 					return false
-			if frames == 240:
-				var desc := []
-				for p in get_nodes_in_group("players"):
-					desc.append("%s(%d)@%s" % [p.character, p.peer_id, p.global_position.snapped(Vector3.ONE * 0.1)])
-				print(role, ": after move ", desc)
-				if not outfits_ok:
-					print(role, " OUTFIT SYNC FAILED")
-					quit(1)
-					return false
-				print(role, " COOP OK")
-				quit(0)
+			if not _once("finish", t > 7.5 and frames >= 240):
+				return false
+			var after := []
+			for p in get_nodes_in_group("players"):
+				after.append("%s(%d)@%s" % [p.character, p.peer_id, p.global_position.snapped(Vector3.ONE * 0.1)])
+			print(role, ": after move ", after)
+			if not outfits_ok:
+				print(role, " OUTFIT SYNC FAILED")
+				quit(1)
+				return false
+			print(role, " COOP OK")
+			quit(0)
 	return false
