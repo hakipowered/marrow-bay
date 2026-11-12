@@ -51,3 +51,14 @@ and the flashbang. Converted to mono Ogg Vorbis and peak-normalised to -1 dB:
 
 Numbered files (`weapon_knife_1.ogg`, `weapon_knife_2.ogg`) are variations
 that `Sfx` picks between at random.
+
+Nineteen of the first batch's files held only their first hundredth of a
+second (every gun but the pistol, SMG and grenade launcher, the explosion,
+flashbang, flamethrower, reloads, dry fire, equip and the bag's clicks). They
+were rebuilt from the same takes and levelled against the pistol: the loudest
+100 ms sits near -2 dBFS RMS for guns and explosions, -6 for the flamethrower,
+-10 to -15 for clicks and reloads. Gun blasts are pushed through a soft
+(tanh) clip, only over the opening blast, so the room tail stays below it.
+The pump shotgun is its take's blast and room tail with the pump rack pulled
+forward to 0.65 s, before the next shot. `python3 tools/sfx/check_sfx.py`
+fails on any sound that is silent or cut to a click.

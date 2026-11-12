@@ -71,6 +71,13 @@ SOUNDS = {
     "power_down": (1, 2.0, -18, "electrical power failing, lights buzzing off with a dying hum"),
     "roll_whoosh": (2, 0.9, -19, "a person diving into a quick forward roll on a hard floor: fast cloth rustle and whoosh, then a soft body thump and gear rattle"),
     "game_over_sting": (1, 5.0, -15, "a dark orchestral horror sting: one deep low brass and timpani hit, dissonant strings swelling, a distant mournful choir, then fading slowly to silence"),
+    # Weapons. The pump shotgun (weapon_m12_*) isn't here: generations come
+    # back as a bare 0.2 s blast, so its files are the first batch's take,
+    # cut so the pump rack lands before the next shot (tools/weapons/README.md).
+    "weapon_breacher": (2, 0.9, -9, "a semi-automatic combat shotgun firing one deafening 12 gauge blast, heavy boom with a sharp crack and a short room echo"),
+    "weapon_bolt": (2, 0.9, -15, "a heavy crossbow firing: a loud bowstring snap and wooden thwack, the bolt hissing away"),
+    "weapon_knife": (2, 0.6, -20, "a combat knife slashing fast through the air, sharp swish"),
+    "weapon_hatchet": (2, 0.8, -19, "a heavy hatchet swung hard through the air, deep whoosh"),
     # The stalker
     "stalker_step": (3, 0.8, -15, "one very heavy boot footstep on a hard floor, deep thud"),
     "stalker_swing": (2, 0.9, -14, "a huge fist swinging through the air, heavy whoosh"),
