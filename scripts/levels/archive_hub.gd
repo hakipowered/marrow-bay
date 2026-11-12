@@ -18,6 +18,10 @@ func build() -> void:
 	_records_vault()
 	_boiler_room()
 	_horror_beats()
+	# Story: the intro, the gates, Hardass, the Tallyman behind the glass.
+	var story := Chapter1Story.new()
+	story.name = "Story"
+	add_child(story)
 
 func _environment() -> void:
 	var env := Environment.new()
@@ -420,6 +424,8 @@ func _west_corridor() -> void:
 		"look": {"grime_amount": 0.7},
 		"openings": {"n": [[8.0, 1.2, 2.3]]},
 		"skip_walls": ["e"],
+		# Frosted pane into the reading room (Chapter1Story fills it).
+		"windows": {"n": [[4.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0}]]},
 	})
 	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(11.6, 0, 0.4), 0)
 	RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(4, 3.35, 1.5), 90, 1.0, false)
@@ -439,7 +445,8 @@ func _reading_room() -> void:
 		"wall_look": {"tile_size": 2.2, "tint": Color(0.75, 0.85, 0.75), "stain_amount": 0.6},
 		"openings": {"s": [[10.6, 1.2, 2.3]]},
 		"skip_walls": ["e"],
-		"windows": {"w": [[2.4, 1.6, 1.3, 3.7, {"moon": 2.6, "boards": 2}], [7.6, 1.6, 1.3, 3.7, {"moon": 2.6}]]},
+		"windows": {"w": [[2.4, 1.6, 1.3, 3.7, {"moon": 2.6, "boards": 2}], [7.6, 1.6, 1.3, 3.7, {"moon": 2.6}]],
+			"s": [[6.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0}]]},
 		"beams": {"axis": "z", "spacing": 3.0, "slot": "archive_wainscot", "depth": 0.3},
 		"decals": {"blood": 2, "stain": 4, "wall_blood": 1},
 		"papers": 26,

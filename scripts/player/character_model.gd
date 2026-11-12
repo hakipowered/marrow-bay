@@ -231,6 +231,15 @@ func play_once(clip: String, blend := 0.15, speed := 1.0) -> void:
 		_current = clip
 		_one_shot = true
 
+## Cutscenes: jump to the last frame of a clip and hold it (lying in the road
+## after the crash, before standing up).
+func hold_end(clip: String) -> void:
+	if _anim and _anim.has_animation(clip):
+		_anim.play(clip, 0.0)
+		_anim.seek(_anim.get_animation(clip).length, true)
+		_current = clip
+		_one_shot = true
+
 # ---------- Body shaping and secondary motion ----------
 
 var _body_mat: ShaderMaterial
