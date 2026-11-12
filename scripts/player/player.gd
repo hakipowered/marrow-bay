@@ -300,11 +300,13 @@ func _physics_process(delta: float) -> void:
 	# glides; the clip's playback speed matches her ground speed too.
 	var rv := get_real_velocity() - Vector3(_knock.x, 0.0, _knock.z)
 	var gs := Vector2(rv.x, rv.z).length() if dir.length() > 0.1 else 0.0
-	sync_speed = gs
+	# Backing off with the gun up: the walk plays in reverse.
+	var backing := raised and gs > 0.2 and (-body.global_transform.basis.z).dot(dir.normalized()) < -0.35
+	sync_speed = -gs if backing else gs
 	sync_anim = "run" if (gs > 2.8 and _hip_t <= 0.0) else ("walk" if gs > 0.2 else "idle")
 	if _reloading > 0.0 and gs <= 0.2:
 		sync_anim = "reload"
-	model.move_speed = gs
+	model.move_speed = sync_speed
 	model.play(sync_anim, raised)
 
 	_tick_weapon(delta)

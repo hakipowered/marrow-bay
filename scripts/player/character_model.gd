@@ -99,6 +99,7 @@ func _build(id: String) -> void:
 	_held = ""
 	_one_shot = false
 	outfit = id
+	_natural.clear()
 	var path := Outfits.model_path(character, id)
 	if path != "" and ResourceLoader.exists(path):
 		var m: Node3D = load(path).instantiate()
@@ -140,6 +141,7 @@ func apply_customization(c: Dictionary) -> void:
 		_build(Outfits.resolve(character, c.get("outfit", Outfits.DEFAULT)))
 	var h := 1.0 + _slider("height") * 0.16
 	scale = Vector3(h, h, h)
+	_natural.clear()   # longer legs, longer strides
 	if _skel:
 		for slider in BONE_SLIDERS:
 			var amount := _slider(slider) * 0.5
@@ -241,14 +243,84 @@ func _build_standin() -> void:
 		add_child(mi)
 		_parts[k] = {"mesh": mi, "color": defs[k][2]}
 
+## How fast a loop's feet carry this body at 1x (m/s): the speed of the
+## planted foot sliding back under the hips, worked out from the clip's own
+## keys on this skeleton (forward kinematics, so nothing has to play). Fits
+## every outfit, both survivors and the Legs and Height sliders; the run
+## measured 2.9 by eye was really 4.2, which made her legs race.
+func natural_speed(clip: String) -> float:
+	if _natural.has(clip):
+		return _natural[clip]
+	var v: float = NATURAL_SPEED.get(clip, 0.0)
+	if STRIDE_SOURCE.has(clip) and _anim and _skel and _skel.is_inside_tree() and _anim.has_animation(STRIDE_SOURCE[clip]):
+		var m := _measure_stride(_anim.get_animation(STRIDE_SOURCE[clip]))
+		if m > 0.3:
+			v = m
+	_natural[clip] = v
+	return v
+
+func _measure_stride(a: Animation) -> float:
+	var rot := {}
+	var pos := {}
+	for t in a.get_track_count():
+		var bone := a.track_get_path(t).get_concatenated_subnames()
+		if a.track_get_type(t) == Animation.TYPE_ROTATION_3D:
+			rot[bone] = t
+		elif a.track_get_type(t) == Animation.TYPE_POSITION_3D:
+			pos[bone] = t
+	var to_self := global_transform.affine_inverse() * _skel.global_transform
+	var world_scale := global_transform.basis.get_scale().x
+	var total := 0.0
+	var feet := 0
+	for side in ["Left", "Right"]:
+		var chain: Array[int] = []
+		var b := _skel.find_bone(side + "Foot")
+		while b >= 0:
+			chain.push_front(b)
+			b = _skel.get_bone_parent(b)
+		if chain.is_empty():
+			continue
+		const N := 72
+		var ys: Array[float] = []
+		var zs: Array[float] = []
+		for i in N + 1:
+			var tm := a.length * i / N
+			var g := Transform3D()
+			for bi in chain:
+				var n := _skel.get_bone_name(bi)
+				var rest := _skel.get_bone_rest(bi)
+				var q: Quaternion = a.rotation_track_interpolate(rot[n], tm) if rot.has(n) else rest.basis.get_rotation_quaternion()
+				var o: Vector3 = a.position_track_interpolate(pos[n], tm) if pos.has(n) else rest.origin
+				g = g * Transform3D(Basis(q) * Basis.from_scale(_skel.get_bone_pose_scale(bi)), o)
+			var f := to_self * g.origin
+			ys.append(f.y)
+			zs.append(f.z)
+		# The foot on the ground: within 3 cm of its lowest. The median of
+		# its slide skips the heel strike and toe-off at the window's edges.
+		var low: float = ys.min()
+		var v: Array[float] = []
+		for i in N:
+			if ys[i] < low + 0.03 / world_scale and ys[i + 1] < low + 0.03 / world_scale:
+				v.append(absf(zs[i + 1] - zs[i]) / (a.length / N))
+		if v.size() > 2:
+			v.sort()
+			total += v[v.size() / 2] * world_scale
+			feet += 1
+	return total / feet if feet > 0 else 0.0
+
 ## Moving with the gun up uses stance/aim_walk (walking legs, the aim held
 ## steady above the hips), not the rig's shoot_walk, whose feet barely move.
 const AIM_ANIMS := {"idle": "stance/aim", "walk": "stance/aim_walk", "run": "stance/aim_walk"}
-## How fast each loop's feet carry the body at 1x (measured from the clips'
-## foot travel). The clip plays at ground speed / this, so feet don't skate.
-const NATURAL_SPEED := {"walk": 1.23, "run": 2.9, "stance/aim_walk": 1.23, "shoot_walk": 0.25, "run_shoot": 1.4}
+## How fast each loop's feet carry the body at 1x. The clip plays at ground
+## speed / this, so the planted foot stays put. Measured from the clip itself
+## on the model wearing it (see natural_speed); these are the fallbacks.
+const NATURAL_SPEED := {"walk": 1.23, "run": 4.2, "stance/aim_walk": 1.23, "shoot_walk": 0.25, "run_shoot": 1.4}
+## Loops whose speed is measured from the planted foot (aim_walk uses walk's legs).
+const STRIDE_SOURCE := {"walk": "walk", "run": "run", "stance/aim_walk": "walk"}
 ## The body's real ground speed (m/s), set by the player every frame.
+## Negative when backing off with the gun up: the walk plays in reverse.
 var move_speed := 0.0
+var _natural := {}
 ## Aiming with a knife, hatchet or grenade: the combat stance when standing.
 const GUARD_ANIMS := {"idle": "combat/guard"}
 const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit"}
@@ -288,8 +360,9 @@ func play(state: String, aiming: bool) -> void:
 			_anim.play(anim, 0.2)
 		_current = anim
 	if _anim:
-		var nat: float = NATURAL_SPEED.get(_current, 0.0)
-		_anim.speed_scale = clampf(move_speed / nat, 0.6, 1.7) if nat > 0.0 and move_speed > 0.05 else 1.0
+		var nat := natural_speed(_current)
+		var sp := absf(move_speed)
+		_anim.speed_scale = clampf(sp / nat, 0.6, 1.7) * signf(move_speed) if nat > 0.0 and sp > 0.05 else 1.0
 	elif _parts.has("leg_l"):
 		_t += get_process_delta_time() * (9.0 if state == "run" else 5.5 if state == "walk" else 0.0)
 		var swing := sin(_t) * (0.5 if state != "idle" else 0.0)

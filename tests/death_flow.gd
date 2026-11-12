@@ -197,7 +197,7 @@ func _process(d: float) -> bool:
 	return false
 
 func _check_move(what: String, want_anim: String, want_speed: float) -> void:
-	var gs: float = p.sync_speed
+	var gs: float = absf(p.sync_speed)
 	var scale: float = p.model._anim.speed_scale if p.model._anim else 1.0
 	notes.append("%s: %.2f m/s, anim %s (%s) at x%.2f" % [what, gs, p.sync_anim, p.model._current, scale])
 	if p.sync_anim != want_anim:
