@@ -22,26 +22,34 @@ extends Node3D
 ##   by pitch and yaw) at that moment of that clip, instead of the hold's
 ##   default. The knife stands tip-up so it shows from behind.
 const MODELS := {
-	"knife": {"len": 0.34, "grip": Vector2(0.5, 0.0), "hold": "blade", "align": ["combat/guard", 0.3, 0.9, -0.4]},
-	"hatchet": {"ph": "hatchet", "up": true, "len": 0.4, "grip": Vector2(0.0, -0.03), "hold": "blade", "align": ["combat/chop", 1.0, -0.5]},
-	"p9": {"ph": "service_pistol", "grip": Vector2(-0.005, -0.01), "hold": "gun", "show": ["pistol_a", "slide_a", "hammer_a", "trigger_a"]},
-	"vk18": {"len": 0.26, "grip": Vector2(0.70, -0.25), "hold": "gun"},
-	"bastion": {"len": 0.38, "grip": Vector2(0.72, -0.30), "hold": "gun"},
-	"hornet": {"len": 0.62, "grip": Vector2(0.17, -0.08), "hold": "gun"},
-	"m12": {"len": 0.98, "grip": Vector2(0.36, 0.0), "hold": "gun"},
-	"breacher": {"len": 0.95, "grip": Vector2(0.39, -0.18), "hold": "gun"},
-	"longshot": {"ph": "bolt_action_rifle_7_62", "grip": Vector2(-0.32, -0.03), "hold": "gun", "hide": ["bolt_b", "bullet"]},
-	"carbine": {"len": 0.80, "grip": Vector2(0.33, -0.15), "hold": "gun"},
-	"bolt": {"len": 0.85, "grip": Vector2(0.29, -0.18), "hold": "gun"},
-	"gl": {"len": 0.72, "grip": Vector2(0.2, -0.02), "hold": "gun"},
-	"flamer": {"len": 0.95, "grip": Vector2(0.60, -0.03), "hold": "gun"},
-	"rocket": {"len": 1.15, "grip": Vector2(-0.15, -0.15), "hold": "gun"},
+	"knife": {"len": 0.34, "grip": Vector2(0.5, 0.0), "hold": "blade", "align": ["combat/guard", 0.3, 0.9, -0.4], "fist": Vector3(0, -0.003, -0.01), "edge": Vector3.DOWN},
+	"hatchet": {"ph": "hatchet", "up": true, "len": 0.4, "grip": Vector2(0.0, -0.03), "hold": "blade", "align": ["combat/chop", 1.0, -0.5], "fist": Vector3(0, 0.002, -0.005), "edge": Vector3.UP},
+	"p9": {"ph": "service_pistol", "grip": Vector2(-0.005, -0.01), "hold": "gun", "show": ["pistol_a", "slide_a", "hammer_a", "trigger_a"], "fist": Vector3(0, -0.005, 0.0045), "rake": 17.0},
+	"vk18": {"len": 0.26, "grip": Vector2(0.70, -0.25), "hold": "gun", "fist": Vector3(0, 0.03, -0.011), "rake": 17.0},
+	"bastion": {"len": 0.38, "grip": Vector2(0.72, -0.30), "hold": "gun", "fist": Vector3(0, 0.037, 0.0), "rake": 30.0},
+	"hornet": {"len": 0.62, "grip": Vector2(0.17, -0.08), "hold": "gun", "fist": Vector3(0, 0.013, 0.0085), "rake": 17.0},
+	"m12": {"len": 0.98, "grip": Vector2(0.36, 0.0), "hold": "gun", "fist": Vector3(0, 0.028, 0.028), "rake": 50.0},
+	"breacher": {"len": 0.95, "grip": Vector2(0.39, -0.18), "hold": "gun", "fist": Vector3(0, 0.002, -0.009), "rake": 25.0},
+	"longshot": {"ph": "bolt_action_rifle_7_62", "grip": Vector2(-0.32, -0.03), "hold": "gun", "hide": ["bolt_b", "bullet"], "fist": Vector3(0, 0.026, 0.009), "rake": 50.0},
+	"carbine": {"len": 0.80, "grip": Vector2(0.33, -0.15), "hold": "gun", "fist": Vector3(0, -0.004, 0.008), "rake": 25.0},
+	"bolt": {"len": 0.85, "grip": Vector2(0.29, -0.18), "hold": "gun", "fist": Vector3(0, -0.011, 0.003), "rake": 24.0},
+	"gl": {"len": 0.72, "grip": Vector2(0.2, -0.02), "hold": "gun", "fist": Vector3(0, 0.027, 0.003), "rake": 50.0},
+	"flamer": {"len": 0.95, "grip": Vector2(0.60, -0.03), "hold": "gun", "fist": Vector3(0, 0.013, -0.0056), "rake": 30.0},
+	"rocket": {"len": 1.15, "grip": Vector2(-0.15, -0.15), "hold": "gun", "fist": Vector3(0, 0.024, 0.012), "rake": 13.0},
 	"flash": {"len": 0.13, "up": true, "grip": Vector2(0.0, -0.1), "hold": "palm"},
-	"frag": {"ph": "stick_grenade", "up": true, "grip": Vector2(0.0, -0.05), "hold": "palm"},
+	"frag": {"ph": "stick_grenade", "up": true, "grip": Vector2(0.0, -0.05), "hold": "palm", "fist": Vector3.ZERO, "edge": Vector3.UP},
 }
 
+## In the fist (survivors with finger joints, see HandRig): "fist" is the
+## middle of the handle in weapon space (metres), where the middle of the
+## closed hand goes. A gun's handle runs down and back by "rake" degrees
+## from straight down; a blade's handle runs along the blade, its "edge"
+## facing the front of the fist. Measured from slices through each model's
+## handle, then checked in close-ups.
+
 ## Middle of the closed hand, from the wrist bone, in metres along the bone
-## (Y runs to the fingertips on these rigs).
+## (Y runs to the fingertips on these rigs), for a body without finger
+## joints. HandRig.grip_point finds it for each outfit's own hand.
 const PALM := Vector3(0.0, 0.085, 0.015)
 
 var model: CharacterModel
@@ -55,7 +63,9 @@ var _hand := -1
 var _align := {}      # hold -> Basis, hand frame to weapon frame
 var _kick := 0.0
 var _rot := Quaternion.IDENTITY   # hand-to-weapon turn now, eased between holds
-var _rot_at := 0                  # usec of the last easing step
+var _grip := Basis.IDENTITY       # hand-to-weapon turn with the handle in the fist
+var _hold := Basis.IDENTITY       # the same once the wrist has turned (a gun's leftover turn)
+var _turned := {}                 # bone -> [turn we set, the clip's own turn]
 var _snap := true                 # jump straight to the hold (new weapon or body)
 var _long := false                # a long gun hangs lower than a pistol
 
@@ -111,7 +121,20 @@ func _process(delta: float) -> void:
 	# libraries while the AnimationPlayer is mid-update crashes the engine.
 	if model._skel != _skel:
 		_bind(model._skel)
+	_set_fingers()
+	if _in_fist():
+		_grip = _fist_basis(MODELS[weapon_id])
+	if _skel and _hand >= 0 and _gun:
+		var want := _target_align().get_rotation_quaternion()
+		_rot = want if _snap else _rot.slerp(want, 1.0 - exp(-16.0 * clampf(delta, 0.0, 0.1)))
+		_snap = false
+	_turn_wrist()
 	_follow()
+
+## Whether the handle sits in a closed fist (a body with finger joints and
+## a weapon whose handle we know).
+func _in_fist() -> bool:
+	return model.hand_rig != null and MODELS.get(weapon_id, {}).has("fist")
 
 ## Snaps the weapon to the hand. Also runs right after the skeleton poses
 ## itself each frame, so the gun never trails the hand by a frame.
@@ -121,31 +144,123 @@ func _follow() -> void:
 	if _skel == null or _hand < 0 or _gun == null:
 		visible = false
 		return
+	if not _skel.is_inside_tree():
+		return
 	visible = model.is_visible_in_tree()
 	var pose := _skel.get_bone_global_pose(_hand)
 	var hb := (_skel.global_basis * pose.basis).orthonormalized()
 	var at := _skel.global_transform * pose.origin
-	var want := _target_align().get_rotation_quaternion()
-	var now := Time.get_ticks_usec()
-	if _snap:
-		_rot = want
-		_snap = false
+	var t: Transform3D
+	var pivot := Vector3.ZERO
+	if _in_fist():
+		# The middle of the handle in the middle of the fist.
+		var b := hb * _hold
+		pivot = MODELS[weapon_id]["fist"]
+		t = Transform3D(b, at + hb * model.hand_rig.grip_point("Right") - b * pivot)
 	else:
-		_rot = _rot.slerp(want, 1.0 - exp(-16.0 * clampf((now - _rot_at) / 1e6, 0.0, 0.1)))
-	_rot_at = now
-	var b: Basis = hb * Basis(_rot)
-	var t := Transform3D(b, at + hb * PALM)
+		var grip := model.hand_rig.grip_point("Right") if model.hand_rig else PALM
+		t = Transform3D(hb * Basis(_rot), at + hb * grip)
 	if _kick > 0.0:
-		t = t * Transform3D(Basis(Vector3.RIGHT, _kick * 0.22), Vector3(0, 0, _kick * 0.035))
+		# Recoil turns the weapon about the hand.
+		var kick := Transform3D(Basis(Vector3.RIGHT, _kick * 0.22), Vector3(0, 0, _kick * 0.035))
+		t = t * Transform3D(Basis.IDENTITY, pivot) * kick * Transform3D(Basis.IDENTITY, -pivot)
 	global_transform = t
+
+## How much of the wrist's turn along the hand the forearm takes.
+const FOREARM_TWIST := 0.5
+## The most the forearm and wrist turn along the hand (radians, together),
+## and the most the wrist bends.
+const TWIST_MAX := 1.05
+const SWING_MAX := 0.5
+
+## The clip-based hold (_rot) points the weapon where it should go: a gun
+## straight ahead, a knife tip up where it shows. With the handle in the
+## fist that takes a turn of the wrist, H * C * grip = H * rot, so the
+## wrist turns to meet the handle: the twist along the hand is shared with
+## the forearm so the wrist doesn't wring, and the hand bends the rest,
+## each within what a real arm does. Whatever turn is left over, a gun takes
+## in the hand (it stays aimed) and a blade or grenade doesn't (it stays
+## in the fist). Only called from _process, after the clip has posed the
+## skeleton this frame (never from the skeleton's update signal: changing
+## bones there would update the skeleton again).
+func _turn_wrist() -> void:
+	if _skel == null or not is_instance_valid(_skel):
+		return
+	# Put back what the clip set if it hasn't posed these bones since.
+	for b in _turned:
+		if _skel.get_bone_pose_rotation(b).is_equal_approx(_turned[b][0]):
+			_skel.set_bone_pose_rotation(b, _turned[b][1])
+	_turned.clear()
+	_hold = _grip
+	var fa := _skel.get_bone_parent(_hand) if _hand >= 0 else -1
+	if fa < 0 or _gun == null or not _in_fist():
+		return
+	var c := (Basis(_rot) * _grip.inverse()).get_rotation_quaternion()
+	if c.w < 0.0:
+		c = -c
+	var twist := Quaternion(0.0, c.y, 0.0, c.w).normalized()
+	var angle := clampf(wrapf(2.0 * atan2(twist.y, twist.w), -PI, PI), -TWIST_MAX, TWIST_MAX)
+	var swing := c * twist.inverse()
+	if swing.w < 0.0:
+		swing = -swing
+	var bend := swing.get_angle()
+	if bend > SWING_MAX:
+		swing = Quaternion(swing.get_axis(), SWING_MAX)
+	var turn := swing * Quaternion(Vector3.UP, angle)
+	if hold == "gun":
+		_hold = Basis(turn.inverse() * c) * _grip
+	var target := _skel.get_bone_global_pose(_hand).basis.get_rotation_quaternion() * turn
+	var fa_clip := _skel.get_bone_pose_rotation(fa)
+	var hand_clip := _skel.get_bone_pose_rotation(_hand)
+	var fa_now := (fa_clip * Quaternion(Vector3.UP, angle * FOREARM_TWIST)).normalized()
+	_skel.set_bone_pose_rotation(fa, fa_now)
+	var parent := _skel.get_bone_global_pose(fa).basis.get_rotation_quaternion()
+	var hand_now := (parent.inverse() * target).normalized()
+	_skel.set_bone_pose_rotation(_hand, hand_now)
+	_turned[fa] = [fa_now, fa_clip]
+	_turned[_hand] = [hand_now, hand_clip]
+
+## Hand-to-weapon turn that runs the handle through the fist (thumb side to
+## little finger) with the barrel or the edge toward the front of the fist.
+func _fist_basis(def: Dictionary) -> Basis:
+	var thumb: float = model.hand_rig.hands["Right"].get("thumb", -1.0) if model.hand_rig else -1.0
+	var e1 := Vector3(-thumb, 0, 0)   # toward the little finger
+	var e2 := Vector3.UP              # out of the front of the fist
+	var w1: Vector3
+	var front: Vector3
+	if def.has("rake"):
+		var r := deg_to_rad(def["rake"])
+		w1 = Vector3(0, -cos(r), sin(r))   # down the handle
+		front = Vector3.FORWARD             # the barrel
+	else:
+		w1 = Vector3.BACK                  # from the blade to the butt
+		front = def.get("edge", Vector3.UP)
+	var w2 := (front - w1 * front.dot(w1)).normalized()
+	return Basis(e1, e2, e1.cross(e2)) * Basis(w1, w2, w1.cross(w2)).transposed()
+
+## Closes the right hand around what it holds (a fist on a grip or a
+## handle, a cupped palm under a grenade) and brings the left hand onto the
+## gun while it's raised.
+func _set_fingers() -> void:
+	var rig: HandRig = model.hand_rig
+	if rig == null:
+		return
+	var holding := _gun != null and hold != ""
+	var cup: bool = hold == "palm" and not MODELS.get(weapon_id, {}).has("fist")
+	rig.pose["Right"] = ("cup" if cup else "fist") if holding else "relaxed"
+	rig.pose["Left"] = "support" if holding and hold == "gun" and _raised() else "relaxed"
+
+## Whether the weapon is up and working: aimed, guarding or swinging.
+func _raised() -> bool:
+	if model._anim == null:
+		return true
+	var cur := String(model._anim.current_animation)
+	return cur.begins_with("combat/") or cur.begins_with("stance/") or cur in RAISED_ANIMS
 
 ## The hold for what the body is doing: aimed or guarding (the solved pose
 ## for this weapon), else lowered at her side.
 func _target_align() -> Basis:
-	var raised := true
-	if model._anim:
-		var cur := String(model._anim.current_animation)
-		raised = cur.begins_with("combat/") or cur.begins_with("stance/") or cur in RAISED_ANIMS
+	var raised := _raised()
 	if not raised:
 		var low: String = ("long_low" if _long else "gun_low") if hold == "gun" else hold + "_low"
 		if _align.has(low):
@@ -156,6 +271,7 @@ func _bind(sk: Skeleton3D) -> void:
 	if is_instance_valid(_skel) and _skel.skeleton_updated.is_connected(_follow):
 		_skel.skeleton_updated.disconnect(_follow)
 	_skel = sk
+	_turned.clear()
 	if sk:
 		sk.skeleton_updated.connect(_follow, CONNECT_DEFERRED)
 	_hand = sk.find_bone("RightHand") if sk else -1

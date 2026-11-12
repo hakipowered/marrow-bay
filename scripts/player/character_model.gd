@@ -22,6 +22,8 @@ var _t := 0.0
 var _current := ""
 var _sole_local := {}   # side -> [thigh bone, foot bone, point under the ankle in foot space]
 var _to_model := Transform3D()
+## Finger joints and the hands' grip (null on a stand-in body).
+var hand_rig: HandRig
 
 const BONE_SLIDERS := {
 	# slider -> [[bone name, axis scale weights]] (Meshy rig bone names)
@@ -90,6 +92,7 @@ func _build(id: String) -> void:
 	_parts.clear()
 	_anim = null
 	_skel = null
+	hand_rig = null
 	_sole_local.clear()
 	_body_mat = null
 	_current = ""
@@ -103,6 +106,9 @@ func _build(id: String) -> void:
 		add_child(m)
 		_model = m
 		_skel = m.find_child("Skeleton3D", true, false)
+		# Finger joints, before the animations bind to the skeleton.
+		var meshes := m.find_children("*", "MeshInstance3D", true, false)
+		hand_rig = HandRig.build(_skel, meshes[0] if meshes.size() > 0 else null)
 		var old_ap := m.find_child("AnimationPlayer", true, false)
 		if old_ap:
 			old_ap.get_parent().remove_child(old_ap)
@@ -495,6 +501,8 @@ func _attach_head() -> void:
 	mi.material_override = _skin_material(mi)
 
 func _process(delta: float) -> void:
+	if hand_rig:
+		hand_rig.update(delta)
 	if _body_mat and delta > 0.0:
 		_update_regions(minf(delta, 0.05))
 	if _skel and _model and not is_equal_approx(_slider("legs"), 0.0):
