@@ -65,6 +65,7 @@ func _process(_d: float) -> bool:
 				p.interact()
 			if dt == 20:
 				_check(p.inventory.count("herb_red") == hp0 + 1, "floor item went into the bag")
+				_check(not hud._prompt.visible, "pickup prompt goes away once the item is taken ('%s')" % hud._prompt.text)
 				stage = 1; t = frames
 		1:
 			# 2. Thumb on the stick (finger 0), then FIRE with finger 1.

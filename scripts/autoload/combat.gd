@@ -25,11 +25,26 @@ func fire(shooter: Node3D, weapon_id: String, origin: Vector3, dirs: Array, muzz
 		"flame":
 			_flame(shooter, weapon_id, w, origin, dirs[0])
 		"projectile":
-			_rpc_projectile.rpc(weapon_id, muzzle_pos, dirs[0], shooter.peer_id)
+			_rpc_projectile.rpc(weapon_id, muzzle_pos, _from_muzzle(shooter, origin, dirs[0], muzzle_pos), shooter.peer_id)
 		"throwable":
 			# Lobbed: aim direction tipped upward so it arcs over cover.
 			var d: Vector3 = (dirs[0] + Vector3.UP * 0.35).normalized()
 			_rpc_projectile.rpc(weapon_id, muzzle_pos, d, shooter.peer_id)
+
+## Projectiles leave the gun, not the camera: aim them from the muzzle at the
+## point the camera line meets. Flying parallel to that line put crossbow bolts
+## half a metre beside whatever the dot was on, so they missed.
+func _from_muzzle(shooter: Node3D, origin: Vector3, dir: Vector3, muzzle_pos: Vector3) -> Vector3:
+	var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * 80.0, HITBOX_MASK, [shooter.get_rid()])
+	q.collide_with_areas = true
+	var hit := shooter.get_world_3d().direct_space_state.intersect_ray(q)
+	var at: Vector3 = hit.position if not hit.is_empty() else origin + dir * 80.0
+	var d := at - muzzle_pos
+	# Something right in front of the camera (a wall at her shoulder): keep
+	# the camera's line rather than firing sideways or back.
+	if d.length() < 0.6 or d.normalized().dot(dir) < 0.5:
+		return dir
+	return d.normalized()
 
 func _ray(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, dir: Vector3, muzzle_pos: Vector3) -> void:
 	var space := shooter.get_world_3d().direct_space_state
@@ -46,14 +61,53 @@ func _ray(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, di
 		end_point = hit.position
 		var col: Object = hit.collider
 		if col.has_meta("hit_zone"):
-			Effects.blood(hit.position, hit.normal)
+			Effects.blood(hit.position, hit.normal, dir, _gore(w))
 			_request_damage(col, w["damage"], weapon_id, hit.position, dir)
 			exclude.append(col.get_rid())
 			from = hit.position + dir * 0.05
 		else:
 			Effects.impact(hit.position, hit.normal, col)
 			break
-	Effects.tracer(muzzle_pos, end_point)
+	Effects.tracer(muzzle_pos, end_point, 0.7 if w["kind"] == "pellets" else 1.0)
+
+## What the partner sees of a shot fired on the other phone: the tracer, the
+## sparks or blood where it lands, the flamethrower's stream and who it sets
+## alight. Visual only: the shooter's own game sends the damage to the host.
+func remote_shot_fx(shooter: Node3D, weapon_id: String, from: Vector3, dir: Vector3) -> void:
+	var w: Dictionary = WeaponDB.WEAPONS.get(weapon_id, {})
+	match w.get("kind", ""):
+		"hitscan", "pellets":
+			var space := shooter.get_world_3d().direct_space_state
+			var spread := deg_to_rad(float(w.get("spread", 0.0)))
+			var pellets: bool = w.get("kind") == "pellets"
+			for i in int(w.get("pellets", 1)):
+				var d := dir.rotated(Vector3.UP, randf_range(-spread, spread) * 0.5)
+				d = d.rotated(shooter.global_transform.basis.x.normalized(), randf_range(-spread, spread) * 0.5)
+				var q := PhysicsRayQueryParameters3D.create(from, from + d * 80.0, HITBOX_MASK, [shooter.get_rid()])
+				q.collide_with_areas = true
+				var hit := space.intersect_ray(q)
+				var end := from + d * 80.0
+				if not hit.is_empty():
+					end = hit.position
+					if hit.collider.has_meta("hit_zone"):
+						Effects.blood(hit.position, hit.normal, d, _gore(w))
+					else:
+						Effects.impact(hit.position, hit.normal, hit.collider)
+				Effects.tracer(from, end, 0.7 if pellets else 1.0)
+		"flame":
+			Effects.flame_stream(shooter, from, dir, w["range"])
+			for z in get_tree().get_nodes_in_group("zombies"):
+				var to: Vector3 = z.global_position + Vector3.UP - from
+				if to.length() < w["range"] and to.normalized().dot(dir) > 0.9 and z.get("state") != Zombie.S.DEAD \
+						and not z.get("data").get("fire_immune", false):
+					Effects.ignite(z, float(w.get("burn", 4.0)))
+
+## How much blood a hit throws: a pistol round about 1, a magnum or rifle
+## round more, each shotgun pellet less.
+static func _gore(w: Dictionary) -> float:
+	if w.get("kind") == "pellets":
+		return 0.45
+	return clampf(float(w.get("damage", 25)) / 28.0, 0.7, 2.2)
 
 ## Gun, swing and throw sounds. The flamethrower plays its roar once per
 ## couple of seconds rather than on every tick of fuel.
@@ -116,7 +170,7 @@ func melee_hit(shooter: Node3D, weapon_id: String, target: Node3D) -> bool:
 		n += 1
 		var col: Object = hits[enemy][0]
 		var at: Vector3 = (col as Node3D).global_position if col else enemy.global_position + Vector3.UP
-		Effects.blood(at, -fwd)
+		Effects.blood(at, -fwd, fwd, 1.3 if weapon_id == "hatchet" else 0.9)
 		_request_damage_node(enemy, w["damage"], weapon_id, hits[enemy][1], fwd)
 	if n > 0:
 		Sfx.play_at("melee_hit", xf * Vector3(0, 1.2, -reach * 0.5), "", -2.0, 6.0)
@@ -124,11 +178,14 @@ func melee_hit(shooter: Node3D, weapon_id: String, target: Node3D) -> bool:
 	return n > 0
 
 func _flame(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, dir: Vector3) -> void:
-	Effects.flame(shooter.muzzle.global_position, dir, w["range"])
+	var from: Vector3 = shooter._muzzle_pos() if shooter.has_method("_muzzle_pos") else shooter.muzzle.global_position
+	Effects.flame_stream(shooter, from, dir, w["range"])
 	for z in get_tree().get_nodes_in_group("zombies"):
 		var to: Vector3 = z.global_position + Vector3.UP - origin
 		if to.length() < w["range"] and to.normalized().dot(dir) > 0.9:
 			_request_damage_node(z, w["damage"], weapon_id, "torso", dir)
+			if z.get("state") != Zombie.S.DEAD and not z.get("data").get("fire_immune", false):
+				Effects.ignite(z, float(w.get("burn", 4.0)))
 
 func _request_damage(col: Object, dmg: float, weapon_id: String, pos: Vector3, dir: Vector3) -> void:
 	var enemy: Node = col.get_meta("enemy")
@@ -202,7 +259,7 @@ func _wall_between(p: Node3D, pos: Vector3) -> bool:
 
 ## Flash grenade: blinds and staggers zombies, whites out nearby players.
 func flash(pos: Vector3, radius: float) -> void:
-	Effects.explosion(pos, 0.6)
+	Effects.flash_burst(pos)
 	Sfx.play_at("flashbang", pos, "explosion")
 	_alert_zombies(pos, 30.0)
 	for p in get_tree().get_nodes_in_group("players"):

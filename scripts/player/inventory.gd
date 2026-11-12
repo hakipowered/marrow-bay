@@ -56,6 +56,8 @@ func room_for(id: String) -> int:
 func has_weapon(id: String) -> bool:
 	if Cheats.on("all_weapons") and WeaponDB.WEAPONS.has(id) and not WeaponDB.WEAPONS[id].get("enemy_only", false):
 		return true
+	if id == "rocket" and Cheats.on("rocket_launcher"):
+		return true
 	return count(id) > 0
 
 ## Weapons in bag order (grenades included while any are left).
@@ -68,6 +70,8 @@ func weapon_list() -> Array[String]:
 		for id in WeaponDB.WEAPONS:
 			if not out.has(id) and has_weapon(id):
 				out.append(id)
+	if Cheats.on("rocket_launcher") and not out.has("rocket"):
+		out.append("rocket")
 	return out
 
 # ---------- Changes ----------

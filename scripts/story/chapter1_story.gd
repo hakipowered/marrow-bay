@@ -546,50 +546,12 @@ func _bounds(n: Node3D) -> AABB:
 		first = false
 	return out
 
-func _flames(at: Vector3, extents: Vector3, strength := 1.0) -> GPUParticles3D:
-	var p := GPUParticles3D.new()
-	p.amount = int(60 * strength)
-	p.lifetime = 0.9
-	p.position = at
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = extents
-	pm.direction = Vector3(0.15, 1, 0)
-	pm.spread = 12.0
-	pm.initial_velocity_min = 1.2
-	pm.initial_velocity_max = 2.4
-	pm.gravity = Vector3(0, 1.5, 0)
-	pm.scale_min = 0.5
-	pm.scale_max = 1.1
-	var sc := Curve.new()
-	sc.add_point(Vector2(0, 0.6))
-	sc.add_point(Vector2(0.3, 1.0))
-	sc.add_point(Vector2(1, 0.1))
-	var sct := CurveTexture.new()
-	sct.curve = sc
-	pm.scale_curve = sct
-	var grad := Gradient.new()
-	grad.set_color(0, Color(1.0, 0.85, 0.45, 1.0))
-	grad.set_color(1, Color(0.6, 0.08, 0.02, 0.0))
-	grad.add_point(0.35, Color(1.0, 0.45, 0.1, 0.9))
-	var gt := GradientTexture1D.new()
-	gt.gradient = grad
-	pm.color_ramp = gt
-	p.process_material = pm
-	var q := QuadMesh.new()
-	q.size = Vector2(0.7, 0.9)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.vertex_color_use_as_albedo = true
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	mat.albedo_texture = _soft_dot()
-	mat.disable_receive_shadows = true
-	q.material = mat
-	p.draw_pass_1 = q
-	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return p
+## The wreck's fire: photographed flame sprites, embers and smoke (the same
+## fire as everywhere else, see Effects.make_fire). The glow is lit separately.
+func _flames(at: Vector3, extents: Vector3, strength := 1.0) -> Node3D:
+	var f := Effects.make_fire(extents, strength * 1.4, true, false)
+	f.position = at
+	return f
 
 func _smoke(at: Vector3) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
@@ -620,14 +582,22 @@ func _smoke(at: Vector3) -> GPUParticles3D:
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	pm.color_ramp = gt
+	pm.angle_max = 360.0
+	pm.anim_offset_max = 1.0
 	p.process_material = pm
+	p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
 	var q := QuadMesh.new()
 	q.size = Vector2(1.6, 1.6)
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.vertex_color_use_as_albedo = true
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	mat.albedo_texture = _soft_dot()
+	mat.albedo_texture = Effects.SMOKE_TEX
+	mat.particles_anim_h_frames = 2
+	mat.particles_anim_v_frames = 2
+	mat.particles_anim_loop = false
+	mat.proximity_fade_enabled = true
+	mat.proximity_fade_distance = 0.5
 	mat.roughness = 1.0
 	q.material = mat
 	p.draw_pass_1 = q

@@ -37,6 +37,7 @@ var _cooldown := 0.0
 var _reloading := 0.0
 var _burst_left := 0
 var _focus: Node = null
+var _prompt_text := ""   # what the interact prompt shows now
 var downed := false
 var pinned := false
 var pinned_by: Node = null
@@ -103,6 +104,7 @@ func _ready() -> void:
 	CallOuts.callout_played.connect(func(speaker: int, _c: String, _id: String, _t: String, scream: bool):
 		if speaker == peer_id and model:
 			model.play_once("shout" if scream else "call", 0.15, 2.2))
+	Cheats.changed.connect(_on_cheat)
 	collision_layer = 2
 	collision_mask = 1 | 4
 	var shape := CollisionShape3D.new()
@@ -374,16 +376,45 @@ func _emit_ammo() -> void:
 		"melee", "":
 			ammo_changed.emit(-1, -1)
 		"throwable":
-			ammo_changed.emit(-1, 99 if Cheats.on("infinite_ammo") else inventory.ammo_count(inventory.equipped))
+			ammo_changed.emit(-1, 99 if _free_reserve() else inventory.ammo_count(inventory.equipped))
 		_:
-			ammo_changed.emit(inventory.mag.get(inventory.equipped, 0), inventory.ammo_count(w.get("ammo", "")))
+			ammo_changed.emit(inventory.mag.get(inventory.equipped, 0), 99 if _free_reserve() else inventory.ammo_count(w.get("ammo", "")))
+
+## The rocket launcher cheat puts the launcher in her hands (and takes it
+## back when it's switched off, unless she really carries one).
+func _on_cheat(cheat: String, value: bool) -> void:
+	if cheat != "rocket_launcher" or not is_multiplayer_authority() or inventory == null:
+		return
+	if value:
+		inventory.mag["rocket"] = WeaponDB.WEAPONS["rocket"]["mag"]
+		equip("rocket")
+	elif inventory.equipped == "rocket" and not inventory.has_weapon("rocket"):
+		equip(_fallback_weapon())
+
+## Reserve rounds that cost nothing: the infinite-ammo cheat, the rocket
+## launcher cheat, and a weapon taken from the cheat arsenal that isn't in the
+## bag. (Arsenal guns used to stop after one magazine, which for the crossbow,
+## grenade launcher and rocket launcher is one shot, and arsenal grenades
+## couldn't be thrown at all.)
+func _free_reserve(id := "") -> bool:
+	if id == "":
+		id = inventory.equipped
+	if Cheats.on("infinite_ammo") or (id == "rocket" and Cheats.on("rocket_launcher")):
+		return true
+	return Cheats.on("all_weapons") and inventory.count(id) == 0
+
+## Shots that don't empty the magazine (no reloading at all).
+func _endless_mag(id := "") -> bool:
+	if id == "":
+		id = inventory.equipped
+	return Cheats.on("infinite_ammo") or (id == "rocket" and Cheats.on("rocket_launcher"))
 
 func reload() -> void:
 	var w := weapon()
 	if not w.has("mag") or _reloading > 0:
 		return
 	var reserve: int = inventory.ammo_count(w["ammo"])
-	if Cheats.on("infinite_ammo"):
+	if _free_reserve():
 		reserve = 999
 	if inventory.mag.get(inventory.equipped, 0) >= w["mag"] or reserve <= 0:
 		return
@@ -398,10 +429,10 @@ func _finish_reload() -> void:
 	var need: int = w["mag"] - inventory.mag.get(inventory.equipped, 0)
 	if w.get("reload_per_shell", false):
 		need = min(need, 1)
-	var n: int = need if Cheats.on("infinite_ammo") else inventory.take_ammo(w["ammo"], need)
+	var n: int = need if _free_reserve() else inventory.take_ammo(w["ammo"], need)
 	inventory.mag[inventory.equipped] = inventory.mag.get(inventory.equipped, 0) + n
 	_emit_ammo()
-	if w.get("reload_per_shell", false) and inventory.mag[inventory.equipped] < w["mag"] and (Cheats.on("infinite_ammo") or inventory.ammo_count(w["ammo"]) > 0):
+	if w.get("reload_per_shell", false) and inventory.mag[inventory.equipped] < w["mag"] and (_free_reserve() or inventory.ammo_count(w["ammo"]) > 0):
 		_reloading = w["reload"]
 		Sfx.play_at("reload_shell", global_position + Vector3.UP, "", -3.0, 5.0)
 
@@ -447,7 +478,7 @@ func _tick_weapon(delta: float) -> void:
 		fire_held = false
 		return
 	if inventory.mag.get(inventory.equipped, 0) <= 0:
-		if inventory.ammo_count(w["ammo"]) <= 0 and not Cheats.on("infinite_ammo"):
+		if inventory.ammo_count(w["ammo"]) <= 0 and not _free_reserve():
 			Sfx.play_at("dry_fire", muzzle.global_position, "", -4.0, 4.0)
 			_cooldown = 0.35
 			fire_held = false
@@ -466,7 +497,7 @@ func _tick_weapon(delta: float) -> void:
 func _fire_once(w: Dictionary) -> void:
 	if inventory.mag.get(inventory.equipped, 0) <= 0:
 		return
-	if not Cheats.on("infinite_ammo"):
+	if not _endless_mag():
 		inventory.mag[inventory.equipped] -= 1
 	_emit_ammo()
 	var origin := camera.global_position
@@ -494,8 +525,10 @@ func _hip_assist(origin: Vector3, dir: Vector3) -> Vector3:
 	for z in get_tree().get_nodes_in_group("zombies"):
 		if not (z is Node3D) or z.get("state") in [Zombie.S.DEAD, Zombie.S.HIDDEN, Zombie.S.PLAY_DEAD]:
 			continue
-		var chest: Vector3 = z.global_position + Vector3.UP * (0.35 if z.get("crippled") else 1.2)
-		var to := chest - origin
+		var rough: Vector3 = z.global_position + Vector3.UP * 0.7 - origin
+		if rough.length() > 23.0 or dir.angle_to(rough) > deg_to_rad(30.0):
+			continue
+		var to := _body_center(z) - origin
 		if to.length() > 22.0:
 			continue
 		var ang := dir.angle_to(to)
@@ -503,6 +536,16 @@ func _hip_assist(origin: Vector3, dir: Vector3) -> Vector3:
 			best_ang = ang
 			best = to.normalized()
 	return best
+
+## The middle of an infected's body: its torso hitbox, which for a crawler or
+## a hound is down near the floor (aiming at chest height went over them).
+func _body_center(z: Node3D) -> Vector3:
+	var boxes = z.get("_hitboxes")
+	if boxes is Array:
+		for a in boxes:
+			if is_instance_valid(a) and a.get_meta("hit_zone", "") == "torso":
+				return a.global_position
+	return z.global_position + Vector3.UP * (0.35 if z.get("crippled") else 1.2)
 
 ## Where shots leave: the gun's muzzle when one is in hand.
 func _muzzle_pos() -> Vector3:
@@ -535,7 +578,7 @@ func _start_swing(w: Dictionary) -> void:
 	_rpc_action.rpc("swing", m[0], m[1])
 
 func _start_throw(w: Dictionary) -> void:
-	if inventory.ammo_count(inventory.equipped) <= 0 and not Cheats.on("infinite_ammo"):
+	if inventory.ammo_count(inventory.equipped) <= 0 and not _free_reserve():
 		equip(_fallback_weapon())
 		return
 	_face_yaw = yaw
@@ -549,7 +592,7 @@ func _release_throw() -> void:
 	var id := inventory.equipped
 	if ItemInfo.kind(id) != "throwable":
 		return
-	if not Cheats.on("infinite_ammo") and inventory.take_ammo(id, 1) == 0:
+	if not _free_reserve(id) and inventory.take_ammo(id, 1) == 0:
 		return
 	var aim_dir := -camera.global_transform.basis.z
 	var from: Vector3 = held.hand_global() if held.visible else muzzle.global_position
@@ -557,7 +600,7 @@ func _release_throw() -> void:
 	from += Vector3(aim_dir.x, 0.0, aim_dir.z).normalized() * 0.45
 	Combat.fire(self, id, camera.global_position, [aim_dir], from)
 	_emit_ammo()
-	if inventory.ammo_count(id) <= 0 and not Cheats.on("infinite_ammo"):
+	if inventory.ammo_count(id) <= 0 and not _free_reserve(id):
 		equip(_fallback_weapon())
 
 ## Nearest standing infected within reach and roughly ahead (where the
@@ -613,6 +656,11 @@ func _rpc_action(kind: String, what: String, speed: float) -> void:
 			if not w.is_empty():
 				held.fired(_recoil(w))
 				Combat.play_shot_sound(what, _muzzle_pos())
+				# The partner's shot as seen here: along where the body faces,
+				# tipped by the synced aim pitch.
+				var right := body.global_transform.basis.x.normalized()
+				var aim := (-body.global_transform.basis.z).normalized().rotated(right, sync_pitch)
+				Combat.remote_shot_fx(self, what, _muzzle_pos(), aim)
 
 ## Inventory changes reach the partner's copy of this player (and so the
 ## host's saves) a moment later; mag counts ride along with the next change.
@@ -801,9 +849,14 @@ func _update_focus() -> void:
 			target = hit
 		elif hit and hit.get_parent() and hit.get_parent().has_method("interact_text"):
 			target = hit.get_parent()
-	if target != _focus:
-		_focus = target
-		interact_prompt.emit(_focus.interact_text(self) if _focus else "")
+	# The prompt follows the text, not just the target: a taken item is freed
+	# (and a freed node compares equal to null, so a target check alone kept
+	# "Pick up ..." on screen), and a door's text changes once it opens.
+	_focus = target
+	var text: String = target.interact_text(self) if target else ""
+	if text != _prompt_text:
+		_prompt_text = text
+		interact_prompt.emit(text)
 
 const PICKUP_REACH := 1.5
 
@@ -844,6 +897,7 @@ func interact() -> void:
 		if _struggle >= 12 and is_instance_valid(pinned_by):
 			_rpc_rescue.rpc()
 		return
-	if _focus and _focus.has_method("interact"):
+	if is_instance_valid(_focus) and _focus.has_method("interact"):
 		_focus.interact(self)
 		_focus = null
+		_update_focus()

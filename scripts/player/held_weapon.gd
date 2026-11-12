@@ -54,8 +54,6 @@ var _skel: Skeleton3D
 var _hand := -1
 var _align := {}      # hold -> Basis, hand frame to weapon frame
 var _kick := 0.0
-var _flash: MeshInstance3D
-var _flash_t := 0.0
 var _rot := Quaternion.IDENTITY   # hand-to-weapon turn now, eased between holds
 var _rot_at := 0                  # usec of the last easing step
 var _snap := true                 # jump straight to the hold (new weapon or body)
@@ -69,16 +67,6 @@ func _ready() -> void:
 	top_level = true
 	# After the AnimationPlayer has posed the skeleton this frame.
 	process_priority = 100
-	_flash = MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(0.28, 0.28)
-	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://shaders/muzzle_flash.gdshader")
-	q.material = mat
-	_flash.mesh = q
-	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_flash.visible = false
-	add_child(_flash)
 
 func set_weapon(id: String) -> void:
 	if id == weapon_id and _gun:
@@ -99,15 +87,14 @@ func set_weapon(id: String) -> void:
 	_long = box.size.z > 0.55
 	_snap = true
 	add_child(_gun)
-	_flash.position = muzzle_local + Vector3(0, 0, -0.06)
 
 ## Brief muzzle flash and recoil.
 func fired(recoil: float) -> void:
 	_kick = clampf(_kick + recoil, 0.0, 1.5)
-	if hold == "gun" and weapon_id not in ["flamer", "bolt"]:
-		_flash_t = 0.05
-		_flash.visible = true
-		_flash.scale = Vector3.ONE * randf_range(0.8, 1.25)
+	if hold == "gun" and weapon_id not in ["flamer", "bolt"] and is_inside_tree():
+		# A photographed blast along the barrel, a star at the muzzle, a flash
+		# of light and a wisp of smoke (Effects.muzzle_flash).
+		Effects.muzzle_flash(muzzle_global(), -global_basis.z, weapon_id)
 
 func muzzle_global() -> Vector3:
 	return global_transform * muzzle_local
@@ -117,10 +104,6 @@ func hand_global() -> Vector3:
 
 func _process(delta: float) -> void:
 	_kick = maxf(_kick - delta * 7.0, 0.0)
-	if _flash_t > 0.0:
-		_flash_t -= delta
-		if _flash_t <= 0.0:
-			_flash.visible = false
 	if model == null or not is_instance_valid(model):
 		return
 	# A new skeleton (first frame, or an outfit change rebuilt the body).

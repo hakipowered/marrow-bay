@@ -28,13 +28,16 @@ func _blob(c: Color) -> Texture2D:
 			img.set_pixel(x, y, Color(c.r, c.g, c.b, clamp((1.0 - d) * 2.0 * n, 0, 1) * c.a))
 	return ImageTexture.create_from_image(img)
 
-func splat(kind: String, pos: Vector3, normal: Vector3) -> void:
+## Default sizes (metres across) by kind; blood varies.
+const SIZE := {"bullet_hole": 0.14, "scorch": 2.5, "acid": 0.7}
+
+func splat(kind: String, pos: Vector3, normal: Vector3, size := -1.0) -> void:
 	var scene := get_tree().current_scene
 	if scene == null:
 		return
 	var d := Decal.new()
 	d.texture_albedo = _textures(kind).pick_random()
-	var s := randf_range(0.5, 1.3) if kind == "blood" else 0.08
+	var s: float = size if size > 0.0 else (randf_range(0.5, 1.1) if kind == "blood" else SIZE.get(kind, 0.08))
 	d.size = Vector3(s, 0.3, s)
 	d.cull_mask = 1
 	scene.add_child(d)
