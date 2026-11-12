@@ -270,7 +270,11 @@ func cross(front: Vector3, back: Vector3, tag := "") -> bool:
 	while sim_t < end:
 		var z := _threat(3.0)
 		if z and not _busy_fighting:
+			# Infected coming through the doorway: fight, then walk on with a
+			# fresh 10 s (backing off while fighting used up the old one).
+			print("PLAYTEST NOTE fighting at %s while crossing %s" % [_v(p.global_position), tag])
 			await fight(z)
+			end = maxf(end, sim_t + 10.0)
 		if CUTS.active:
 			await _wait_cutscene_end(2.0)   # a story scene on the threshold
 			end += 10.0
