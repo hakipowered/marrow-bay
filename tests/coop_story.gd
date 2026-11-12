@@ -89,5 +89,9 @@ func _process(_d: float) -> bool:
 				print(role, ": standing clips ", clips)
 				_check(clips.get("zegan", "") == "idle" and clips.get("obcera", "") == "moves/idle", "Zegan and Obcera each in their own idle")
 				print(role, " COOP STORY ", "OK" if ok else "FAILED")
-				quit(0 if ok else 1)
+				# Stay connected a moment so the other copy finishes its own
+				# checks (quitting at once made the host lose the partner's
+				# survivor before its idle check).
+				stage = 6
+				create_timer(5.0).timeout.connect(func(): quit(0 if ok else 1))
 	return false

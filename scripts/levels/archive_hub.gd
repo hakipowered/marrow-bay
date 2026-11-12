@@ -126,19 +126,23 @@ func _street() -> void:
 	RoomBuilder.prop(r, "modular_fire_escape", Vector3(32, 2.5, 0.4), 0, 1.0, false)
 	RoomBuilder.prop(r, "water_manhole_cover", Vector3(20, 0.01, 8), 0, 1.0, false)
 	RoomBuilder.prop(r, "street_rat", Vector3(4.6, 0.18, 13.9), 200, 1.0, false)
-	for x in [6.0, 20.0, 34.0]:
-		RoomBuilder.prop(r, "street_lamp_01", Vector3(x, 0.18, 14.6), 180)
-		var l := RoomBuilder.light(r, Vector3(x, 4.6, 13.6), Color(1.0, 0.7, 0.4), 2.4, 11.0, x == 20.0, x == 34.0)
+	# The middle lamp stands beside the courtyard gate (local x 18..22), not
+	# in front of it. Each post gets a slim collider of its own: the box fitted
+	# to the whole model (post and arm) was an invisible metre-deep wall.
+	for x in [6.0, 23.4, 34.0]:
+		RoomBuilder.prop(r, "street_lamp_01", Vector3(x, 0.18, 14.6), 180, 1.0, false)
+		_post_collider(r, Vector3(x, 0.18, 14.6), 0.14, 4.6)
+		var l := RoomBuilder.light(r, Vector3(x, 4.6, 13.6), Color(1.0, 0.7, 0.4), 2.4, 11.0, x == 23.4, x == 34.0)
 	# Burning wreck glow at the far end.
 	RoomBuilder.light(r, Vector3(30, 1.0, 7), Color(1.0, 0.45, 0.15), 3.0, 9.0, true, true)
 	_rain(r, Vector3(20, 9, 8), Vector3(19.5, 0, 7.5))
 	place_checkpoint("start", Vector3(0, 0, -24), Vector3(6, 3, 6))
 	place_zombie("Z_street_1", Vector3(-8, 0, -22), 30, "shambler", false, "cop")
-	place_zombie("Z_street_2", Vector3(10, 0, -25), -60, "shambler", false, "mechanic")
-	place_zombie("Z_street_crawl", Vector3(-11, 0, -21.5), 100, "crawler")
+	place_zombie("Z_street_2", Vector3(12.5, 0, -25.6), -60, "shambler", false, "mechanic")
+	place_zombie("Z_street_crawl", Vector3(-11, 0, -18.8), 100, "crawler")
 	place_zombie("Z_street_run1", Vector3(18, 0, -26), -90, "runner", true)
-	place_zombie("Z_street_run2", Vector3(19, 0, -24), -100, "runner", true)
-	place_zombie("Z_street_hound", Vector3(-17, 0, -27), 40, "hound", true)
+	place_zombie("Z_street_run2", Vector3(15.5, 0, -22.5), -100, "runner", true)
+	place_zombie("Z_street_hound", Vector3(-14, 0, -25.5), 40, "hound", true)
 	place_zombie("Z_street_3", Vector3(14, 0, -18), 200, "shambler", true, "jogger")
 	place_pickup("ammo:9mm", Vector3(-15, 0.2, -16.2), "street_ammo_1")
 	place_pickup("herb_green", Vector3(17, 0.2, -28.5), "street_herb_1")
@@ -305,7 +309,7 @@ func _courtyard() -> void:
 	place_door(Vector3(0, 0, -14), 0, Door.Kind.MANUAL, "iron_gate", 4.0, 3.0, "courtyard_gate")
 	place_zombie("Z_court_1", Vector3(-6, 0, -6), 90, "possum")
 	place_zombie("Z_court_2", Vector3(5, 0, -9), 200, "shambler", true, "nurse")
-	place_pickup("ammo:shells", Vector3(7.5, 0.1, -12.4), "court_shells")
+	place_pickup("ammo:shells", Vector3(7.5, 0.37, -12.4), "court_shells")   # on the crate (it was inside it: no prompt)
 	place_pickup("weapon:m12", Vector3(7.5, 0.1, -12.8), "court_m12")
 
 # ---------------- Great Hall (hub) ----------------
@@ -536,7 +540,7 @@ func _records_vault() -> void:
 	place_zombie("Z_vault_1", Vector3(-4, 0, 22), 180, "riot")
 	place_zombie("Z_vault_grab", Vector3(-8, 0, 24), 200, "grappler")
 	place_zombie("Z_vault_2", Vector3(1, 0, 24), 200, "brute")
-	place_zombie("Z_boiler_burn", Vector3(10, 0, 22), 180, "burner")
+	place_zombie("Z_boiler_burn", Vector3(11, 0, 19), 180, "burner")
 	place_pickup("weapon:gl", Vector3(2.3, 0.37, 24.4), "vault_gl")
 	place_pickup("ammo:grenades", Vector3(2.9, 0.37, 24.6), "vault_gl_ammo")
 
@@ -557,8 +561,22 @@ func _boiler_room() -> void:
 	RoomBuilder.prop(r, "Barrel_01", Vector3(7.8, 0, 9.0), 40)
 	RoomBuilder.light(r, Vector3(5, 3.4, 5), Color(1.0, 0.35, 0.2), 1.4, 9.0, true, true)
 	place_door(Vector3(4, 0, 20.6), 90, Door.Kind.MANUAL, "steel", 1.2, 2.3, "boiler_door")
-	place_pickup("ammo:fuel", Vector3(10, 0.1, 22.2), "boiler_fuel")
+	place_pickup("ammo:fuel", Vector3(10.6, 0.1, 22.2), "boiler_fuel")   # beside the jerrycan (it was inside it: no prompt)
 	place_pickup("gunpowder", Vector3(12.5, 0.1, 18), "boiler_powder")
+
+## A slim upright collider for a post-like prop (lamp posts) placed without
+## its fitted box, so nothing bumps into the empty space under its arm.
+func _post_collider(parent: Node3D, base: Vector3, radius: float, height: float) -> void:
+	var sb := StaticBody3D.new()
+	sb.collision_layer = 1
+	var cs := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.radius = radius
+	cyl.height = height
+	cs.shape = cyl
+	sb.add_child(cs)
+	sb.position = base + Vector3(0, height / 2.0, 0)
+	parent.add_child(sb)
 
 ## A worn bookshelf filled with uneven rows of books (some missing, some leaning).
 func _bookshelf(r: Node3D, at: Vector3, rot: float) -> void:

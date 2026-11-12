@@ -42,6 +42,7 @@ func _check() -> void:
 @rpc("authority", "reliable", "call_local")
 func _rpc_reached() -> void:
 	GameState.set_shared_checkpoint(checkpoint_id)
+	SaveSystem.mark_checkpoint()
 	var hud := get_tree().get_first_node_in_group("hud")
 	if hud:
 		hud.toast("Checkpoint reached together" if Net.is_coop() else "Checkpoint reached")

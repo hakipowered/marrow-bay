@@ -83,3 +83,4 @@ func reset_run() -> void:
 	world_flags.clear()
 	inventories.clear()
 	play_time_sec = 0.0
+	SaveSystem.checkpoint_snapshot = {}

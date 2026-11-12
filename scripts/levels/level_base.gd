@@ -144,7 +144,7 @@ func place_stalker(at: Vector3, active := false) -> Stalker:
 ## Everyone is down: back to the last checkpoint both players reached together.
 func request_retry() -> void:
 	if multiplayer.is_server():
-		_rpc_retry.rpc()
+		_retry_everyone()
 	else:
 		_rpc_ask_retry.rpc_id(1)
 
@@ -155,7 +155,7 @@ func _rpc_ask_retry() -> void:
 		if not p.downed:
 			all_down = false
 	if multiplayer.is_server() and all_down:
-		_rpc_retry.rpc()
+		_retry_everyone()
 
 # ---------- Death and game over ----------
 
@@ -206,7 +206,7 @@ func _rpc_vote_continue() -> void:
 	var need := multiplayer.get_peers().size() + 1
 	_rpc_votes.rpc(_continue_votes.size(), need)
 	if _continue_votes.size() >= need:
-		_rpc_retry.rpc()
+		_retry_everyone()
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_votes(have: int, need: int) -> void:
@@ -214,11 +214,23 @@ func _rpc_votes(have: int, need: int) -> void:
 		if c.has_method("show_votes"):
 			c.show_votes(have, need)
 
+## The host sends its checkpoint snapshot along, so both phones restart
+## from exactly the same state.
+func _retry_everyone() -> void:
+	_rpc_retry.rpc(SaveSystem.checkpoint_snapshot)
+
+## Back to the last checkpoint reached together, with the run as it stood
+## then. Not the autosave or slot 1: those can be minutes older than the
+## checkpoint, or left over from another run entirely.
 @rpc("authority", "reliable", "call_local")
-func _rpc_retry() -> void:
+func _rpc_retry(snapshot: Dictionary = {}) -> void:
 	Engine.time_scale = 1.0
 	Music.override_track = ""
-	var data := SaveSystem.read_slot(SaveSystem.AUTOSAVE_SLOT)
+	var data := snapshot
+	if data.is_empty():
+		data = SaveSystem.checkpoint_snapshot
+	if data.is_empty():
+		data = SaveSystem.read_slot(SaveSystem.AUTOSAVE_SLOT)
 	if data.is_empty():
 		data = SaveSystem.read_slot("slot1")
 	if not data.is_empty():

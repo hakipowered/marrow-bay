@@ -339,11 +339,16 @@ func _on_partner_joined(_id: int) -> void:
 		return
 	_set_status("Your partner is here!")
 	if _panel.get_child_count() > 0:
-		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags))
+		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags, GameState.inventories))
 
+## The host's save (or new run) for both phones. The bags ride along too:
+## each survivor's bag lives on its own player's phone, so without them a
+## resumed co-op run gave the partner a fresh starting kit (and the next save
+## wrote that over their saved bag).
 @rpc("authority", "reliable", "call_local")
-func _start_coop(level: String, checkpoint: String, flags: Dictionary) -> void:
+func _start_coop(level: String, checkpoint: String, flags: Dictionary, bags: Dictionary = {}) -> void:
 	GameState.level_path = level
 	GameState.shared_checkpoint = checkpoint
 	GameState.world_flags = flags
+	GameState.inventories = bags.duplicate(true)
 	get_tree().change_scene_to_file(level)

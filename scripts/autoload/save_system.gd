@@ -11,6 +11,10 @@ const AUTOSAVE_INTERVAL := 240.0
 
 var _autosave_timer := 0.0
 var autosave_enabled := true
+## The run as it stood when the survivors last reached a checkpoint together
+## (they reach the one they spawn at when a level loads). Continue after a
+## game over goes back to this. Kept in memory for this run only.
+var checkpoint_snapshot := {}
 
 func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
@@ -59,6 +63,9 @@ func build_snapshot() -> Dictionary:
 		"play_time": GameState.play_time_sec,
 		"mode": GameState.mode,
 	}
+
+func mark_checkpoint() -> void:
+	checkpoint_snapshot = build_snapshot()
 
 func save_game(slot: String) -> void:
 	var data := build_snapshot()

@@ -568,7 +568,8 @@ func _tick_weapon(delta: float) -> void:
 	if _swing_t >= 0.0:
 		_swing_t -= delta
 		if _swing_t < 0.0:
-			Combat.melee_hit(self, inventory.equipped, _lock_target)
+			# The infected she swung at may be gone by the time the blade lands.
+			Combat.melee_hit(self, inventory.equipped, _lock_target if is_instance_valid(_lock_target) else null)
 	if _throw_t >= 0.0:
 		_throw_t -= delta
 		if _throw_t < 0.0:
@@ -1058,7 +1059,11 @@ func _nearest_pickup() -> Node:
 		if score >= best_score:
 			continue
 		var q := PhysicsRayQueryParameters3D.create(eye, p.global_position + Vector3.UP * 0.15, 1, [get_rid()])
-		if not space.intersect_ray(q).is_empty():
+		var hit := space.intersect_ray(q)
+		# The shelf or crate an item rests on doesn't hide it (the herb on
+		# the office shelf only had a prompt from one odd angle); a wall or
+		# anything further off between her and it does.
+		if not hit.is_empty() and hit.position.distance_to(p.global_position + Vector3.UP * 0.15) > 0.4:
 			continue
 		best_score = score
 		best = p

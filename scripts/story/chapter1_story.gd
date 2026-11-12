@@ -88,8 +88,17 @@ func _quiet(at: Vector3) -> bool:
 	for p in _players():
 		if p.downed or p.pinned:
 			return false
+	var space := get_world_3d().direct_space_state
 	for z in get_tree().get_nodes_in_group("zombies"):
 		if z.global_position.distance_to(at) < 12.0 and z.get("state") in [Zombie.S.CHASE, Zombie.S.ATTACK, Zombie.S.CHARGE, Zombie.S.PINNING]:
+			# One shut out behind a closed gate, door or wall can't reach
+			# anyone yet (and the infected freeze during a scene). It used to
+			# hold a scene back for good: the nurse pressed against the
+			# Archive gates kept the gates scene from playing, and the warden
+			# and glass scenes wait for that one.
+			var q := PhysicsRayQueryParameters3D.create(z.global_position + Vector3.UP * 1.2, at + Vector3.UP * 1.2, 1, [z.get_rid()])
+			if not space.intersect_ray(q).is_empty():
+				continue
 			return false
 	for s in get_tree().get_nodes_in_group("stalker"):
 		if s.active and s.global_position.distance_to(at) < 14.0:
