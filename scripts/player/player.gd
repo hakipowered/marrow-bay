@@ -84,6 +84,9 @@ var _hip_t := 0.0         # gun raised from the hip after FIRE without AIM
 const HIP_HOLD := 0.7     # how long the gun stays up after a hip shot
 var _throw_t := -1.0      # until the grenade leaves the hand
 var _attack_lock := 0.0   # feet planted while swinging or throwing
+var _hit_stun := 0.0      # a beat after taking a hit: the feet stop with the flinch
+var _knock := Vector3.ZERO   # shove from the blow, decays fast
+var _shake := 0.0
 var _combo := 0
 var _combo_window := 0.0
 var _lock_target: Node3D = null
@@ -260,13 +263,18 @@ func _physics_process(delta: float) -> void:
 	if _attack_lock > 0.0:
 		_attack_lock -= delta
 		speed *= 0.12
+	if _hit_stun > 0.0:
+		_hit_stun -= delta
+		speed *= 0.15
 	if Cheats.on("noclip"):
 		global_position += (pivot.global_transform.basis * Vector3(move_input.x, 0, move_input.y)) * RUN_SPEED * 2 * delta
 		return
-	velocity.x = dir.x * speed
-	velocity.z = dir.z * speed
+	velocity.x = dir.x * speed + _knock.x
+	velocity.z = dir.z * speed + _knock.z
+	_knock = _knock.move_toward(Vector3.ZERO, 14.0 * delta)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
 	move_and_slide()
+	_tick_shake(delta)
 
 	if _attack_lock > 0.0:
 		body.rotation.y = lerp_angle(body.rotation.y, _face_yaw, 22 * delta)
@@ -650,12 +658,17 @@ func receive_item(id: String, n: int, rounds: int, from_name: String) -> void:
 
 # ---------- Health ----------
 
-func apply_damage(amount: float, _from: Node = null) -> void:
+func apply_damage(amount: float, from: Node = null) -> void:
 	if Cheats.on("god_mode") or downed:
 		return
 	hp = max(hp - amount, 0.0)
 	health_changed.emit(hp, max_hp)
-	model.flinch()
+	# A real blow (a bite, a swipe, acid, a blast) staggers; burn and gas
+	# ticks only sting, or the survivor would be stuck flinching in a fire.
+	var blow := amount >= 9.0 or from is Zombie
+	_feel_hit(amount, from, blow)
+	if blow:
+		_rpc_hurt_fx.rpc(amount)
 	if hp <= 0.0:
 		downed = true
 		_downed_t = 0.0
@@ -664,6 +677,61 @@ func apply_damage(amount: float, _from: Node = null) -> void:
 		var hud := get_tree().get_first_node_in_group("hud")
 		if hud and is_multiplayer_authority():
 			hud.toast("You're down! Your partner has 30 seconds to reach you." if Net.is_coop() else "You died.")
+
+## What taking a hit feels like on this phone: the flinch, a shove away from
+## whatever hit you, a red flash from that side of the screen, a camera jolt,
+## a buzz, the thud and a pained grunt.
+func _feel_hit(amount: float, from: Node, blow: bool) -> void:
+	var src := Vector3.INF
+	if from is Node3D and is_instance_valid(from):
+		src = (from as Node3D).global_position
+	var heavy := amount >= 30.0
+	if blow:
+		model.flinch(heavy)
+		_hit_stun = 0.42 if heavy else 0.28
+		if src != Vector3.INF:
+			var away := (global_position - src) * Vector3(1, 0, 1)
+			if away.length() > 0.01:
+				_knock = away.normalized() * (3.6 if heavy else 2.2)
+		_shake = max(_shake, 0.9 if heavy else 0.55)
+		Sfx.play_at("player_hit", global_position + Vector3.UP * 1.3, "flesh_hit", 3.0, 6.0)
+		_grunt(heavy)
+		if OS.has_feature("mobile"):
+			Input.vibrate_handheld(170 if heavy else 90, 1.0 if heavy else 0.7)
+	var post := get_tree().get_first_node_in_group("horror")
+	if post and post.get("post_fx"):
+		post.post_fx.hit_flash(clampf(amount / 25.0, 0.25, 1.0) * (1.0 if blow else 0.5), _screen_dir(src))
+
+## The partner's phone sees and hears the blow land on this survivor.
+@rpc("authority", "call_remote", "unreliable")
+func _rpc_hurt_fx(amount: float) -> void:
+	model.flinch(amount >= 30.0)
+	Sfx.play_at("player_hit", global_position + Vector3.UP * 1.3, "flesh_hit", 3.0, 8.0)
+	_grunt(amount >= 30.0)
+
+var _grunt_t := 0
+func _grunt(heavy: bool) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _grunt_t < 700:
+		return
+	_grunt_t = now
+	Sfx.play_at("%s_pain%s" % [character, "_heavy" if heavy else ""], global_position + Vector3.UP * 1.6, "%s_pain" % character, 0.0, 7.0)
+
+## Where on screen the blow came from (x right, y down), or zero when unknown.
+func _screen_dir(src: Vector3) -> Vector2:
+	if src == Vector3.INF or camera == null:
+		return Vector2.ZERO
+	var local := camera.global_transform.basis.inverse() * (src - camera.global_position)
+	var d := Vector2(local.x, local.z)
+	return d.normalized() if d.length() > 0.01 else Vector2.ZERO
+
+func _tick_shake(delta: float) -> void:
+	if camera == null:
+		return
+	_shake = move_toward(_shake, 0.0, delta * 2.6)
+	var s := _shake * _shake * 0.09
+	camera.h_offset = randf_range(-s, s)
+	camera.v_offset = randf_range(-s, s)
 
 func _bleed_out() -> void:
 	# Both players go back to the last shared checkpoint together.

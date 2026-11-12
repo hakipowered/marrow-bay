@@ -123,7 +123,9 @@ func _load_rigged() -> bool:
 	_anim = AnimationPlayer.new()
 	m.add_child(_anim)
 	_anim.root_node = NodePath("..")
-	_anim.add_animation_library("", load(lib_path))
+	var lib: AnimationLibrary = load(lib_path)
+	ClipFix.fix_library(lib)
+	_anim.add_animation_library("", lib)
 	_rigged = true
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(str(get_parent().name) + look) if get_parent() else randi()
@@ -271,16 +273,20 @@ func _play(clip: String, blend := 0.25, speed := 1.0, from_offset := false) -> v
 		_anim.seek(_loop_offset * _anim.current_animation_length, true)
 
 ## A one-off clip (hit, scream) that plays over the state clip, then hands back.
-func play_once(clip: String, blend := 0.12) -> void:
+func play_once(clip: String, blend := 0.12, speed := 1.0) -> void:
 	if not _rigged or _dead or _anim == null or not _anim.has_animation(clip):
 		return
 	_clip = clip
 	_anim.play(clip, blend)
-	_anim.speed_scale = 1.0
-	_oneshot = _anim.get_animation(clip).length * (0.55 if clip == "hit" else 0.9)
+	_anim.speed_scale = speed
+	_oneshot = _anim.get_animation(clip).length * (0.55 if clip == "hit" else 0.9) / speed
 
 func _animate_rigged(state: int, speed: float, crippled: bool) -> void:
 	var dt := get_process_delta_time()
+	# A swing starting always shows from its first frame (the strike is timed
+	# from it), even if a scream or a flinch was still finishing.
+	if state == Zombie.S.ATTACK and _clip != "attack" and not (crippled or data.get("crawl")):
+		_oneshot = 0.0
 	if _oneshot > 0.0:
 		_oneshot -= dt
 		return
@@ -299,7 +305,12 @@ func _animate_rigged(state: int, speed: float, crippled: bool) -> void:
 				_anim.seek(_anim.current_animation_length - 0.01, true)
 				_anim.pause()
 		Zombie.S.ATTACK:
-			_play("attack", 0.15, 1.25)
+			if crippled or data.get("crawl"):
+				_play("crawl", 0.15, 1.6)
+			elif _clip != "attack":
+				var at := Zombie.attack_timing(data)
+				_play("attack", 0.1, at["speed"])
+				_anim.seek(at["from"], true)
 		Zombie.S.PINNING:
 			_play("grab", 0.2)
 		Zombie.S.STAGGER:
@@ -313,11 +324,14 @@ func _animate_rigged(state: int, speed: float, crippled: bool) -> void:
 				_play("idle", 0.4, _speed_var * 0.8, true)
 			else:
 				var clip := _wander_clip
-				if state == Zombie.S.CHARGE or (runner and speed > 2.2):
+				if state == Zombie.S.CHARGE or (runner and speed > 3.2):
 					clip = "sprint"
-				elif speed > 2.0:
+				elif speed > 1.8:
 					clip = "run"
-				_play(clip, 0.3, clampf(speed / CLIP_SPEED[clip], 0.5, 1.8) * _speed_var, true)
+				elif speed > 1.1:
+					clip = "walk"
+				# Clip speed follows the ground speed so the feet don't skate.
+				_play(clip, 0.3, clampf(speed / CLIP_SPEED[clip], 0.5, 1.8), true)
 
 func _mesh(kind: String, size: Vector3, pos: Vector3, color: Color, rough := 0.85) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -408,10 +422,12 @@ func animate(state: int, speed: float, crippled: bool, head_gone: bool) -> void:
 	if variant == "bloater" and _parts.has("torso"):
 		_parts["torso"].scale = Vector3.ONE * (1.0 + sin(_t * 0.7) * 0.04)
 
-func hit_react(zone: String) -> void:
+## flinch: the hit rocked it (a sharp, quick jolt of the hit clip). Hits
+## that don't (it's still shrugging off the last one) show as blood and sound.
+func hit_react(zone: String, flinch := true) -> void:
 	if _rigged:
-		if _clip not in ["attack", "grab", "scream"]:
-			play_once("hit")
+		if flinch and _clip not in ["grab", "scream", "rise"]:
+			play_once("hit", 0.06, 1.7)
 		return
 	var t := create_tween()
 	t.tween_property(self, "rotation:y", rotation.y + randf_range(-0.15, 0.15), 0.06)

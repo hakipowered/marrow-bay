@@ -104,6 +104,7 @@ func _build(id: String) -> void:
 		var lib_path := Outfits.anims_path(character, id)
 		var lib: AnimationLibrary = load(lib_path) if ResourceLoader.exists(lib_path) else null
 		if lib:
+			ClipFix.fix_library(lib)
 			_anim.add_animation_library("", lib)
 		# Every other library (combat clips, the aim stance) goes on now,
 		# before anything plays: adding one mid-blend crashes Godot 4.4.
@@ -276,8 +277,16 @@ static func build_stance(ap: AnimationPlayer) -> void:
 	lib.add_animation("aim", a)
 	ap.add_animation_library("stance", lib)
 
-func flinch() -> void:
-	play_once("hit", 0.05)
+## Taking a hit: a sharp jolt of the whole body. Moving cuts it short once
+## the blow has landed (the player's feet are held for that moment), so the
+## legs never freeze while the body is pushed around.
+func flinch(heavy := false) -> void:
+	if _anim == null or not _anim.has_animation("hit"):
+		return
+	if _held != "" or _current in ["knockdown", "stand_up"]:
+		return
+	play_once("hit", 0.04, 1.35 if heavy else 1.75)
+	_cancel_at = 0.75 if heavy else 0.55
 
 ## Plays a non-looping clip (hit, reload, call, shout, knockdown, stand_up),
 ## then returns to the movement loop.

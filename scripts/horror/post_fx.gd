@@ -5,6 +5,8 @@ var mat: ShaderMaterial
 var fear := 0.0
 var _heart: AudioStreamPlayer
 var _heart_t := 0.0
+var _flash := 0.0
+var _flash_dir := Vector2.ZERO
 
 func _ready() -> void:
 	layer = 5
@@ -28,6 +30,9 @@ func _process(delta: float) -> void:
 			hurt = clamp(1.0 - p.hp / p.max_hp * 1.6, 0.0, 1.0)
 	mat.set_shader_parameter("hurt", hurt)
 	mat.set_shader_parameter("fear", fear)
+	_flash = move_toward(_flash, 0.0, delta * 2.2)
+	mat.set_shader_parameter("flash", _flash)
+	mat.set_shader_parameter("flash_dir", _flash_dir)
 	_heart_t -= delta
 	if (hurt > 0.3 or fear > 0.5) and _heart_t <= 0 and _heart.stream:
 		_heart.volume_db = linear_to_db(clamp(max(hurt, fear), 0.2, 1.0))
@@ -36,3 +41,10 @@ func _process(delta: float) -> void:
 
 func spike(amount: float) -> void:
 	fear = clamp(fear + amount, 0.0, 1.0)
+
+## Taking a hit: a red flash that floods in from the side the blow came from
+## (dir in screen space, x right, y down; zero for all round), then fades.
+func hit_flash(strength: float, dir := Vector2.ZERO) -> void:
+	_flash = clampf(max(_flash, strength), 0.0, 1.0)
+	_flash_dir = dir
+	fear = clampf(fear + strength * 0.25, 0.0, 1.0)

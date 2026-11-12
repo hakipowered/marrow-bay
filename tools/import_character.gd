@@ -20,7 +20,7 @@ const ZOMBIE_CLIPS := {
 const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl", "attack",
 		"stalk", "casual_walk", "injured_walk", "look_around"]
 const IN_PLACE := ["walk", "run", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl",
-		"stalk", "casual_walk", "injured_walk"]
+		"stalk", "casual_walk", "injured_walk", "hit"]
 
 func _initialize() -> void:
 	for id in OS.get_cmdline_user_args():

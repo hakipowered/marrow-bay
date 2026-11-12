@@ -7,6 +7,8 @@ uniform float vignette = 0.25;
 uniform float fringe = 0.0015;
 uniform float hurt = 0.0;      // 0 healthy .. 1 near death
 uniform float fear = 0.0;      // spikes during scares / stalker nearby
+uniform float flash = 0.0;     // a blow just landed: 1 .. fades to 0
+uniform vec2 flash_dir = vec2(0.0);   // where it came from on screen (x right, y down)
 
 float rand(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
 
@@ -24,6 +26,16 @@ void fragment() {
 	float v = smoothstep(1.0, 0.3, length(c) * (1.0 + vignette));
 	col *= mix(1.0, v, 0.6);
 	col = mix(col, vec3(0.45, 0.0, 0.0), (1.0 - v) * hurt * (0.5 + 0.5 * pulse));
+	if (flash > 0.001) {
+		// Thick at the edge facing the attacker, a thin wash everywhere else.
+		float side = 1.0;
+		if (dot(flash_dir, flash_dir) > 0.0001) {
+			side = clamp(dot(normalize(c + vec2(0.0001)), normalize(flash_dir)), 0.0, 1.0);
+		}
+		float edge = smoothstep(0.15, 0.75, length(c) * 1.25);
+		float amt = flash * (0.14 + edge * (0.35 + 0.65 * side));
+		col = mix(col, vec3(0.5, 0.0, 0.0), clamp(amt, 0.0, 0.88));
+	}
 	col += (rand(uv * TIME) - 0.5) * (grain + fear * 0.05);
 	COLOR = vec4(col, 1.0);
 }
