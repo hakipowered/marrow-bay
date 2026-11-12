@@ -21,6 +21,8 @@ for d in dirs:
         s = open(imp).read()
         if 'importer="texture"' not in s:
             continue
+        if "cookie" in os.path.basename(src):
+            continue   # light cookies keep their smooth falloff: lossless, as imported
         is_normal = bool(re.search(r"(normal|_nor_|nor_gl|_nrm)", os.path.basename(src)))
         new = s
         new = re.sub(r"compress/mode=\d", "compress/mode=2", new)
