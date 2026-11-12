@@ -5,7 +5,7 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
 // vertices so the Meshy rig needs no extra bones.
 
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_enable;
-uniform sampler2D normal_tex : hint_roughness_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D orm_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform vec4 rough_ch = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 metal_ch = vec4(0.0, 0.0, 1.0, 0.0);
