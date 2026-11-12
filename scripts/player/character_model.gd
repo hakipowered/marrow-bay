@@ -252,6 +252,9 @@ var move_speed := 0.0
 ## Aiming with a knife, hatchet or grenade: the combat stance when standing.
 const GUARD_ANIMS := {"idle": "combat/guard"}
 const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit"}
+## A survivor's own standing loop ("moves" library, CombatClips) when they
+## have one; otherwise the shared rig idle.
+const OWN_IDLE := "moves/idle"
 var _one_shot := false
 var _held := ""   # one-shot clip finished and holding its last pose (knocked down)
 var _cancel_at := -1.0   # a combat clip may give way to movement after this point
@@ -262,6 +265,8 @@ func play(state: String, aiming: bool) -> void:
 	var aims: Dictionary = AIM_ANIMS if hold == "gun" or hold == "" else GUARD_ANIMS
 	var anim: String = aims.get(state, state) if aiming else state
 	anim = STATE_CLIPS.get(state, anim)
+	if anim == "idle" and _anim and _anim.has_animation(OWN_IDLE):
+		anim = OWN_IDLE
 	if _anim and anim in STATE_CLIPS.values():
 		if _current != anim and _held != anim:
 			_anim.speed_scale = 1.0
@@ -306,6 +311,9 @@ func prepare_clips() -> void:
 	if _anim == null or _skel == null:
 		return
 	CombatClips.attach(_anim, _skel, character)
+	# This survivor's own way of standing (Obcera's idle), so the two of
+	# them never stand there in the same loop.
+	CombatClips.attach(_anim, _skel, character, "moves")
 	build_stance(_anim)
 
 ## Bones that carry the aim: everything above the hips.

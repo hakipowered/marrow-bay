@@ -81,6 +81,13 @@ func _process(_d: float) -> bool:
 					if pl.is_multiplayer_authority():
 						p = pl
 				_check(p != null and not p.input_locked, "my player can move again")
+				# Both survivors stand in their own loops on this phone (they
+				# used to share one idle and stood in lockstep after a scene).
+				var clips := {}
+				for pl in get_nodes_in_group("players"):
+					clips[pl.character] = String(pl.model._anim.current_animation) if pl.model._anim else ""
+				print(role, ": standing clips ", clips)
+				_check(clips.get("zegan", "") == "idle" and clips.get("obcera", "") == "moves/idle", "Zegan and Obcera each in their own idle")
 				print(role, " COOP STORY ", "OK" if ok else "FAILED")
 				quit(0 if ok else 1)
 	return false

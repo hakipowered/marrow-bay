@@ -15,20 +15,22 @@ extends RefCounted
 const LIB := "combat"
 static var _cache: Dictionary = {}
 
-static func attach(anim: AnimationPlayer, skel: Skeleton3D, character: String) -> void:
-	if anim == null or skel == null or anim.has_animation_library(LIB):
+## lib names both the library ("combat", "moves") and the file it comes
+## from: res://assets/characters/<character>/<character>_<lib>.res.
+static func attach(anim: AnimationPlayer, skel: Skeleton3D, character: String, lib := LIB) -> void:
+	if anim == null or skel == null or anim.has_animation_library(lib):
 		return
-	var path := "res://assets/characters/%s/%s_combat.res" % [character, character]
+	var path := "res://assets/characters/%s/%s_%s.res" % [character, character, lib]
 	if not ResourceLoader.exists(path):
 		return
 	var model_root: Node = anim.get_node_or_null(anim.root_node)
 	if model_root == null:
 		return
 	var skel_path := str(model_root.get_path_to(skel))
-	var key := "%s|%s|%d|%s" % [character, skel_path, skel.get_bone_count(), _rest_signature(skel)]
+	var key := "%s|%s|%s|%d|%s" % [lib, character, skel_path, skel.get_bone_count(), _rest_signature(skel)]
 	if not _cache.has(key):
 		_cache[key] = _retarget(load(path), skel, skel_path)
-	anim.add_animation_library(LIB, _cache[key])
+	anim.add_animation_library(lib, _cache[key])
 
 static func _rest_signature(skel: Skeleton3D) -> String:
 	# Outfits differ in their arm rest; two bones are enough to tell them apart.
