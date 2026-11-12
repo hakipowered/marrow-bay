@@ -15,9 +15,17 @@ var _bg: ColorRect
 var _art: TextureRect
 var _pulse := 0.0
 var _beat_avg := 0.0
+var _video: VideoStreamPlayer
+var _video_box: Control
+var _video_aspect := 16.0 / 9.0
+var _fx: ColorRect
+var _flash := 0.0
+var _next_flash := 5.0
+var _t := 0.0
+var _thunder: AudioStreamPlayer
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_theme()
 	theme = _theme
 	var bg := ColorRect.new()
@@ -27,14 +35,50 @@ func _ready() -> void:
 	_bg = bg
 	# Key art behind the menu: the city under the red moon, dimmed so the
 	# buttons stay readable. It brightens on the beats of the theme.
-	if ResourceLoader.exists("res://assets/ui/title_bg.jpg"):
+	if ResourceLoader.exists("res://assets/ui/title_key.jpg"):
 		_art = TextureRect.new()
-		_art.texture = load("res://assets/ui/title_bg.jpg")
+		_art.texture = load("res://assets/ui/title_key.jpg")
 		_art.set_anchors_preset(Control.PRESET_FULL_RECT)
 		_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		_art.modulate = Color(0.5, 0.5, 0.5)
 		add_child(_art)
+	# Moving title scene: a looping film of the city in the rain, slowly
+	# drifting like a camera, with rain on the lens and lightning on top.
+	if ResourceLoader.exists("res://assets/ui/title_loop.ogv"):
+		_video_box = Control.new()
+		_video_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_video_box.clip_contents = true
+		_video_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_video_box)
+		_video = VideoStreamPlayer.new()
+		_video.stream = load("res://assets/ui/title_loop.ogv")
+		_video.expand = true
+		_video.volume_db = -80.0
+		_video.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if "loop" in _video:
+			_video.set("loop", true)
+		_video.finished.connect(func(): _video.play())
+		_video_box.add_child(_video)
+		_video.play()
+		var tex := _video.get_video_texture()
+		if tex and tex.get_height() > 0:
+			_video_aspect = float(tex.get_width()) / tex.get_height()
+		if _art:
+			_art.visible = false
+	_fx = ColorRect.new()
+	_fx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fxm := ShaderMaterial.new()
+	fxm.shader = preload("res://shaders/title_fx.gdshader")
+	_fx.material = fxm
+	add_child(_fx)
+	if ResourceLoader.exists("res://assets/audio/sfx/thunder.ogg"):
+		_thunder = AudioStreamPlayer.new()
+		_thunder.stream = load("res://assets/audio/sfx/thunder.ogg")
+		_thunder.bus = "SFX"
+		_thunder.volume_db = -6.0
+		add_child(_thunder)
 	Music.play_menu()
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -101,9 +145,38 @@ func _process(delta: float) -> void:
 		_logo.pivot_offset = _logo.size * 0.5
 		_logo.scale = Vector2.ONE * (1.0 + _pulse * 0.035)
 	_bg.color = Color(0.03, 0.02, 0.02).lerp(Color(0.09, 0.015, 0.012), _pulse * 0.8)
-	if is_instance_valid(_art):
-		var v := 0.45 + _pulse * 0.2
-		_art.modulate = Color(v + _pulse * 0.08, v, v)
+	# Lightning: a double flicker every so often, thunder a moment later.
+	_t += delta
+	_next_flash -= delta
+	if _next_flash <= 0.0:
+		_next_flash = randf_range(7.0, 15.0)
+		var tw := create_tween()
+		tw.tween_property(self, "_flash", 1.0, 0.05)
+		tw.tween_property(self, "_flash", 0.15, 0.09)
+		tw.tween_property(self, "_flash", 0.8, 0.05)
+		tw.tween_property(self, "_flash", 0.0, 0.7)
+		if _thunder:
+			tw.parallel().tween_callback(_thunder.play).set_delay(randf_range(0.4, 1.2))
+	if _fx:
+		(_fx.material as ShaderMaterial).set_shader_parameter("flash", _flash)
+	var v := 0.5 + _pulse * 0.18 + _flash * 0.6
+	if is_instance_valid(_video):
+		# Cover the screen at the film's own aspect, a little oversized so it
+		# can drift slowly like a hand-held camera.
+		var area := size
+		var vs := Vector2(area.x, area.x / _video_aspect)
+		if vs.y < area.y:
+			vs = Vector2(area.y * _video_aspect, area.y)
+		vs *= 1.08
+		_video.size = vs
+		_video.position = (area - vs) * 0.5 + Vector2(sin(_t * 0.07) * vs.x * 0.025, cos(_t * 0.05) * vs.y * 0.02)
+		_video.modulate = Color(v + _pulse * 0.08, v, v)
+	elif is_instance_valid(_art):
+		var a := 0.45 + _pulse * 0.2 + _flash * 0.5
+		_art.modulate = Color(a + _pulse * 0.08, a, a)
+		_art.pivot_offset = _art.size * 0.5
+		_art.scale = Vector2.ONE * (1.06 + sin(_t * 0.05) * 0.03)
+		_art.position = Vector2(sin(_t * 0.07), cos(_t * 0.05)) * 24.0
 
 func _btn(text: String, cb: Callable) -> Button:
 	var b := Button.new()
