@@ -1,6 +1,6 @@
 extends SceneTree
 ## Every door in the level, opened, must let a survivor through: sweeps the
-## player's capsule from 1.2 m on one side of each doorway to 1.2 m on the
+## player's capsule from 1.6 m on one side of each doorway to 1.6 m on the
 ## other and reports any door whose way is blocked (a wall opening that
 ## doesn't line up with the door, a prop in the way). Locked and co-op doors
 ## are opened by force here; the game says why they won't open.
@@ -24,12 +24,13 @@ func _process(_d: float) -> bool:
 		_sweep()
 	return false
 
-## Walks her capsule through each opened doorway in 5 cm steps, from 0.85 m
-## on one side to 0.85 m on the other, along the middle and (for doors wider
+## Walks her capsule through each opened doorway in 5 cm steps, from 1.6 m
+## on one side to 1.6 m on the other (so a prop just in front of a door counts
+## too), along the middle and (for doors wider
 ## than 1.6 m) near both edges. At each step she stands on whatever floor is
 ## under her (so she goes up kerb ramps the way she does in play), and the
 ## step fails if there is no floor or her body overlaps anything solid.
-const REACH := 0.85
+const REACH := 1.6
 const STEP := 0.05
 
 func _sweep() -> void:

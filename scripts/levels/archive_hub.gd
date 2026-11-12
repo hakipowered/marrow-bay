@@ -414,7 +414,7 @@ func _great_hall() -> void:
 	mil.drop_table = "crate"
 	# The shelter's heater gas by the cots, a can of generator fuel by the sofa.
 	Breakable.make(r, "propane", Vector3(16.2, 0, 15.7), 0.0, "hall_propane")
-	Breakable.make(r, "jerrycan", Vector3(5.6, 0, 16.6), 70.0, "hall_jerrycan")
+	Breakable.make(r, "jerrycan", Vector3(3.4, 0, 17.4), 70.0, "hall_jerrycan")   # against the wall beside the vault door, not in front of it
 	RoomBuilder.prop(r, "plastic_crate_01", Vector3(22.4, 0, 2.2), 5)
 	RoomBuilder.prop(r, "plastic_crate_01", Vector3(22.4, 0.32, 2.2), 30, 1.0, false)
 	var sconce_w := RoomBuilder.prop(r, "industrial_wall_sconce", Vector3(0.2, 2.8, 9.0), 90, 1.0, false)
