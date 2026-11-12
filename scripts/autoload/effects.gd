@@ -36,6 +36,8 @@ var _streams := {}               # shooter instance id -> {node, last}
 var _patches: Array = []         # [fire node, until msec]
 var _last_patch := 0
 var _last_blood_decal := 0
+var _blood_frame := -1
+var _blood_pos := Vector3.ZERO
 
 func _scene() -> Node:
 	return get_tree().current_scene
@@ -181,11 +183,12 @@ func _light(pos: Vector3, color: Color, energy: float, range_m: float, secs: flo
 func muzzle_flash(pos: Vector3, dir: Vector3, weapon_id := "") -> void:
 	var s: float = FLASH_SIZE.get(weapon_id, 1.0) * randf_range(0.85, 1.15)
 	dir = dir.normalized()
-	var blast := _axial_mat(true, 0.5 * s, Color(1, 0.92, 0.8), 2.2, MUZZLE_TEX, 0, 2)
-	_burst(pos, _quad(1.0, 0.5 * s, true), blast, {"amount": 1, "life": 0.055, "dir": dir, "spread": 0.0,
+	var blast := _axial_mat(true, 0.22 * s, Color(1.0, 0.72, 0.38), 1.5, MUZZLE_TEX, 0, 2)
+	_burst(pos, _quad(1.0, 0.22 * s, true), blast, {"amount": 1, "life": 0.055, "dir": dir, "spread": 0.0,
 		"vmin": 0.01, "vmax": 0.01, "gravity": Vector3.ZERO, "align": true})
-	_burst(pos, _quad(1, 1), _sprite_mat(MUZZLE_TEX, true, 2.0), {"amount": 1, "life": 0.045, "spread": 0.0,
-		"vmin": 0.0, "vmax": 0.0, "gravity": Vector3.ZERO, "smin": 0.15 * s, "smax": 0.18 * s,
+	_burst(pos, _quad(1, 1), _sprite_mat(MUZZLE_TEX, true, 1.4), {"amount": 1, "life": 0.045, "spread": 0.0,
+		"vmin": 0.0, "vmax": 0.0, "gravity": Vector3.ZERO, "smin": 0.07 * s, "smax": 0.09 * s,
+		"color": Color(1.0, 0.78, 0.5),
 		"amin": 0.0, "amax": 360.0, "frame_min": 0.5, "frame_max": 0.99})
 	_light(pos + dir * 0.15, Color(1.0, 0.72, 0.4), 3.5 * s, 4.0 + 2.0 * s, 0.05)
 	_burst(pos + dir * 0.1, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.2), {"amount": 3, "life": 1.0,
@@ -241,28 +244,50 @@ func blood(pos: Vector3, normal: Vector3, dir := Vector3.ZERO, amount := 1.0) ->
 	if normal == Vector3.ZERO:
 		normal = -dir
 	var a := clampf(amount, 0.3, 2.5)
-	var spray := _axial_mat(false, 0.8, Color(1.5, 1.3, 1.3), 1.0, SPRAY_TEX, 0, 4)
+	# More pellets into the same body in the same frame add drops and a
+	# stain, not another cloud each.
+	var frame := Engine.get_process_frames()
+	var extra := frame == _blood_frame and pos.distance_to(_blood_pos) < 0.8
+	_blood_frame = frame
+	_blood_pos = pos
+	if extra:
+		var d2 := _axial_mat(false, 0.03, Color(0.5, 0.02, 0.02), 1.0, null, 0, 1, 0.6)
+		_burst(pos, _quad(1.0, 0.1), d2, {"amount": 5, "life": 0.7, "life_rand": 0.5,
+			"dir": (dir + Vector3.UP * 0.3).normalized(), "spread": 40.0, "vmin": 1.8, "vmax": 4.5, "align": true,
+			"additive": false, "smin": 0.6, "smax": 1.2})
+		_blood_stains(pos, dir, a)
+		return
+	if amount < 0.6:
+		a = 0.8   # the first pellet stands for the whole load
+	var spray := _axial_mat(false, 0.8, Color(1.25, 1.0, 1.0), 1.0, SPRAY_TEX, 0, 4)
 	var spray_o := {"amount": 1, "life": 0.42, "spread": 0.0, "vmin": 0.05, "vmax": 0.05, "gravity": Vector3.ZERO,
 		"align": true, "additive": false, "scurve": [[0, 0.25], [0.35, 1.0], [1, 1.15]],
 		"ramp": [[0.0, Color(1, 1, 1, 1)], [0.45, Color(1, 1, 1, 0.85)], [1.0, Color(1, 1, 1, 0)]]}
-	# Out of the far side, along the shot.
-	spray_o["dir"] = (dir + Vector3(randf_range(-0.2, 0.2), randf_range(-0.05, 0.25), randf_range(-0.2, 0.2))).normalized()
-	spray_o["smin"] = 0.75 * a
-	spray_o["smax"] = 0.95 * a
-	_burst(pos, _quad(1.0, 0.75, true), spray, spray_o)
+	# Out of the far side in a fan around the shot, angled off it so it
+	# still reads from behind the shooter (straight along the line of sight
+	# a spray is seen end-on and looks like a dot).
+	var side := dir.cross(Vector3.UP)
+	if side.length() < 0.1:
+		side = dir.cross(Vector3.RIGHT)
+	side = side.normalized().rotated(dir, randf_range(-0.6, 0.6))
+	for k in [[1.0, 0.75], [-1.0, 0.5]]:
+		spray_o["dir"] = (dir + side * 0.65 * k[0] + Vector3.UP * randf_range(0.0, 0.25)).normalized()
+		spray_o["smin"] = k[1] * a
+		spray_o["smax"] = k[1] * 1.25 * a
+		_burst(pos, _quad(1.0, 0.75, true), spray, spray_o)
 	# Back out of the entry wound, smaller.
-	spray_o["dir"] = (normal + Vector3(0, 0.15, 0)).normalized()
+	spray_o["dir"] = (normal + side * 0.4 + Vector3(0, 0.15, 0)).normalized()
 	spray_o["smin"] = 0.35 * a
 	spray_o["smax"] = 0.45 * a
 	_burst(pos, _quad(1.0, 0.75, true), spray, spray_o)
 	# A fine red mist hanging where the round went in.
-	_burst(pos, _quad(1, 1), _sprite_mat(SPRAY_TEX, false, 1.4), {"amount": 2, "life": 0.5, "life_rand": 0.3,
+	_burst(pos, _quad(1, 1), _sprite_mat(SPRAY_TEX, false, 1.0), {"amount": 1, "life": 0.45, "life_rand": 0.3,
 		"dir": dir, "spread": 40.0, "vmin": 0.3, "vmax": 0.8, "damp": 3.0, "gravity": Vector3(0, -0.6, 0),
-		"smin": 0.3 * a, "smax": 0.45 * a, "scurve": [[0, 0.5], [1, 1.4]], "amin": 0.0, "amax": 360.0, "additive": false,
-		"ramp": [[0.0, Color(1, 1, 1, 0.9)], [1.0, Color(1, 1, 1, 0.0)]]})
+		"smin": 0.28 * a, "smax": 0.38 * a, "scurve": [[0, 0.5], [1, 1.4]], "amin": 0.0, "amax": 360.0, "additive": false,
+		"ramp": [[0.0, Color(1, 1, 1, 0.7)], [1.0, Color(1, 1, 1, 0.0)]]})
 	var drop := _axial_mat(false, 0.03, Color(0.55, 0.02, 0.02), 1.0, null, 0, 1, 0.6)
-	_burst(pos, _quad(1.0, 0.1), drop, {"amount": int(14 * a), "life": 0.75, "life_rand": 0.5,
-		"dir": (dir + Vector3.UP * 0.35).normalized(), "spread": 38.0, "vmin": 1.8, "vmax": 4.8, "align": true,
+	_burst(pos, _quad(1.0, 0.1), drop, {"amount": int(18 * a), "life": 0.75, "life_rand": 0.5,
+		"dir": (dir + Vector3.UP * 0.35).normalized(), "spread": 50.0, "vmin": 1.8, "vmax": 4.8, "align": true,
 		"additive": false, "smin": 0.6, "smax": 1.3})
 	_blood_stains(pos, dir, a)
 
@@ -463,13 +488,15 @@ func _make_stream(length: float) -> Node3D:
 	root.name = "FlameStream"
 	var life := 0.55
 	var speed := length / life * 1.35
-	for layer in [["body", FIREBALL_TEX, 30, 0.9], ["tongues", FIRE_TEX, 16, 0.75]]:
+	for layer in [["body", FIREBALL_TEX, 26, 0.9, false, 1.15], ["tongues", FIRE_TEX, 12, 0.75, true, 0.55]]:
 		var p := GPUParticles3D.new()
 		p.amount = layer[2]
 		p.lifetime = life
 		p.randomness = 0.25
 		p.draw_pass_1 = _quad(1, 1)
-		p.material_override = _sprite_mat(layer[1], true, 0.85, 0.25)
+		p.material_override = _sprite_mat(layer[1], layer[4], layer[5], 0.25)
+		if not layer[4]:
+			p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
 		p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		p.visibility_aabb = AABB(Vector3(-length, -length, -length), Vector3(length, length, length) * 2.0)
 		p.emitting = false
@@ -489,8 +516,12 @@ func _make_stream(length: float) -> Node3D:
 		pm.angular_velocity_min = -90.0
 		pm.angular_velocity_max = 90.0
 		pm.anim_offset_max = 1.0
-		pm.color_ramp = _ramp_tex([[0.0, Color(0.55, 0.65, 1.0, 0.35)], [0.12, Color(1, 0.85, 0.6, 0.75)],
-			[0.4, Color(1, 0.55, 0.18, 0.7)], [0.72, Color(0.8, 0.22, 0.05, 0.45)], [1.0, Color(0.2, 0.05, 0.02, 0)]])
+		if layer[4]:
+			pm.color_ramp = _ramp_tex([[0.0, Color(0.45, 0.55, 1.0, 0.3)], [0.1, Color(1, 0.72, 0.3, 0.6)],
+				[0.38, Color(1, 0.48, 0.1, 0.55)], [0.72, Color(0.75, 0.2, 0.03, 0.35)], [1.0, Color(0.2, 0.05, 0.02, 0)]])
+		else:
+			pm.color_ramp = _ramp_tex([[0.0, Color(0.7, 0.8, 1.0, 0.0)], [0.1, Color(1, 0.9, 0.7, 0.9)],
+				[0.4, Color(1, 0.7, 0.42, 0.85)], [0.75, Color(0.7, 0.32, 0.14, 0.55)], [1.0, Color(0.2, 0.12, 0.08, 0)]])
 		p.process_material = pm
 		root.add_child(p)
 	var smoke := GPUParticles3D.new()
