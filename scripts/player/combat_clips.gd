@@ -15,33 +15,36 @@ extends RefCounted
 const LIB := "combat"
 static var _cache: Dictionary = {}
 
-## Source libraries, each from its own Meshy rig: the melee and throw clips,
-## and whole-body moves (the dodge roll, tools/import_move_clips.gd). Both
-## end up in the one "combat" library.
-const SOURCES := ["combat", "moves"]
+## Source files merged into the "combat" library, each from its own Meshy
+## rig: the melee and throw clips, and the dodge roll
+## (tools/import_move_clips.gd, <id>_roll.res).
+const SOURCES := ["combat", "roll"]
 
-static func attach(anim: AnimationPlayer, skel: Skeleton3D, character: String) -> void:
-	if anim == null or skel == null or anim.has_animation_library(LIB):
+## lib names both the library ("combat", "moves") and the file it comes
+## from: res://assets/characters/<character>/<character>_<lib>.res. The
+## "combat" library also takes in the other SOURCES.
+static func attach(anim: AnimationPlayer, skel: Skeleton3D, character: String, lib := LIB) -> void:
+	if anim == null or skel == null or anim.has_animation_library(lib):
 		return
 	var model_root: Node = anim.get_node_or_null(anim.root_node)
 	if model_root == null:
 		return
 	var skel_path := str(model_root.get_path_to(skel))
-	var key := "%s|%s|%d|%s" % [character, skel_path, skel.get_bone_count(), _rest_signature(skel)]
+	var key := "%s|%s|%s|%d|%s" % [lib, character, skel_path, skel.get_bone_count(), _rest_signature(skel)]
 	if not _cache.has(key):
 		var out := AnimationLibrary.new()
-		for src in SOURCES:
+		for src in (SOURCES if lib == LIB else [lib]):
 			var path := "res://assets/characters/%s/%s_%s.res" % [character, character, src]
 			if not ResourceLoader.exists(path):
 				continue
-			var lib := _retarget(load(path), skel, skel_path)
-			for clip in lib.get_animation_list():
-				out.add_animation(clip, lib.get_animation(clip))
-			for m in lib.get_meta_list():
-				out.set_meta(m, lib.get_meta(m))
+			var part := _retarget(load(path), skel, skel_path)
+			for clip in part.get_animation_list():
+				out.add_animation(clip, part.get_animation(clip))
+			for m in part.get_meta_list():
+				out.set_meta(m, part.get_meta(m))
 		_cache[key] = out
 	if not (_cache[key] as AnimationLibrary).get_animation_list().is_empty():
-		anim.add_animation_library(LIB, _cache[key])
+		anim.add_animation_library(lib, _cache[key])
 
 ## How far a move carries the body forward by time t (metres), on the
 ## skeleton that plays it; 0 when the move has no travel recorded.

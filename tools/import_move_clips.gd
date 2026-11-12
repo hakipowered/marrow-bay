@@ -1,5 +1,5 @@
 extends SceneTree
-## Builds res://assets/characters/<id>/<id>_moves.res: whole-body moves for
+## Builds res://assets/characters/<id>/<id>_roll.res: whole-body moves for
 ## the survivors (the dodge roll), from Meshy rigs of the base models with
 ## animation preset 159 Roll_Dodge_1 (a dive roll out of a run that comes up
 ## running). Download the clip GLB to build_tmp/roll/<id>/r1.glb (job ids in
@@ -8,7 +8,9 @@ extends SceneTree
 ##   godot --headless --path . --script tools/import_move_clips.gd -- zegan obcera
 ##
 ## Like the melee clips, the library keeps the rig's bone rest as metadata and
-## CombatClips retargets it onto whichever skeleton plays it (every outfit).
+## CombatClips merges it into the "combat" library, retargeted onto whichever
+## skeleton plays it (every outfit). (<id>_moves.res is a different library:
+## a survivor's own loops, tools/import_moves.gd.)
 ## The hips are pinned in place; how far the roll carries the body forward
 ## over time is kept as metadata ("travel", seconds -> metres) so the player
 ## controller can move the capsule along the same curve.
@@ -80,6 +82,6 @@ func _build(id: String) -> void:
 	lib.set_meta("rest_o", rest_o)
 	lib.set_meta("parents", parents)
 	lib.set_meta("hip_y", hip_y)
-	var out := "res://assets/characters/%s/%s_moves.res" % [id, id]
+	var out := "res://assets/characters/%s/%s_roll.res" % [id, id]
 	var err := ResourceSaver.save(lib, out, ResourceSaver.FLAG_COMPRESS)
 	print("saved ", out, " ", error_string(err), " ", lib.get_animation_list())

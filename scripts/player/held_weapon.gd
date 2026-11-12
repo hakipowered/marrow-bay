@@ -263,6 +263,8 @@ func _target_align() -> Basis:
 	var raised := _raised()
 	if not raised:
 		var low: String = ("long_low" if _long else "gun_low") if hold == "gun" else hold + "_low"
+		if String(model._anim.current_animation) == CharacterModel.OWN_IDLE and _align.has(low + "_own"):
+			return _align[low + "_own"]
 		if _align.has(low):
 			return _align[low]
 	return _align.get(weapon_id, _align.get(hold, Basis.IDENTITY))
@@ -292,6 +294,11 @@ func _bind(sk: Skeleton3D) -> void:
 	_align["gun_low"] = _solve("idle", 0.5, ahead * Basis(Vector3.RIGHT, LOW_PITCH[0]), to_root)
 	_align["long_low"] = _solve("idle", 0.5, ahead * Basis(Vector3.RIGHT, LOW_PITCH[1]), to_root)
 	_align["blade_low"] = _solve("idle", 0.5, ahead * Basis(Vector3.RIGHT, LOW_PITCH[2]), to_root)
+	# A survivor with her own standing loop holds it lowered from that pose.
+	if model._anim.has_animation(CharacterModel.OWN_IDLE):
+		for i in 3:
+			var key: String = ["gun_low", "long_low", "blade_low"][i]
+			_align[key + "_own"] = _solve(CharacterModel.OWN_IDLE, 0.5, ahead * Basis(Vector3.RIGHT, LOW_PITCH[i]), to_root)
 	_snap = true
 	# Weapons that sit better lined up with their own swing.
 	for id in MODELS:
