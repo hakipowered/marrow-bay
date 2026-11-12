@@ -85,6 +85,21 @@ var flashlight: SpotLight3D
 ## left out of the chest lamp's shadows.
 const SELF_LAYER := 1 << 10
 var _tag_t := 0.0
+const LAMP_ENERGY := 3.4
+const LAMP_RANGE := 22.0
+## Within this distance a surface straight ahead dims the lamp (down to
+## LAMP_NEAR_DIM of full), the way eyes adjust to a wall lit up close.
+const LAMP_NEAR := 2.6
+const LAMP_NEAR_DIM := 0.45
+## How far the beam may turn from her chest toward where the camera looks.
+const LAMP_TURN := 0.6
+## Light the beam throws back off whatever it lands on (see _aim_flashlight).
+const BOUNCE_REACH := 7.0
+const BOUNCE_ENERGY := 1.3
+var lamp_bounce: SpotLight3D
+## The lamp's aim relative to her body (pitch, yaw), so the partner's phone
+## points her beam the same way.
+@export var sync_lamp := Vector2(-0.25, 0.0)
 var muzzle: Node3D
 var interact_ray: RayCast3D
 var held: HeldWeapon
@@ -125,7 +140,7 @@ func _ready() -> void:
 			model.play_once("shout" if scream else "call", 0.15, 2.2))
 	Cheats.changed.connect(_on_cheat)
 	collision_layer = 2
-	collision_mask = 1 | 4
+	collision_mask = 1 | 4 | Door.BARS_LAYER
 	var shape := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.32
@@ -145,23 +160,47 @@ func _ready() -> void:
 	muzzle.position = Vector3(0.22, 1.4, -0.6)
 	body.add_child(muzzle)
 
-	# Chest lamp: a wide soft beam tipped down to light the floor and walls
-	# ahead, following the camera's pitch (see _aim_flashlight). Her own body
-	# and the gun in her hands don't throw shadows into it (they used to
-	# blot out the middle of the beam), and the light falls off gently so a
-	# wall right in front of her isn't a blown-out white disc.
+	# Chest lamp: a torch beam aimed at whatever is under the crosshair
+	# (_lamp_aim, synced to the partner's phone as sync_lamp). The beam
+	# pattern (assets/textures/fx/flashlight_cookie.png, drawn by
+	# tools/fx/make_flashlight_cookie.py) is a real torch's: a bright hot spot,
+	# a faint reflector ring and a wide dim spill that fades out softly, so
+	# it reads as a beam, not a hard disc. It sits inside her chest (never
+	# poking through a wall she's pressed against), her own body and gun
+	# don't shadow it, it reaches well down a corridor (gentle falloff), and
+	# it eases off on a wall right in front of her instead of blowing it out.
 	flashlight = SpotLight3D.new()
-	flashlight.position = Vector3(0.08, 1.5, -0.32)
-	flashlight.rotation.x = -0.3
-	flashlight.spot_range = 20.0
-	flashlight.spot_angle = 36.0
-	flashlight.spot_attenuation = 0.55
-	flashlight.spot_angle_attenuation = 0.75
-	flashlight.light_energy = 1.7
-	flashlight.light_color = Color(1.0, 0.95, 0.85)
+	flashlight.name = "Flashlight"
+	flashlight.position = Vector3(0.1, 1.45, -0.12)
+	flashlight.rotation.x = -0.25
+	flashlight.spot_range = LAMP_RANGE
+	flashlight.spot_angle = 38.0   # half-angle: a 76° cone, mostly soft spill
+	flashlight.spot_attenuation = 0.35
+	flashlight.spot_angle_attenuation = 1.5   # even across the cone; the pattern does the falloff
+	flashlight.light_projector = preload("res://assets/textures/fx/flashlight_cookie.png")
+	flashlight.light_energy = LAMP_ENERGY
+	flashlight.light_specular = 0.6
+	flashlight.light_color = Color(1.0, 0.95, 0.86)
 	flashlight.shadow_enabled = true
 	flashlight.shadow_caster_mask = 0xFFFFF & ~SELF_LAYER
 	body.add_child(flashlight)
+	# Bounce: a torch on a wall lights up the space around it too, her
+	# included. A soft, shadowless light at the spot the beam lands on,
+	# shining back out of that surface (so never through the wall into the
+	# next room), strongest when the surface is close.
+	lamp_bounce = SpotLight3D.new()
+	lamp_bounce.name = "LampBounce"
+	lamp_bounce.top_level = true
+	lamp_bounce.spot_angle = 80.0
+	lamp_bounce.spot_range = 5.0
+	lamp_bounce.spot_attenuation = 1.0
+	lamp_bounce.spot_angle_attenuation = 1.0
+	lamp_bounce.light_energy = 0.0
+	lamp_bounce.light_specular = 0.0
+	lamp_bounce.light_color = Color(1.0, 0.9, 0.78)
+	lamp_bounce.shadow_enabled = false
+	lamp_bounce.visible = false
+	add_child(lamp_bounce)
 	model.outfit_loaded.connect(func(_o): _tag_self.call_deferred())
 
 	pivot = Node3D.new()
@@ -225,7 +264,7 @@ func _setup_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_speed", ":sync_weapon", ":downed", ":pinned", ":dodging"]:
+	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_speed", ":sync_weapon", ":downed", ":pinned", ":dodging", ":sync_lamp"]:
 		cfg.add_property(NodePath(prop))
 		cfg.property_set_replication_mode(NodePath(prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -243,7 +282,7 @@ func _physics_process(delta: float) -> void:
 		_downed_t = _downed_t + delta if downed else 0.0
 		model.move_speed = sync_speed
 		model.play(sync_anim, sync_aiming)
-		_aim_flashlight(delta, sync_pitch)
+		_aim_flashlight(delta, sync_lamp)
 		return
 	_sync_inventory(delta)
 	rescue_area.collision_layer = 16 if (downed or pinned) else 0
@@ -350,23 +389,64 @@ func _physics_process(delta: float) -> void:
 
 	_tick_weapon(delta)
 	_update_focus()
-	_aim_flashlight(delta, pitch)
+	sync_lamp = _lamp_aim()
+	_aim_flashlight(delta, sync_lamp)
 
-## The lamp tips with the camera: down at the floor when looking down, level
-## when aiming ahead, never straight into the ceiling.
-func _aim_flashlight(delta: float, cam_pitch: float) -> void:
-	var want := clampf(cam_pitch * 0.85 - 0.14, -1.0, 0.35)
-	flashlight.rotation.x = lerp_angle(flashlight.rotation.x, want, minf(12.0 * delta, 1.0))
+## Where her lamp points, relative to her body: at whatever is under the
+## crosshair (so the beam lights what she's looking at and aiming at, not a
+## spot beside her shoulder), turning at most LAMP_TURN from straight ahead
+## and never up into the ceiling.
+func _lamp_aim() -> Vector2:
+	var space := get_world_3d().direct_space_state
+	var eye := camera.global_position
+	var look := -camera.global_basis.z
+	var q := PhysicsRayQueryParameters3D.create(eye, eye + look * 25.0, 1 | 4, [get_rid()])
+	var hit := space.intersect_ray(q)
+	var at: Vector3 = hit["position"] if not hit.is_empty() else eye + look * 25.0
+	var local := body.global_basis.inverse() * (at - body.global_transform * flashlight.position)
+	if local.length() < 0.3 or local.z > -0.2:
+		# The crosshair is on her, beside her or behind her: straight ahead.
+		return Vector2(clampf(pitch * 0.85 - 0.14, -1.0, 0.35), 0.0)
+	local = local.normalized()
+	return Vector2(clampf(asin(local.y), -1.0, 0.35), clampf(atan2(-local.x, -local.z), -LAMP_TURN, LAMP_TURN))
+
+## Points the lamp (on both phones; the partner's follows the synced aim),
+## eases it off when the beam lands on something right in front of her, and
+## moves the bounce light to where the beam lands.
+func _aim_flashlight(delta: float, aim: Vector2) -> void:
+	var k := minf(12.0 * delta, 1.0)
+	flashlight.rotation.x = lerp_angle(flashlight.rotation.x, aim.x, k)
+	flashlight.rotation.y = lerp_angle(flashlight.rotation.y, aim.y, k)
+	var bounce := 0.0
+	if flashlight.visible and is_inside_tree():
+		var from := flashlight.global_position
+		var dir := -flashlight.global_basis.z
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * BOUNCE_REACH, 1 | 4, [get_rid()])
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		var d: float = BOUNCE_REACH if hit.is_empty() else from.distance_to(hit["position"])
+		var e := LAMP_ENERGY * lerpf(LAMP_NEAR_DIM, 1.0, smoothstep(0.25, LAMP_NEAR, d))
+		flashlight.light_energy = lerpf(flashlight.light_energy, e, minf(8.0 * delta, 1.0))
+		if not hit.is_empty():
+			var n: Vector3 = hit["normal"]
+			bounce = BOUNCE_ENERGY * (1.0 - smoothstep(0.6, BOUNCE_REACH, d)) * clampf(-dir.dot(n), 0.3, 1.0)
+			var p: Vector3 = hit["position"] + n * 0.1
+			var up := Vector3.UP if absf(n.y) < 0.9 else Vector3.FORWARD
+			lamp_bounce.global_transform = Transform3D(Basis.looking_at(n, up), p)
+	lamp_bounce.light_energy = lerpf(lamp_bounce.light_energy, bounce, minf(6.0 * delta, 1.0))
+	lamp_bounce.visible = lamp_bounce.light_energy > 0.01
 	_tag_t -= delta
 	if _tag_t <= 0.0:
 		_tag_t = 1.0
 		_tag_self()
 
 func _tag_self() -> void:
-	if body == null:
-		return
-	for n in body.find_children("*", "GeometryInstance3D", true, false):
-		(n as GeometryInstance3D).layers |= SELF_LAYER
+	# The gun in her hands lives under `held`, outside the body: tag it too,
+	# or the barrel throws a hard wedge of shadow across the beam.
+	for root in [body, held]:
+		if root == null:
+			continue
+		for n in root.find_children("*", "GeometryInstance3D", true, false):
+			(n as GeometryInstance3D).layers |= SELF_LAYER
 
 ## Starts a dodge roll (the HUD's ROLL button, Space on a keyboard).
 func roll() -> void:

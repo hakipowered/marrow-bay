@@ -63,7 +63,7 @@ func _ready() -> void:
 	if look == "":
 		look = data["looks"][_rng.randi() % data["looks"].size()]
 	collision_layer = 4
-	collision_mask = 1 | 2 | 4
+	collision_mask = 1 | 2 | 4 | Door.BARS_LAYER
 	max_hp = data["hp"] * _rng.randf_range(0.94, 1.04)
 	_shield_hp = data.get("shield_hp", 0.0)
 	_speed_f = _rng.randf_range(0.9, 1.06)
@@ -429,7 +429,7 @@ func _strike() -> void:
 func _clear_line(to: Node3D) -> bool:
 	var space := get_world_3d().direct_space_state
 	for h in [0.5, 1.3]:
-		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * h, to.global_position + Vector3.UP * h, 1)
+		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * h, to.global_position + Vector3.UP * h, 1 | Door.BARS_LAYER)
 		q.exclude = [get_rid()]
 		if space.intersect_ray(q).is_empty():
 			return true

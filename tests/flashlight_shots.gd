@@ -2,8 +2,15 @@ extends SceneTree
 ## Frames of the flashlight from the player's camera, to judge the beam:
 ## walking, aiming level, aiming down at the floor, and with the light off.
 ## xvfb-run -a -s "-screen 0 1400x1000x24" godot --path . --rendering-driver vulkan \
-##   --resolution 1280x900 --script tests/flashlight_shots.gd -- <out_dir> [yaw_degrees] [corridor]
-## "corridor" stands her in the dark west corridor looking down its length.
+##   --resolution 1280x900 --script tests/flashlight_shots.gd -- <out_dir> [yaw_degrees] [place]
+## Add --rendering-method mobile to see it the way the phones draw it.
+## place: "corridor" stands her in the dark west corridor looking down its
+## length; "wall" puts her 0.8 m from the corridor's wall, facing it (the
+## 0.9 bug: a small hard disc beside her shoulder), which sets off the
+## corridor's lights-out scare, so only the flashlights are on; "wall_lit"
+## faces the other corridor wall with the lights on; "street" on Ashgrove
+## Street facing the Archive gate; "vault" in the Great Hall facing the co-op
+## vault door; default is wherever the level starts her.
 var out := "/tmp"
 var turn := 0.0
 var frames := 0
@@ -17,13 +24,13 @@ var shots := [
 	{"tag": "4_off", "aim": false, "pitch": -0.1, "light": false},
 ]
 var i := 0
-var corridor := false
+var place := ""
 
 func _initialize() -> void:
 	var a := OS.get_cmdline_user_args()
 	if a.size() > 0: out = a[0]
 	if a.size() > 1: turn = deg_to_rad(float(a[1]))
-	corridor = a.size() > 2 and a[2] == "corridor"
+	place = a[2] if a.size() > 2 else ""
 
 func _process(d: float) -> bool:
 	frames += 1
@@ -45,10 +52,17 @@ func _process(d: float) -> bool:
 				for zz in get_nodes_in_group("zombies"):
 					zz.queue_free()
 				p.equip("p9")
-				if corridor:
-					p.global_position = Vector3(-13.6, 0.05, 6.5)
-					p.yaw = PI / 2
-					p.body.rotation.y = PI / 2
+				var spot: Array = {
+					"corridor": [Vector3(-13.6, 0.05, 6.5), PI / 2],
+					"wall": [Vector3(-20.6, 0.05, 5.95), 0.0],
+					"wall_lit": [Vector3(-15.0, 0.05, 7.0), PI],
+					"street": [Vector3(1.2, 0.05, -24.5), PI],
+					"vault": [Vector3(-6.0, 0.05, 13.4), PI],
+				}.get(place, [])
+				if not spot.is_empty():
+					p.global_position = spot[0]
+					p.yaw = spot[1]
+					p.body.rotation.y = spot[1]
 				p.yaw += turn
 				stage = 2
 				t = 0.0

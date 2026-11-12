@@ -53,6 +53,14 @@ func _process(_d: float) -> bool:
 				frames = 0
 				print(role, ": level loaded, my id ", root.multiplayer.get_unique_id())
 		2:
+			# Both players skip the intro (co-op skip needs both); the checks
+			# below wait for it, since nobody can move or aim during a scene.
+			var cs = root.get_node_or_null("Cutscenes")
+			if cs and cs.active:
+				if frames % 10 == 0:
+					cs._on_skip_pressed()
+				frames = mini(frames, 100)
+				return false
 			if frames == 120:
 				var ps = get_nodes_in_group("players")
 				var desc := []
@@ -60,6 +68,7 @@ func _process(_d: float) -> bool:
 					desc.append("%s(%d)@%s" % [p.character, p.peer_id, p.global_position.snapped(Vector3.ONE * 0.1)])
 					if p.is_multiplayer_authority():
 						p.move_input = Vector2(0, -1)
+						p.pitch = -0.6   # looking down: the partner's lamp must tip down too
 				print(role, ": players ", desc)
 				# Checked here, while both players are still in the level.
 				var worn := {}
@@ -69,6 +78,38 @@ func _process(_d: float) -> bool:
 				outfits_ok = worn.get("zegan") == "riot" and worn.get("obcera") == "red_dress"
 				if role == "join":
 					root.get_node("CallOuts").call_partner(true)
+			if frames == 200:
+				# Each phone draws the partner's flashlight tipped by the
+				# partner's synced aim, not stuck level.
+				var seen := 0
+				for p in get_nodes_in_group("players"):
+					if not p.is_multiplayer_authority():
+						seen += 1
+						var lamp: float = p.flashlight.rotation.x
+						print(role, ": partner's lamp pitch %.2f (synced %.2f)" % [lamp, p.sync_lamp.x])
+						if lamp > -0.35 or absf(lamp - p.sync_lamp.x) > 0.05:
+							print(role, " LAMP SYNC FAILED")
+							quit(1)
+							return false
+				if seen == 0:
+					print(role, " LAMP SYNC FAILED: no partner in the level")
+					quit(1)
+					return false
+			if frames == 205 or frames == 215:
+				# Both walk up to the middle of the co-op vault door and press
+				# (host first, partner a moment later): each takes a free
+				# wheel, it stays shut for one alone, and opens for both.
+				var mine := (frames == 205) == (role == "host")
+				for p in get_nodes_in_group("players"):
+					if p.is_multiplayer_authority() and mine:
+						get_first_node_in_group("level").get_node("Door_vault_door").interact(p, -2)
+			if frames == 211 or frames == 238:
+				var vault = get_first_node_in_group("level").get_node("Door_vault_door")
+				print(role, ": vault door open after %s: %s" % ["one press" if frames == 211 else "both", vault.is_open])
+				if vault.is_open != (frames == 238):
+					print(role, " COOP DOOR FAILED")
+					quit(1)
+					return false
 			if frames == 240:
 				var desc := []
 				for p in get_nodes_in_group("players"):

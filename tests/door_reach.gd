@@ -28,8 +28,6 @@ func _process(_d: float) -> bool:
 		for zz in get_nodes_in_group("zombies"):
 			zz.queue_free()
 		for d in get_nodes_in_group("doors"):
-			if d.kind == d.Kind.COOP:
-				continue   # two handles at the sides, checked by the co-op tests
 			for dist in [0.36, 0.8, 1.5]:
 				for side in [1.0, -1.0]:
 					cases.append([d, dist, side])

@@ -39,6 +39,22 @@ func _sweep() -> void:
 	cap.radius = 0.32
 	cap.height = 1.7
 	var doors := get_nodes_in_group("doors")
+	# A closed iron gate stops bodies but not bullets: the infected pressed
+	# against the bars can be shot (Combat's rays: world + hitboxes).
+	for d in doors:
+		if d.style != "iron_gate":
+			continue
+		var n: Vector3 = d.global_transform.basis.z.normalized()
+		var mid: Vector3 = d.global_position + Vector3.UP * 1.2
+		var shot := space.intersect_ray(PhysicsRayQueryParameters3D.create(mid + n * 1.0, mid - n * 1.0, 1 | 8))
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = cap
+		q.collision_mask = 1 | 32
+		q.transform = Transform3D(Basis(), d.global_position + Vector3.UP * 0.95)
+		var body_blocked := not space.intersect_shape(q, 1).is_empty()
+		print("  %s closed: bullets %s, bodies %s" % [d.name, "pass" if shot.is_empty() else "STOPPED by " + str(shot["collider"].get_path()), "stopped" if body_blocked else "PASS THROUGH"])
+		if not shot.is_empty() or not body_blocked:
+			fails.append(str(d.name) + " (closed)")
 	for d in doors:
 		d._set_open(true, Vector3.ZERO, false)
 	await physics_frame

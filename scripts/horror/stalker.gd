@@ -37,7 +37,7 @@ var _speaking := false
 func _ready() -> void:
 	add_to_group("stalker")
 	collision_layer = 4
-	collision_mask = 1 | 2
+	collision_mask = 1 | 2 | Door.BARS_LAYER
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.42
