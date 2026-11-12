@@ -171,6 +171,7 @@ func _strap_shield(m: Node3D) -> void:
 	holder.position = SHIELD_OFFSET / k
 	holder.rotation_degrees = SHIELD_ROT
 	att.add_child(holder)
+	_shield = holder
 	var clear := StandardMaterial3D.new()
 	clear.albedo_color = Color(0.55, 0.6, 0.62, 0.32)
 	clear.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -184,6 +185,21 @@ func _strap_shield(m: Node3D) -> void:
 	pane.material_override = clear
 	pane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	holder.add_child(pane)
+	# Cracks spread over the pane as it takes fire (crack_shield).
+	_crack_mat = StandardMaterial3D.new()
+	_crack_mat.albedo_texture = _crack_texture()
+	_crack_mat.albedo_color = Color(0.92, 0.95, 0.97, 0.0)
+	_crack_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_crack_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_crack_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var crack := MeshInstance3D.new()
+	var cm := QuadMesh.new()
+	cm.size = Vector2(0.5, 0.84)
+	crack.mesh = cm
+	crack.position.z = 0.008
+	crack.material_override = _crack_mat
+	crack.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(crack)
 	var rim := StandardMaterial3D.new()
 	rim.albedo_color = Color(0.05, 0.05, 0.06)
 	rim.roughness = 0.6
@@ -206,6 +222,65 @@ func _strap_shield(m: Node3D) -> void:
 	bandmat.roughness = 0.5
 	band.material_override = bandmat
 	holder.add_child(band)
+
+var _shield: Node3D = null
+var _crack_mat: StandardMaterial3D = null
+static var _crack_tex: Texture2D = null
+
+## 0 = clear .. 1 = about to give: the crack web shows through more and more.
+func crack_shield(amount: float) -> void:
+	if _crack_mat:
+		_crack_mat.albedo_color.a = clampf(0.25 + amount * 0.85, 0.0, 1.0)
+
+## The shield breaks off: it drops from his arm, tumbles and lies there.
+func drop_shield() -> void:
+	if _shield == null or not is_instance_valid(_shield):
+		return
+	var xf := _shield.global_transform
+	var level := get_tree().current_scene
+	_shield.get_parent().remove_child(_shield)
+	level.add_child(_shield)
+	_shield.global_transform = xf
+	if _crack_mat:
+		_crack_mat.albedo_color.a = 1.0
+	var floor_y := global_position.y + 0.03
+	var side := global_transform.basis.x * (0.3 if randf() < 0.5 else -0.3)
+	var t := _shield.create_tween()
+	t.set_parallel(true)
+	t.tween_property(_shield, "global_position", Vector3(xf.origin.x, floor_y, xf.origin.z) + side - global_transform.basis.z * 0.4, 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_property(_shield, "rotation", Vector3(-PI / 2, _shield.rotation.y + randf_range(-0.6, 0.6), 0.0), 0.55)
+	_shield = null
+
+## A web of cracks radiating from a few impact points (made once, shared).
+static func _crack_texture() -> Texture2D:
+	if _crack_tex:
+		return _crack_tex
+	var w := 128
+	var h := 214
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for c in 4:
+		var origin := Vector2(rng.randf_range(0.25, 0.75) * w, rng.randf_range(0.2, 0.8) * h)
+		for r in 9:
+			var p := origin
+			var ang := rng.randf() * TAU
+			for step in rng.randi_range(20, 60):
+				ang += rng.randf_range(-0.35, 0.35)
+				p += Vector2(cos(ang), sin(ang)) * 1.6
+				if p.x < 0 or p.y < 0 or p.x >= w or p.y >= h:
+					break
+				var a := 0.95 - step * 0.012
+				img.set_pixelv(Vector2i(p), Color(1, 1, 1, maxf(a, 0.35)))
+		# The ring around each impact.
+		for i in 40:
+			var ang2 := TAU * i / 40.0
+			var q := origin + Vector2(cos(ang2), sin(ang2)) * rng.randf_range(4.0, 7.0)
+			if q.x >= 0 and q.y >= 0 and q.x < w and q.y < h:
+				img.set_pixelv(Vector2i(q), Color(1, 1, 1, 0.8))
+	_crack_tex = ImageTexture.create_from_image(img)
+	return _crack_tex
 
 ## Swap the scanned material for the infected shader, and bake the rest-pose
 ## position into vertex colours (once per model) so the shader can place

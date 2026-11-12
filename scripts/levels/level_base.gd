@@ -17,6 +17,7 @@ func _ready() -> void:
 	add_child(director)
 	hud = preload("res://scripts/ui/hud.gd").new()
 	add_child(hud)
+	add_child(preload("res://scripts/ui/down_banner.gd").new())
 	for p in get_tree().get_nodes_in_group("players"):
 		if p.is_multiplayer_authority():
 			hud.bind_player(p)
@@ -156,8 +157,67 @@ func _rpc_ask_retry() -> void:
 	if multiplayer.is_server() and all_down:
 		_rpc_retry.rpc()
 
+# ---------- Death and game over ----------
+
+var game_over := false
+var _continue_votes := {}
+
+## A survivor died (on their own phone). The host ends the run for everyone.
+func report_death(who: String) -> void:
+	if multiplayer.is_server():
+		_rpc_game_over.rpc(who)
+	else:
+		_rpc_ask_game_over.rpc_id(1, who)
+
+@rpc("any_peer", "reliable")
+func _rpc_ask_game_over(who: String) -> void:
+	if multiplayer.is_server():
+		_rpc_game_over.rpc(who)
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_game_over(who: String) -> void:
+	if game_over:
+		return
+	game_over = true
+	_continue_votes.clear()
+	Music.override_track = "silence"
+	for p in get_tree().get_nodes_in_group("players"):
+		p.input_locked = true
+	var screen := preload("res://scripts/ui/game_over.gd").new()
+	screen.who = who
+	add_child(screen)
+
+## Continue from the last checkpoint. In co-op both players have to press
+## it (like skipping a cutscene); the screen shows who it's waiting for.
+func vote_continue() -> void:
+	if multiplayer.is_server():
+		_rpc_vote_continue()
+	else:
+		_rpc_vote_continue.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func _rpc_vote_continue() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if id == 0:
+		id = multiplayer.get_unique_id()
+	_continue_votes[id] = true
+	var need := multiplayer.get_peers().size() + 1
+	_rpc_votes.rpc(_continue_votes.size(), need)
+	if _continue_votes.size() >= need:
+		_rpc_retry.rpc()
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_votes(have: int, need: int) -> void:
+	for c in get_children():
+		if c.has_method("show_votes"):
+			c.show_votes(have, need)
+
 @rpc("authority", "reliable", "call_local")
 func _rpc_retry() -> void:
+	Engine.time_scale = 1.0
+	Music.override_track = ""
 	var data := SaveSystem.read_slot(SaveSystem.AUTOSAVE_SLOT)
 	if data.is_empty():
 		data = SaveSystem.read_slot("slot1")

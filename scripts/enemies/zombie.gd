@@ -36,6 +36,7 @@ var _attack_t := 0.0
 var _struck := false
 var _poise_t := 0.0       # after a flinch, a moment before the next hit can break its stride
 var _flinch_t := 0.0      # rocked by a hit: barely moves and can't start a swing
+var _shield_hp := 0.0     # riot shield: cracks under fire, then breaks off
 
 ## Meshy punch clip: the arms are fully out at 1.5 s of clip time.
 const ATTACK_STRIKE := 1.5
@@ -52,7 +53,8 @@ func _ready() -> void:
 		look = data["looks"][_rng.randi() % data["looks"].size()]
 	collision_layer = 4
 	collision_mask = 1 | 2 | 4
-	max_hp = data["hp"] * _rng.randf_range(0.9, 1.15)
+	max_hp = data["hp"] * _rng.randf_range(0.94, 1.04)
+	_shield_hp = data.get("shield_hp", 0.0)
 	_speed_f = _rng.randf_range(0.9, 1.06)
 	hp = max_hp
 	drop_table = data["drop"]
@@ -440,9 +442,21 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 	var w: Dictionary = WeaponDB.WEAPONS.get(weapon_id, {})
 	if data.get("fire_immune") and w.get("kind") == "flame":
 		return
-	# Riot shield blocks hits from the front, except the legs.
-	if data.get("shield") and zone != "leg" and (-global_transform.basis.z).dot(-dir) > 0.35 and not Cheats.on("one_hit_kills"):
-		_shield_block.rpc()
+	# Riot shield: blocks hits from the front (not the legs, and not while
+	# he's reeling). Every blocked hit cracks it; it breaks off after about
+	# four pistol rounds, one or two shotgun blasts or two hatchet blows.
+	if _shield_hp > 0.0 and zone != "leg" and state != S.STAGGER and (-global_transform.basis.z).dot(-dir) > 0.35 and not Cheats.on("one_hit_kills"):
+		var sdmg := dmg * (1.6 if w.get("kind") == "melee" else 1.0)
+		_shield_hp -= sdmg
+		if _shield_hp <= 0.0:
+			_shield_hp = 0.0
+			_shield_break.rpc()
+			_set_stagger(1.3)
+			_poise_t = POISE
+		else:
+			_shield_block.rpc(1.0 - _shield_hp / float(data.get("shield_hp", 100.0)))
+			if w.get("stagger", 0.0) > 0 and state == S.ATTACK:
+				_set_stagger(0.5)   # a heavy blow on the shield knocks his swing off
 		return
 	var total: float = dmg * EnemyDB.ZONE_MULT.get(zone, 1.0)
 	hp -= total
@@ -536,9 +550,21 @@ func _rpc_hit_fx(zone: String, flinch := false) -> void:
 	Sfx.play_at("flesh_hit", global_position + Vector3.UP, "", -4.0, 6.0)
 
 @rpc("authority", "unreliable", "call_local")
-func _shield_block() -> void:
+func _shield_block(cracked: float) -> void:
 	Sfx.play_at("shield_ricochet", global_position + Vector3.UP * 1.2, "", 0.0, 10.0)
 	Effects.impact(global_position + Vector3.UP * 1.2 - global_transform.basis.z * 0.4, -global_transform.basis.z, null)
+	model.crack_shield(cracked)
+	if not GameState.has_flag("tip:riot_shield"):
+		GameState.set_flag("tip:riot_shield")
+		var hud := get_tree().get_first_node_in_group("hud")
+		if hud:
+			hud.toast("The shield is cracking. Keep shooting it, or aim for his legs.")
+
+@rpc("authority", "reliable", "call_local")
+func _shield_break() -> void:
+	_shield_hp = 0.0
+	Sfx.play_at("glass_break", global_position + Vector3.UP * 1.2, "shield_ricochet", 4.0, 12.0)
+	model.drop_shield()
 
 @rpc("authority", "unreliable", "call_local")
 func _groan(kind: String) -> void:
