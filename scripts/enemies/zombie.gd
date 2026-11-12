@@ -291,6 +291,7 @@ func _drop_from_ceiling() -> void:
 
 func _scream() -> void:
 	_groan.rpc("screamer_shriek")
+	_rpc_scream.rpc()
 	for z in get_tree().get_nodes_in_group("zombies"):
 		if z != self and z.global_position.distance_to(global_position) < 30.0:
 			z.hear_noise(target.global_position if target else global_position)
@@ -425,6 +426,10 @@ func _die() -> void:
 		get_parent().spawn_pickup.rpc(drop, global_position + Vector3(0, 0.05, 0), -1)
 	if data.get("death_gas"):
 		get_parent().spawn_hazard.rpc("acid_gas", global_position, 3.2, 6.0)
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_scream() -> void:
+	model.play_once("scream", 0.1)
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_die() -> void:

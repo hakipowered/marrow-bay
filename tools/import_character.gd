@@ -2,14 +2,21 @@ extends SceneTree
 ## Builds res://assets/characters/<id>/<id>_anims.res from the rigged Meshy clips
 ## dropped in res://build_tmp/anims/<id>/ (walk.glb, run.glb, a0..a9.glb).
 ## Usage: godot --headless --path . --script tools/import_character.gd -- zegan obcera
+## Infected use an "enemies/" prefix (enemies/mechanic) and the zombie clip set,
+## rigged with Meshy ids 650, 644, 0, 214, 389, 386, 178, 183, 344, 340.
 
 const CLIPS := {
 	"walk": "walk", "run": "run",
 	"a0": "idle", "a1": "aim", "a2": "shoot_walk", "a3": "run_shoot", "a4": "reload",
 	"a5": "hit", "a6": "knockdown", "a7": "stand_up", "a8": "call", "a9": "shout",
 }
-const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot"]
-const IN_PLACE := ["walk", "run", "shoot_walk", "run_shoot"]
+const ZOMBIE_CLIPS := {
+	"walk": "walk", "run": "run",
+	"a0": "shamble", "a1": "sprint", "a2": "idle", "a3": "attack", "a4": "grab",
+	"a5": "scream", "a6": "hit", "a7": "death", "a8": "rise", "a9": "crawl",
+}
+const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl", "attack"]
+const IN_PLACE := ["walk", "run", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl"]
 
 func _initialize() -> void:
 	for id in OS.get_cmdline_user_args():
@@ -17,7 +24,9 @@ func _initialize() -> void:
 	quit(0)
 
 func _build(id: String) -> void:
-	var base: Node = (load("res://assets/characters/%s/%s.glb" % [id, id]) as PackedScene).instantiate()
+	var clips: Dictionary = ZOMBIE_CLIPS if id.begins_with("enemies/") else CLIPS
+	var leaf := id.get_file()
+	var base: Node = (load("res://assets/characters/%s/%s.glb" % [id, leaf]) as PackedScene).instantiate()
 	root.add_child(base)
 	var skel: Skeleton3D = base.find_children("*", "Skeleton3D", true, false)[0]
 	var names := []
@@ -25,7 +34,7 @@ func _build(id: String) -> void:
 		names.append(skel.get_bone_name(i))
 	print(id, " skeleton path: ", base.get_path_to(skel), " bones: ", names)
 	var lib := AnimationLibrary.new()
-	for f in CLIPS:
+	for f in clips:
 		var path := "res://build_tmp/anims/%s/%s.glb" % [id, f]
 		if not ResourceLoader.exists(path):
 			print("  missing ", path)
@@ -38,7 +47,7 @@ func _build(id: String) -> void:
 				src = ap.get_animation(n)
 				break
 		var anim: Animation = src.duplicate(true)
-		var clip: String = CLIPS[f]
+		var clip: String = clips[f]
 		anim.loop_mode = Animation.LOOP_LINEAR if clip in LOOPING else Animation.LOOP_NONE
 		# Retarget track paths so they resolve from the base model's AnimationPlayer root.
 		var ap_root: Node = ap.get_node(ap.root_node)
@@ -59,6 +68,6 @@ func _build(id: String) -> void:
 		lib.add_animation(clip, anim)
 		print("  ", clip, " len=", snappedf(anim.length, 0.01), " tracks=", anim.get_track_count(), " from ", ap.get_animation_list())
 		scene.free()
-	ResourceSaver.save(lib, "res://assets/characters/%s/%s_anims.res" % [id, id])
+	ResourceSaver.save(lib, "res://assets/characters/%s/%s_anims.res" % [id, leaf])
 	print("saved ", id, " anims: ", lib.get_animation_list())
 	base.queue_free()

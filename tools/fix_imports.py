@@ -28,6 +28,9 @@ for d in dirs:
         new = re.sub(r"compress/normal_map=\d", "compress/normal_map=%d" % (1 if is_normal else 2), new)
         new = re.sub(r"detect_3d/compress_to=\d", "detect_3d/compress_to=0", new)
         rel = os.path.relpath(imp, ROOT).replace(os.sep, "/")
+        if rel.startswith("assets/characters/enemies/"):
+            # Many infected share the screen: 1K textures keep memory and APK size down.
+            new = re.sub(r"process/size_limit=\d+", "process/size_limit=1024", new)
         if rel.startswith("assets/polyhaven/models/"):
             model = rel.split("/")[3]
             new = re.sub(r"process/size_limit=\d+", "process/size_limit=%d" % (0 if model.startswith(KEEP_1K) else 512), new)
