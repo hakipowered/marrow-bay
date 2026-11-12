@@ -22,16 +22,31 @@ uniform vec3 r_fwd[6];
 uniform vec3 r_offset[6];
 uniform float r_inflate[6];
 uniform float r_mask[6];
+// Regions with the same non-zero group (the two sides of the chest) share
+// the growth where they overlap instead of adding it up, so the cleavage
+// stays a valley between the cups rather than swelling out past them.
+uniform float r_group[6];
 
 void vertex() {
 	vec3 v = VERTEX;
 	vec3 add = vec3(0.0);
+	float ws[REGIONS];
+	for (int i = 0; i < REGIONS; i++) {
+		ws[i] = 1.0 - smoothstep(0.55, 1.0, length((v - r_center[i]) / max(r_radius[i], vec3(1e-3))));
+	}
 	for (int i = 0; i < REGIONS; i++) {
 		vec3 rel = v - r_center[i];
 		vec3 q = rel / max(r_radius[i], vec3(1e-3));
-		float d = length(q);
-		float w = 1.0 - smoothstep(0.55, 1.0, d);
+		float w = ws[i];
 		if (w <= 0.0) continue;
+		float share = 1.0;
+		if (r_group[i] > 0.0) {
+			float total = 0.0;
+			for (int j = 0; j < REGIONS; j++) {
+				if (r_group[j] == r_group[i]) total += max(ws[j], 0.0);
+			}
+			share = w / max(total, 1e-4);
+		}
 		vec3 dir = normalize(rel + vec3(1e-4));
 		float f = dot(dir, r_fwd[i]);
 		float facing = smoothstep(-0.25, 0.35, f);
@@ -44,7 +59,7 @@ void vertex() {
 		// so the ribs, the upper abs and the back stay put.
 		vec3 qj = q * vec3(1.25, rel.y < 0.0 ? 2.0 : 1.3, 1.0);
 		float wj = (1.0 - smoothstep(0.2, 0.75, length(qj))) * smoothstep(0.1, 0.55, f);
-		add += grow * r_inflate[i] * m * w + r_offset[i] * wj;
+		add += grow * r_inflate[i] * m * w * share + r_offset[i] * wj;
 	}
 	VERTEX = v + add;
 }

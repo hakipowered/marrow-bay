@@ -36,11 +36,12 @@ const BONE_SLIDERS := {
 
 ## Soft shaping regions, measured on the rigged models in the A-pose rest
 ## (skeleton space, centimetres). bone, centre, radii, facing mask, base
-## inflate per character, which slider drives it, and spring settings.
+## inflate per character, which slider drives it, the group whose regions
+## share growth where they overlap, and spring settings.
 const REGIONS := {
 	"obcera": [
-		{"bone": "Spine01", "c": Vector3(8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "spring": [190.0, 6.5, 0.026]},
-		{"bone": "Spine01", "c": Vector3(-8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "spring": [190.0, 6.5, 0.026]},
+		{"bone": "Spine01", "c": Vector3(8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "group": 1, "spring": [190.0, 6.5, 0.026]},
+		{"bone": "Spine01", "c": Vector3(-8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "group": 1, "spring": [190.0, 6.5, 0.026]},
 		{"bone": "Hips", "c": Vector3(8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.8, "spring": [240.0, 8.0, 0.016]},
 		{"bone": "Hips", "c": Vector3(-8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.8, "spring": [240.0, 8.0, 0.016]},
 		{"bone": "Spine02", "c": Vector3(0.0, 106.0, 4.0), "r": Vector3(22.0, 9.0, 16.0), "mask": 0.0, "base": -0.08, "slider": "waist", "range": 0.6},
@@ -449,6 +450,10 @@ func _setup_body(m: Node3D, lib: AnimationLibrary = null) -> void:
 		if i < centers.size():
 			def["c"] = centers[i]
 		def["base"] = def["base"] * shape
+		# The outfit models start from different builds, so each one says how
+		# far its chest grows at the top of the slider (tests/chest_check.gd).
+		if def["slider"] == "chest" and Outfits.info(character, outfit).has("chest_max"):
+			def["max"] = Outfits.info(character, outfit)["chest_max"]
 		var rest := _skel.get_bone_global_rest(idx)
 		var fwd := Vector3(0, 0, -1) if def.get("back", false) else Vector3(0, 0, 1)
 		_regions.append({
@@ -508,6 +513,15 @@ func _process(delta: float) -> void:
 	if _skel and _model and not is_equal_approx(_slider("legs"), 0.0):
 		_update_lift()
 
+## How far a region grows for the current sliders. Above the middle a region
+## with a "max" heads for it, so the top of the slider is the same size on
+## every outfit; otherwise it grows by its "range".
+func _region_inflate(def: Dictionary) -> float:
+	var s := _slider(def["slider"])
+	if def.has("max") and s > 0.0:
+		return lerpf(def["base"], def["max"], s * 2.0)
+	return def["base"] + s * def["range"]
+
 func _update_regions(delta: float) -> void:
 	var n := 6
 	var centers := PackedVector3Array()
@@ -516,12 +530,13 @@ func _update_regions(delta: float) -> void:
 	var offsets := PackedVector3Array()
 	var inflates := PackedFloat32Array()
 	var masks := PackedFloat32Array()
+	var groups := PackedFloat32Array()
 	var skel_xf := _skel.global_transform
 	var to_skel := skel_xf.basis.inverse()
 	for i in n:
 		if i >= _regions.size():
 			centers.append(Vector3(0, -9999, 0)); radii.append(Vector3.ONE); fwds.append(Vector3.FORWARD)
-			offsets.append(Vector3.ZERO); inflates.append(0.0); masks.append(0.0)
+			offsets.append(Vector3.ZERO); inflates.append(0.0); masks.append(0.0); groups.append(0.0)
 			continue
 		var rg: Dictionary = _regions[i]
 		var def: Dictionary = rg["def"]
@@ -531,7 +546,8 @@ func _update_regions(delta: float) -> void:
 		radii.append(def["r"])
 		fwds.append((pose.basis * rg["fwd_local"]).normalized())
 		masks.append(def["mask"])
-		inflates.append(def["base"] + _slider(def["slider"]) * 2.0 * def["range"] * 0.5)
+		groups.append(float(def.get("group", 0)))
+		inflates.append(_region_inflate(def))
 		# Spring secondary motion, simulated in world metres.
 		var off := Vector3.ZERO
 		if def.has("spring") and delta > 0.0:
@@ -558,3 +574,4 @@ func _update_regions(delta: float) -> void:
 	_body_mat.set_shader_parameter("r_offset", offsets)
 	_body_mat.set_shader_parameter("r_inflate", inflates)
 	_body_mat.set_shader_parameter("r_mask", masks)
+	_body_mat.set_shader_parameter("r_group", groups)

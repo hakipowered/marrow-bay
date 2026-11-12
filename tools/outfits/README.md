@@ -36,4 +36,8 @@ listed in `scripts/player/outfits.gd` and stored under
 8. **Check.** `tests/render_outfits.gd` renders every outfit front, back and
    aiming; `tests/render_customize.gd` shows the outfit screen;
    `tests/render_head.gd` shows the head and neck close up from five sides;
-   `tests/feet_check.gd` checks the soles sit on the floor.
+   `tests/feet_check.gd` checks the soles sit on the floor;
+   `tests/chest_check.gd` measures the bust at the top of the Chest slider.
+   A new Obcera outfit needs a `"chest_max"` in `scripts/player/outfits.gd`:
+   the inflate the check prints under "needs", so max Chest is the same size
+   on every outfit.
