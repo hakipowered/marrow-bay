@@ -35,6 +35,12 @@ func _process(_d: float) -> bool:
 		root.get_node("Net").start_solo(who)
 		change_scene_to_file(root.get_node("GameState").level_path)
 		return false
+	# A new game opens with the story intro: skip it (solo needs one vote).
+	var cs = root.get_node_or_null("Cutscenes")
+	if cs and cs.active:
+		if frames % 10 == 0:
+			cs._on_skip_pressed()
+		return false
 	if frames < 50:
 		return false
 	if p == null:
