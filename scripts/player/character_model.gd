@@ -35,16 +35,23 @@ const BONE_SLIDERS := {
 }
 
 ## Soft shaping regions, measured on the rigged models in the A-pose rest
-## (skeleton space, centimetres). bone, centre, radii, facing mask, base
-## inflate per character, which slider drives it, and spring settings.
+## (skeleton space, centimetres). bone, centre (or "along": a point that far
+## down a bone, plus "c" as an offset; "shift" moves a centre after the outfit
+## import placed it), radii, facing mask, base inflate per character, which
+## slider drives it, the group whose regions share growth where they overlap,
+## and spring settings. A region placed "along" a bone grows round it.
 const REGIONS := {
 	"obcera": [
-		{"bone": "Spine01", "c": Vector3(8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "spring": [190.0, 6.5, 0.026]},
-		{"bone": "Spine01", "c": Vector3(-8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "spring": [190.0, 6.5, 0.026]},
-		{"bone": "Hips", "c": Vector3(8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.8, "spring": [240.0, 8.0, 0.016]},
-		{"bone": "Hips", "c": Vector3(-8.0, 89.0, -1.0), "r": Vector3(12.5, 13.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.8, "spring": [240.0, 8.0, 0.016]},
+		{"bone": "Spine01", "c": Vector3(8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "group": 1, "spring": [190.0, 6.5, 0.026]},
+		{"bone": "Spine01", "c": Vector3(-8.5, 120.5, 9.0), "r": Vector3(11.5, 13.0, 17.0), "mask": 1.0, "base": 0.5, "slider": "chest", "range": 1.0, "group": 1, "spring": [190.0, 6.5, 0.026]},
+		{"bone": "Hips", "c": Vector3(8.0, 89.0, -1.0), "shift": Vector3(0.0, -4.5, 0.0), "r": Vector3(13.0, 16.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.7, "group": 2, "spring": [240.0, 8.0, 0.016]},
+		{"bone": "Hips", "c": Vector3(-8.0, 89.0, -1.0), "shift": Vector3(0.0, -4.5, 0.0), "r": Vector3(13.0, 16.0, 16.0), "mask": 1.0, "back": true, "base": 0.42, "slider": "hips", "range": 0.7, "group": 2, "spring": [240.0, 8.0, 0.016]},
 		{"bone": "Spine02", "c": Vector3(0.0, 106.0, 4.0), "r": Vector3(22.0, 9.0, 16.0), "mask": 0.0, "base": -0.08, "slider": "waist", "range": 0.6},
 		{"bone": "Hips", "c": Vector3(0.0, 88.0, 3.0), "r": Vector3(24.0, 12.0, 18.0), "mask": 0.0, "base": 0.06, "slider": "hips", "range": 0.4},
+		# Upper thighs grow with the hips, round the bone, so the seat runs
+		# on into the legs instead of ending in a shelf.
+		{"bone": "LeftUpLeg", "along": ["LeftUpLeg", "LeftLeg", 0.3], "c": Vector3(0.0, 0.0, -1.0), "r": Vector3(10.0, 15.0, 10.0), "mask": 0.0, "base": 0.0, "slider": "hips", "range": 0.4},
+		{"bone": "RightUpLeg", "along": ["RightUpLeg", "RightLeg", 0.3], "c": Vector3(0.0, 0.0, -1.0), "r": Vector3(10.0, 15.0, 10.0), "mask": 0.0, "base": 0.0, "slider": "hips", "range": 0.4},
 	],
 	"zegan": [
 		{"bone": "Spine01", "c": Vector3(8.0, 124.0, 6.0), "r": Vector3(12.0, 12.0, 16.0), "mask": 1.0, "base": 0.0, "slider": "chest", "range": 0.22},
@@ -477,6 +484,18 @@ func flinch(heavy := false) -> void:
 	play_once("hit", 0.04, 1.35 if heavy else 1.75)
 	_cancel_at = 0.75 if heavy else 0.55
 
+## Holds a clip still at one moment, for the outfit screen's still pose: no
+## breathing or sway, so slider changes can be judged. play() moves on again.
+func hold_still(clip: String, at := 0.0) -> void:
+	if _anim == null or not _anim.has_animation(clip) or _current == "hold:" + clip:
+		return
+	_anim.speed_scale = 1.0
+	_anim.play(clip)
+	_anim.seek(at, true)
+	_anim.pause()
+	_current = "hold:" + clip
+	_one_shot = false
+
 ## Plays a non-looping clip (hit, reload, call, shout, knockdown, stand_up),
 ## then returns to the movement loop.
 func play_once(clip: String, blend := 0.15, speed := 1.0) -> void:
@@ -515,6 +534,8 @@ var _body_mesh: MeshInstance3D
 func _setup_body(m: Node3D, lib: AnimationLibrary = null) -> void:
 	_body_mesh = m.find_children("*", "MeshInstance3D", true, false)[0]
 	_body_mat = _skin_material(_body_mesh)
+	_body_mesh.mesh = _with_rest_positions(_body_mesh, _skel)
+	_body_mat.set_shader_parameter("shaped", true)
 	_body_mesh.material_override = _body_mat
 	_regions.clear()
 	# Outfit models carry their own shape, so they keep only part of the base
@@ -528,18 +549,70 @@ func _setup_body(m: Node3D, lib: AnimationLibrary = null) -> void:
 		var idx := _skel.find_bone(def["bone"])
 		if idx < 0:
 			continue
-		if i < centers.size():
+		if def.has("along"):
+			var a := _skel.get_bone_global_rest(_skel.find_bone(def["along"][0])).origin
+			var b := _skel.get_bone_global_rest(_skel.find_bone(def["along"][1])).origin
+			def["c"] = a.lerp(b, def["along"][2]) + def["c"]
+			def["axis"] = (b - a).normalized()
+		elif i < centers.size():
 			def["c"] = centers[i]
+		def["c"] += def.get("shift", Vector3.ZERO)
 		def["base"] = def["base"] * shape
+		# The outfit models start from different builds, so each one says how
+		# far its chest grows at the top of the slider (tests/chest_check.gd).
+		if def["slider"] == "chest" and Outfits.info(character, outfit).has("chest_max"):
+			def["max"] = Outfits.info(character, outfit)["chest_max"]
 		var rest := _skel.get_bone_global_rest(idx)
 		var fwd := Vector3(0, 0, -1) if def.get("back", false) else Vector3(0, 0, 1)
 		_regions.append({
-			"def": def, "bone": idx,
+			"def": def, "bone": idx, "fwd": fwd,
+			"rest_turn": rest.basis.get_rotation_quaternion().inverse(),
 			"local": rest.affine_inverse() * def["c"],
-			"fwd_local": (rest.basis.inverse() * fwd).normalized(),
 			"disp": Vector3.ZERO, "vel": Vector3.ZERO, "prev": Vector3.ZERO, "prev_v": Vector3.ZERO, "init": false,
 		})
 	_update_regions(0.0)
+
+## Each body mesh once more with its vertices' rest-pose positions (skeleton
+## space) in CUSTOM0, which the body shader shapes from. Built once per mesh
+## and shared while any survivor wears it.
+static var _rest_meshes := {}
+
+static func _with_rest_positions(mi: MeshInstance3D, skel: Skeleton3D) -> Mesh:
+	var src: Mesh = mi.mesh
+	var known: WeakRef = _rest_meshes.get(src.get_instance_id())
+	if known and known.get_ref():
+		return known.get_ref()
+	var arr := src.surface_get_arrays(0)
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var bones: PackedInt32Array = arr[Mesh.ARRAY_BONES]
+	var weights: PackedFloat32Array = arr[Mesh.ARRAY_WEIGHTS]
+	var per := bones.size() / maxi(verts.size(), 1)
+	var skin := mi.skin
+	var moved := []
+	for b in skin.get_bind_count():
+		var bone := skin.get_bind_bone(b)
+		if bone < 0:
+			bone = skel.find_bone(skin.get_bind_name(b))
+		moved.append((skel.get_bone_global_rest(bone) * skin.get_bind_pose(b)) * verts)
+	var rest := PackedVector3Array()
+	rest.resize(verts.size())
+	for i in verts.size():
+		var p := Vector3.ZERO
+		var o := i * per
+		for k in per:
+			var wt := weights[o + k]
+			if wt > 0.0:
+				p += (moved[bones[o + k]] as PackedVector3Array)[i] * wt
+		rest[i] = p
+	arr[Mesh.ARRAY_CUSTOM0] = rest.to_byte_array().to_float32_array()
+	var flags := Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	if per == 8:
+		flags |= Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
+	var out := ArrayMesh.new()
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, flags)
+	out.surface_set_material(0, src.surface_get_material(0))
+	_rest_meshes[src.get_instance_id()] = weakref(out)
+	return out
 
 ## The scanned PBR textures of a model mesh on the body shader.
 func _skin_material(mi: MeshInstance3D) -> ShaderMaterial:
@@ -590,30 +663,48 @@ func _process(delta: float) -> void:
 	if _skel and _model and not is_equal_approx(_slider("legs"), 0.0):
 		_update_lift()
 
+## How far a region grows for the current sliders. Above the middle a region
+## with a "max" heads for it, so the top of the slider is the same size on
+## every outfit; otherwise it grows by its "range".
+func _region_inflate(def: Dictionary) -> float:
+	var s := _slider(def["slider"])
+	if def.has("max") and s > 0.0:
+		return lerpf(def["base"], def["max"], s * 2.0)
+	return def["base"] + s * def["range"]
+
 func _update_regions(delta: float) -> void:
-	var n := 6
+	var n := 8
 	var centers := PackedVector3Array()
 	var radii := PackedVector3Array()
 	var fwds := PackedVector3Array()
+	var axes := PackedVector3Array()
+	var turns := PackedVector4Array()
 	var offsets := PackedVector3Array()
 	var inflates := PackedFloat32Array()
 	var masks := PackedFloat32Array()
+	var groups := PackedFloat32Array()
 	var skel_xf := _skel.global_transform
 	var to_skel := skel_xf.basis.inverse()
 	for i in n:
 		if i >= _regions.size():
 			centers.append(Vector3(0, -9999, 0)); radii.append(Vector3.ONE); fwds.append(Vector3.FORWARD)
-			offsets.append(Vector3.ZERO); inflates.append(0.0); masks.append(0.0)
+			axes.append(Vector3.ZERO); turns.append(Vector4(0, 0, 0, 1))
+			offsets.append(Vector3.ZERO); inflates.append(0.0); masks.append(0.0); groups.append(0.0)
 			continue
 		var rg: Dictionary = _regions[i]
 		var def: Dictionary = rg["def"]
 		var pose := _skel.get_bone_global_pose(rg["bone"])
 		var c: Vector3 = pose * rg["local"]
-		centers.append(c)
+		# The shader shapes the rest pose, then turns the result with the bone.
+		centers.append(def["c"])
 		radii.append(def["r"])
-		fwds.append((pose.basis * rg["fwd_local"]).normalized())
+		fwds.append(rg["fwd"])
+		axes.append(def.get("axis", Vector3.ZERO))
+		var q: Quaternion = pose.basis.get_rotation_quaternion() * rg["rest_turn"]
+		turns.append(Vector4(q.x, q.y, q.z, q.w))
 		masks.append(def["mask"])
-		inflates.append(def["base"] + _slider(def["slider"]) * 2.0 * def["range"] * 0.5)
+		groups.append(float(def.get("group", 0)))
+		inflates.append(_region_inflate(def))
 		# Spring secondary motion, simulated in world metres.
 		var off := Vector3.ZERO
 		if def.has("spring") and delta > 0.0:
@@ -637,6 +728,9 @@ func _update_regions(delta: float) -> void:
 	_body_mat.set_shader_parameter("r_center", centers)
 	_body_mat.set_shader_parameter("r_radius", radii)
 	_body_mat.set_shader_parameter("r_fwd", fwds)
+	_body_mat.set_shader_parameter("r_axis", axes)
+	_body_mat.set_shader_parameter("r_rot", turns)
 	_body_mat.set_shader_parameter("r_offset", offsets)
 	_body_mat.set_shader_parameter("r_inflate", inflates)
 	_body_mat.set_shader_parameter("r_mask", masks)
+	_body_mat.set_shader_parameter("r_group", groups)

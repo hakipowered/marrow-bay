@@ -1,7 +1,7 @@
 extends SceneTree
 ## Screenshot of the outfit and body screen as it looks on the phone.
 ## xvfb-run godot --path . --rendering-driver opengl3 --resolution 2176x1812 \
-##   --script tests/render_customize.gd -- <character> <outfit> <out.png> [turn_degrees] [full|upper|face] [idle|walk|run]
+##   --script tests/render_customize.gd -- <character> <outfit> <out.png> [turn_degrees] [full|upper|face] [still|idle|walk|run]
 var f := 0
 var menu: Node
 

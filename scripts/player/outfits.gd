@@ -19,7 +19,9 @@ const DEFAULT := "default"
 ## id -> name shown in the picker, a short line, the tag it is listed under,
 ## and how much of the base model's built-in body shaping to keep. The
 ## outfit models were sculpted from renders of the shaped body, so they keep
-## little of it and the sliders still work on top.
+## little of it and the sliders still work on top. "chest_max" is how far the
+## chest grows at the top of the Chest slider, so the largest size is the same
+## on every outfit (measured with tests/chest_check.gd).
 const CATALOGUE := {
 	"zegan": {
 		"default": {"name": "Paramedic", "desc": "Night-shift medic jacket, plate carrier and cargo trousers.", "tag": "classic"},
@@ -30,11 +32,11 @@ const CATALOGUE := {
 	},
 	"obcera": {
 		"default": {"name": "Courier", "desc": "Red leather jacket, biker trousers and her courier bag.", "tag": "classic"},
-		"catsuit": {"name": "Black Catsuit", "desc": "Skin-tight glossy leather, zip down to the collarbone.", "tag": "hot", "shape": 0.0},
-		"street_heat": {"name": "Street Heat", "desc": "Cropped tank top, cut-off denim shorts and boots.", "tag": "hot", "shape": 0.0},
-		"red_dress": {"name": "Red Dress", "desc": "Tight red satin cocktail dress and heels.", "tag": "hot", "shape": 0.0, "sole": 0.015},
-		"beach": {"name": "Beach Day", "desc": "Red bikini, thigh holster and combat boots.", "tag": "hot", "shape": 0.0},
-		"midnight_lace": {"name": "Midnight Lace", "desc": "Lace corset, stockings, satin gloves and heeled boots.", "tag": "hot", "shape": 0.0, "sole": 0.032},
+		"catsuit": {"name": "Black Catsuit", "desc": "Skin-tight glossy leather, zip down to the collarbone.", "tag": "hot", "shape": 0.0, "chest_max": 0.94},
+		"street_heat": {"name": "Street Heat", "desc": "Cropped tank top, cut-off denim shorts and boots.", "tag": "hot", "shape": 0.0, "chest_max": 0.84},
+		"red_dress": {"name": "Red Dress", "desc": "Tight red satin cocktail dress and heels.", "tag": "hot", "shape": 0.0, "chest_max": 0.96, "sole": 0.015},
+		"beach": {"name": "Beach Day", "desc": "Red bikini, thigh holster and combat boots.", "tag": "hot", "shape": 0.0, "chest_max": 0.61},
+		"midnight_lace": {"name": "Midnight Lace", "desc": "Lace corset, stockings, satin gloves and heeled boots.", "tag": "hot", "shape": 0.0, "chest_max": 0.73, "sole": 0.032},
 	},
 }
 
