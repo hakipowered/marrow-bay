@@ -42,9 +42,14 @@ func _rpc_request_save(slot: String) -> void:
 		save_game(slot)
 
 func build_snapshot() -> Dictionary:
+	# What each survivor wears (outfit + body sliders), by character.
+	var looks := {}
 	for p in get_tree().get_nodes_in_group("players"):
-		GameState.inventories[GameState.character_by_peer.get(p.peer_id, p.character)] = p.inventory.to_dict()
+		var who: String = GameState.character_by_peer.get(p.peer_id, p.character)
+		GameState.inventories[who] = p.inventory.to_dict()
+		looks[who] = GameState.customization_by_peer.get(p.peer_id, GameState.look(who)).duplicate()
 	return {
+		"looks": looks,
 		"version": 1,
 		"timestamp": Time.get_datetime_string_from_system(),
 		"level": GameState.level_path,
@@ -97,4 +102,10 @@ func apply_snapshot(data: Dictionary) -> void:
 	GameState.world_flags = data.get("flags", {})
 	GameState.inventories = data.get("inventories", {})
 	GameState.play_time_sec = data.get("play_time", 0.0)
+	# Survivors come back dressed as they were saved.
+	var looks: Variant = data.get("looks", {})
+	if looks is Dictionary:
+		for who in looks:
+			if who in GameState.CHARACTERS and looks[who] is Dictionary:
+				GameState.set_look(who, looks[who])
 	loaded.emit(data.get("checkpoint", ""))

@@ -1,16 +1,22 @@
 class_name CharacterModel
 extends Node3D
-## Survivor body. Loads the rigged model at res://assets/characters/<id>/<id>.glb
-## when present (skeleton + animations); otherwise builds a stand-in figure so
-## every system can be tested today.
+## Survivor body. Loads the rigged model of the chosen outfit (see Outfits:
+## each outfit is its own textured Meshy model sharing the skeleton layout)
+## with its clip library; when no model ships, builds a stand-in figure so
+## every system can still be tested.
 ##
-## Body sliders (0..1, 0.5 = base) scale skeleton bones on the rigged model,
-## or the stand-in's parts. Outfits swap material sets by name.
+## Body sliders (0..1, 0.5 = base) scale skeleton bones and drive the soft
+## shaping regions on the rigged model, or scale the stand-in's parts.
+
+signal outfit_loaded(outfit: String)
 
 var character := "zegan"
 var customization: Dictionary = {}
+## Outfit id of the model currently built.
+var outfit := ""
 var _anim: AnimationPlayer
 var _skel: Skeleton3D
+var _model: Node3D
 var _parts: Dictionary = {}
 var _t := 0.0
 var _current := ""
@@ -44,6 +50,7 @@ const REGIONS := {
 	],
 }
 
+## Colours for the stand-in figure only (used when no model ships).
 const PALETTES := {
 	"zegan": {
 		"default": {"jacket": Color(0.16, 0.2, 0.17), "shirt": Color(0.55, 0.5, 0.42), "pants": Color(0.12, 0.12, 0.14), "accent": Color(0.75, 0.42, 0.12), "skin": Color(0.72, 0.55, 0.42), "hair": Color(0.08, 0.06, 0.05)},
@@ -57,36 +64,60 @@ const PALETTES := {
 	},
 }
 
+## Outfit ids for a character, in picker order (only those in this build).
 static func outfits(for_character: String) -> Array:
-	return PALETTES.get(for_character, {}).keys()
+	return Outfits.ids(for_character).filter(func(o): return Outfits.available(for_character, o))
 
 func _ready() -> void:
-	var path := "res://assets/characters/%s/%s.glb" % [character, character]
-	if ResourceLoader.exists(path):
+	_build(Outfits.resolve(character, customization.get("outfit", Outfits.DEFAULT)))
+	apply_customization(customization)
+
+## Builds (or rebuilds) the body for an outfit.
+func _build(id: String) -> void:
+	if _model:
+		_model.queue_free()
+		_model = null
+	for k in _parts:
+		_parts[k]["mesh"].queue_free()
+	_parts.clear()
+	_anim = null
+	_skel = null
+	_body_mat = null
+	_current = ""
+	_held = ""
+	_one_shot = false
+	outfit = id
+	var path := Outfits.model_path(character, id)
+	if path != "" and ResourceLoader.exists(path):
 		var m: Node3D = load(path).instantiate()
 		m.rotation.y = PI   # Meshy models face +Z; the player looks down -Z
 		add_child(m)
+		_model = m
 		_skel = m.find_child("Skeleton3D", true, false)
 		var old_ap := m.find_child("AnimationPlayer", true, false)
 		if old_ap:
-			old_ap.queue_free()
+			old_ap.get_parent().remove_child(old_ap)
+			old_ap.free()
 		_anim = AnimationPlayer.new()
 		m.add_child(_anim)
 		_anim.root_node = NodePath("..")
-		var lib_path := "res://assets/characters/%s/%s_anims.res" % [character, character]
-		if ResourceLoader.exists(lib_path):
-			_anim.add_animation_library("", load(lib_path))
+		var lib_path := Outfits.anims_path(character, id)
+		var lib: AnimationLibrary = load(lib_path) if ResourceLoader.exists(lib_path) else null
+		if lib:
+			_anim.add_animation_library("", lib)
 		_anim.animation_finished.connect(func(_n): _current = "")
-		_setup_body(m)
+		_setup_body(m, lib)
 	else:
 		_build_standin()
-	apply_customization(customization)
+	outfit_loaded.emit(id)
 
 func _slider(name: String) -> float:
 	return float(customization.get(name, 0.5)) - 0.5   # -0.5 .. 0.5
 
 func apply_customization(c: Dictionary) -> void:
 	customization = c
+	if is_inside_tree() and Outfits.resolve(character, c.get("outfit", Outfits.DEFAULT)) != outfit:
+		_build(Outfits.resolve(character, c.get("outfit", Outfits.DEFAULT)))
 	var h := 1.0 + _slider("height") * 0.16
 	scale = Vector3(h, h, h)
 	if _skel:
@@ -97,7 +128,7 @@ func apply_customization(c: Dictionary) -> void:
 				if idx >= 0:
 					_skel.set_bone_pose_scale(idx, Vector3.ONE + entry[1] * amount)
 		return
-	var pal: Dictionary = PALETTES.get(character, PALETTES["zegan"]).get(c.get("outfit", "default"), PALETTES[character]["default"])
+	var pal: Dictionary = PALETTES.get(character, PALETTES["zegan"]).get(outfit, PALETTES[character]["default"])
 	for part in _parts:
 		var mi: MeshInstance3D = _parts[part]["mesh"]
 		mi.material_override = Mats.trim(pal.get(_parts[part]["color"], Color.GRAY), _parts[part].get("rough", 0.6))
@@ -109,6 +140,16 @@ func apply_customization(c: Dictionary) -> void:
 		_scale_part(leg, Vector3(1.0 + _slider("muscle") * 0.3, 1.0 + _slider("legs") * 0.2, 1.0 + _slider("muscle") * 0.3))
 	for arm in ["arm_l", "arm_r"]:
 		_scale_part(arm, Vector3(1.0 + _slider("muscle") * 0.4, 1, 1.0 + _slider("muscle") * 0.4))
+
+## Where a bone is in the current pose, in this node's space, or null when
+## the model has no skeleton or no such bone.
+func bone_position(bone: String) -> Variant:
+	if not _skel or not _skel.is_inside_tree():
+		return null
+	var i := _skel.find_bone(bone)
+	if i < 0:
+		return null
+	return to_local(_skel.global_transform * _skel.get_bone_global_pose(i).origin)
 
 func _scale_part(name: String, s: Vector3) -> void:
 	if _parts.has(name):
@@ -196,7 +237,7 @@ var _body_mat: ShaderMaterial
 var _regions: Array = []      # runtime state per region
 var _body_mesh: MeshInstance3D
 
-func _setup_body(m: Node3D) -> void:
+func _setup_body(m: Node3D, lib: AnimationLibrary = null) -> void:
 	_body_mesh = m.find_children("*", "MeshInstance3D", true, false)[0]
 	var std := _body_mesh.get_active_material(0) as StandardMaterial3D
 	_body_mat = ShaderMaterial.new()
@@ -214,10 +255,20 @@ func _setup_body(m: Node3D) -> void:
 		_body_mat.set_shader_parameter("metallic", std.metallic)
 	_body_mesh.material_override = _body_mat
 	_regions.clear()
-	for def in REGIONS.get(character, []):
+	# Outfit models carry their own shape, so they keep only part of the base
+	# model's built-in shaping; their shaping centres were moved onto their
+	# own skeleton by the outfit import.
+	var shape: float = Outfits.info(character, outfit).get("shape", 1.0)
+	var centers: Array = lib.get_meta("region_centers", []) if lib else []
+	var defs: Array = REGIONS.get(character, [])
+	for i in defs.size():
+		var def: Dictionary = defs[i].duplicate()
 		var idx := _skel.find_bone(def["bone"])
 		if idx < 0:
 			continue
+		if i < centers.size():
+			def["c"] = centers[i]
+		def["base"] = def["base"] * shape
 		var rest := _skel.get_bone_global_rest(idx)
 		var fwd := Vector3(0, 0, -1) if def.get("back", false) else Vector3(0, 0, 1)
 		_regions.append({

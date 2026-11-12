@@ -4,6 +4,7 @@ extends SceneTree
 ## join: same with -- join
 var role := ""
 var frames := 0
+var outfits_ok := false
 var stage := 0
 var t0 := 0
 
@@ -29,6 +30,13 @@ func _process(_d: float) -> bool:
 			if frames == 2:
 				change_scene_to_file("res://scenes/main_menu.tscn")
 			if frames == 10:
+				# Outfits: the host wears Riot Unit as Zegan. The joiner also asks for
+				# Zegan, so it is handed Obcera and must arrive in its saved Obcera
+				# look (Red Dress), not its Zegan one.
+				if role == "host":
+					gs.looks = {"zegan": {"outfit": "riot", "chest": 0.7}}
+				else:
+					gs.looks = {"zegan": {"outfit": "biker"}, "obcera": {"outfit": "red_dress", "hips": 0.8}}
 				if role == "host":
 					net.partner_joined.connect(func(_id): print("host: partner joined"); _start_later())
 					net.host_online("zegan", "TEST42")
@@ -53,6 +61,12 @@ func _process(_d: float) -> bool:
 					if p.is_multiplayer_authority():
 						p.move_input = Vector2(0, -1)
 				print(role, ": players ", desc)
+				# Checked here, while both players are still in the level.
+				var worn := {}
+				for p in ps:
+					worn[p.character] = p.model.outfit
+				print(role, ": outfits ", worn)
+				outfits_ok = worn.get("zegan") == "riot" and worn.get("obcera") == "red_dress"
 				if role == "join":
 					root.get_node("CallOuts").call_partner(true)
 			if frames == 240:
@@ -60,6 +74,10 @@ func _process(_d: float) -> bool:
 				for p in get_nodes_in_group("players"):
 					desc.append("%s(%d)@%s" % [p.character, p.peer_id, p.global_position.snapped(Vector3.ONE * 0.1)])
 				print(role, ": after move ", desc)
+				if not outfits_ok:
+					print(role, " OUTFIT SYNC FAILED")
+					quit(1)
+					return false
 				print(role, " COOP OK")
 				quit(0)
 	return false
