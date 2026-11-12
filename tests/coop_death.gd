@@ -43,15 +43,24 @@ func _game_over_screen() -> Node:
 			return c
 	return null
 
+var _quitting := false
+
 func _done() -> void:
+	if _quitting:
+		return
+	_quitting = true
 	if fails.is_empty():
 		print(role, " COOP DEATH OK")
-		quit(0)
 	else:
 		print(role, " COOP DEATH FAIL: ", fails)
-		quit(1)
+	# Stay connected a few seconds so the other phone can finish its own
+	# checks (quitting at once made the host lose its partner mid-check).
+	await create_timer(5.0).timeout
+	quit(0 if fails.is_empty() else 1)
 
 func _process(d: float) -> bool:
+	if _quitting:
+		return false
 	frames += 1
 	t += d
 	var net = root.get_node("Net")
