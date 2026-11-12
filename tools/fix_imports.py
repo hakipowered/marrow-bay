@@ -7,6 +7,10 @@ textures compressed in memory. Run after tools/fetch_assets.py, then
 import os, re, glob
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Small props use 512 px textures on the phone; these big ones stay at 1K.
+KEEP_1K = ("covered_car", "old_bed_frame", "wooden_bookshelf_worn", "modular_fire_escape", "modular_chainlink_fence",
+           "concrete_road_barrier", "Sofa_01", "gothic_statue", "standing_chalkboard_01", "dining_table",
+           "vintage_grandfather_clock_01", "GothicCabinet_01", "metal_office_desk", "painted_wooden_bench", "street_lamp_01")
 dirs = ["assets/polyhaven", "assets/textures", "assets/characters"]
 changed = 0
 for d in dirs:
@@ -23,6 +27,10 @@ for d in dirs:
         new = re.sub(r"mipmaps/generate=\w+", "mipmaps/generate=true", new)
         new = re.sub(r"compress/normal_map=\d", "compress/normal_map=%d" % (1 if is_normal else 2), new)
         new = re.sub(r"detect_3d/compress_to=\d", "detect_3d/compress_to=0", new)
+        rel = os.path.relpath(imp, ROOT).replace(os.sep, "/")
+        if rel.startswith("assets/polyhaven/models/"):
+            model = rel.split("/")[3]
+            new = re.sub(r"process/size_limit=\d+", "process/size_limit=%d" % (0 if model.startswith(KEEP_1K) else 512), new)
         if new != s:
             open(imp, "w").write(new)
             # Drop the cached import so Godot rebuilds it.
