@@ -27,15 +27,15 @@ const MODELS := {
 	"p9": {"ph": "service_pistol", "grip": Vector2(-0.005, -0.01), "hold": "gun", "show": ["pistol_a", "slide_a", "hammer_a", "trigger_a"], "fist": Vector3(0, -0.005, 0.0045), "rake": 17.0},
 	"vk18": {"len": 0.26, "grip": Vector2(0.70, -0.25), "hold": "gun", "fist": Vector3(0, 0.03, -0.011), "rake": 17.0},
 	"bastion": {"len": 0.38, "grip": Vector2(0.72, -0.30), "hold": "gun", "fist": Vector3(0, 0.037, 0.0), "rake": 30.0},
-	"hornet": {"len": 0.62, "grip": Vector2(0.17, -0.08), "hold": "gun", "fist": Vector3(0, 0.013, 0.0085), "rake": 17.0},
-	"m12": {"len": 0.98, "grip": Vector2(0.36, 0.0), "hold": "gun", "fist": Vector3(0, 0.028, 0.028), "rake": 50.0},
-	"breacher": {"len": 0.95, "grip": Vector2(0.39, -0.18), "hold": "gun", "fist": Vector3(0, 0.002, -0.009), "rake": 25.0},
-	"longshot": {"ph": "bolt_action_rifle_7_62", "grip": Vector2(-0.32, -0.03), "hold": "gun", "hide": ["bolt_b", "bullet"], "fist": Vector3(0, 0.026, 0.009), "rake": 50.0},
-	"carbine": {"len": 0.80, "grip": Vector2(0.33, -0.15), "hold": "gun", "fist": Vector3(0, -0.004, 0.008), "rake": 25.0},
-	"bolt": {"len": 0.85, "grip": Vector2(0.29, -0.18), "hold": "gun", "fist": Vector3(0, -0.011, 0.003), "rake": 24.0},
-	"gl": {"len": 0.72, "grip": Vector2(0.2, -0.02), "hold": "gun", "fist": Vector3(0, 0.027, 0.003), "rake": 50.0},
-	"flamer": {"len": 0.95, "grip": Vector2(0.60, -0.03), "hold": "gun", "fist": Vector3(0, 0.013, -0.0056), "rake": 30.0},
-	"rocket": {"len": 1.15, "grip": Vector2(-0.15, -0.15), "hold": "gun", "fist": Vector3(0, 0.024, 0.012), "rake": 13.0},
+	"hornet": {"len": 0.62, "grip": Vector2(0.17, -0.08), "hold": "gun", "fist": Vector3(0, 0.013, 0.0085), "rake": 17.0, "fore": Vector3(0, 0.043, -0.252), "fore_grip": "vertical"},
+	"m12": {"len": 0.98, "grip": Vector2(0.36, 0.0), "hold": "gun", "fist": Vector3(0, 0.028, 0.028), "rake": 50.0, "fore": Vector3(0.008, 0.044, -0.315), "fore_grip": "under"},
+	"breacher": {"len": 0.95, "grip": Vector2(0.39, -0.18), "hold": "gun", "fist": Vector3(0, 0.002, -0.009), "rake": 25.0, "fore": Vector3(0, 0.11, -0.39), "fore_grip": "under"},
+	"longshot": {"ph": "bolt_action_rifle_7_62", "grip": Vector2(-0.32, -0.03), "hold": "gun", "hide": ["bolt_b", "bullet"], "fist": Vector3(0, 0.026, 0.009), "rake": 50.0, "fore": Vector3(0, 0.066, -0.28), "fore_grip": "under"},
+	"carbine": {"len": 0.80, "grip": Vector2(0.33, -0.15), "hold": "gun", "fist": Vector3(0, -0.004, 0.008), "rake": 25.0, "fore": Vector3(0, 0.125, -0.21), "fore_grip": "under"},
+	"bolt": {"len": 0.85, "grip": Vector2(0.29, -0.18), "hold": "gun", "fist": Vector3(0, -0.011, 0.003), "rake": 24.0, "fore": Vector3(0, 0.044, -0.216), "fore_grip": "under"},
+	"gl": {"len": 0.72, "grip": Vector2(0.2, -0.02), "hold": "gun", "fist": Vector3(0, 0.027, 0.003), "rake": 50.0, "fore": Vector3(0, 0.029, -0.28), "fore_grip": "under"},
+	"flamer": {"len": 0.95, "grip": Vector2(0.60, -0.03), "hold": "gun", "fist": Vector3(0, 0.013, -0.0056), "rake": 30.0, "fore": Vector3(0, 0.003, -0.534), "fore_grip": "vertical"},
+	"rocket": {"len": 1.15, "grip": Vector2(-0.15, -0.15), "hold": "gun", "fist": Vector3(0, 0.024, 0.012), "rake": 13.0, "fore": Vector3(0, 0.041, -0.121), "fore_grip": "vertical"},
 	"flash": {"len": 0.13, "up": true, "grip": Vector2(0.0, -0.1), "hold": "palm"},
 	"frag": {"ph": "stick_grenade", "up": true, "grip": Vector2(0.0, -0.05), "hold": "palm", "fist": Vector3.ZERO, "edge": Vector3.UP},
 }
@@ -44,8 +44,9 @@ const MODELS := {
 ## middle of the handle in weapon space (metres), where the middle of the
 ## closed hand goes. A gun's handle runs down and back by "rake" degrees
 ## from straight down; a blade's handle runs along the blade, its "edge"
-## facing the front of the fist. Measured from slices through each model's
-## handle, then checked in close-ups.
+## facing the front of the fist. "fore" (long guns) is where the left hand
+## holds it, see LEFT_GRIPS. Measured from slices through each model's
+## handle and fore-end, then checked in close-ups.
 
 ## Middle of the closed hand, from the wrist bone, in metres along the bone
 ## (Y runs to the fingertips on these rigs), for a body without finger
@@ -129,7 +130,9 @@ func _process(delta: float) -> void:
 		_rot = want if _snap else _rot.slerp(want, 1.0 - exp(-16.0 * clampf(delta, 0.0, 0.1)))
 		_snap = false
 	_turn_wrist()
+	_shoulder_gun(delta)
 	_follow()
+	_reach_left(delta)
 
 ## Whether the handle sits in a closed fist (a body with finger joints and
 ## a weapon whose handle we know).
@@ -210,15 +213,193 @@ func _turn_wrist() -> void:
 	if hold == "gun":
 		_hold = Basis(turn.inverse() * c) * _grip
 	var target := _skel.get_bone_global_pose(_hand).basis.get_rotation_quaternion() * turn
-	var fa_clip := _skel.get_bone_pose_rotation(fa)
-	var hand_clip := _skel.get_bone_pose_rotation(_hand)
-	var fa_now := (fa_clip * Quaternion(Vector3.UP, angle * FOREARM_TWIST)).normalized()
-	_skel.set_bone_pose_rotation(fa, fa_now)
+	_pose_bone(fa, _skel.get_bone_pose_rotation(fa) * Quaternion(Vector3.UP, angle * FOREARM_TWIST))
+	_turn_hand_to(fa, _hand, target)
+
+## Sets a bone's turn for this frame, remembering the clip's own.
+func _pose_bone(b: int, q: Quaternion) -> void:
+	var clip: Quaternion = _turned[b][1] if _turned.has(b) else _skel.get_bone_pose_rotation(b)
+	q = q.normalized()
+	_skel.set_bone_pose_rotation(b, q)
+	_turned[b] = [q, clip]
+
+## Turns a hand to face `target` (skeleton space) under its forearm.
+func _turn_hand_to(fa: int, hand: int, target: Quaternion) -> void:
 	var parent := _skel.get_bone_global_pose(fa).basis.get_rotation_quaternion()
-	var hand_now := (parent.inverse() * target).normalized()
-	_skel.set_bone_pose_rotation(_hand, hand_now)
-	_turned[fa] = [fa_now, fa_clip]
-	_turned[_hand] = [hand_now, hand_clip]
+	_pose_bone(hand, parent.inverse() * target)
+
+## Turns a bone about its own joint so the point `from` (skeleton space, on
+## it or a child) moves toward `to`.
+func _swing_bone(b: int, from: Vector3, to: Vector3) -> void:
+	var g := _skel.get_bone_global_pose(b)
+	var a := (from - g.origin).normalized()
+	var c := (to - g.origin).normalized()
+	if a.is_zero_approx() or c.is_zero_approx() or a.is_equal_approx(c):
+		return
+	var pb := _skel.get_bone_parent(b)
+	var p := _skel.get_bone_global_pose(pb).basis.get_rotation_quaternion() if pb >= 0 else Quaternion.IDENTITY
+	_pose_bone(b, p.inverse() * Quaternion(a, c) * p * _skel.get_bone_pose_rotation(b))
+
+## Moves a hand's wrist to `t` (skeleton space) by turning the upper arm and
+## forearm, in the plane of the shoulder, the target and the elbow, so the
+## elbow keeps the side the clip bends it to. Out of reach, the arm points
+## straight at it.
+func _two_bone(ua: int, fa: int, ha: int, t: Vector3) -> void:
+	var s := _skel.get_bone_global_pose(ua).origin
+	var e := _skel.get_bone_global_pose(fa).origin
+	var w := _skel.get_bone_global_pose(ha).origin
+	var a := s.distance_to(e)
+	var b := e.distance_to(w)
+	var d := clampf(s.distance_to(t), absf(a - b) + 0.01 * (a + b), (a + b) * 0.999)
+	var u := (t - s).normalized()
+	var side := (e - s) - u * (e - s).dot(u)
+	if side.length() < 0.001 * a:
+		side = u.cross(Vector3.UP).cross(u)
+	side = side.normalized()
+	var ca := clampf((a * a + d * d - b * b) / (2.0 * a * d), -1.0, 1.0)
+	_swing_bone(ua, e, s + a * (u * ca + side * sqrt(1.0 - ca * ca)))
+	_swing_bone(fa, _skel.get_bone_global_pose(ha).origin, s + u * d)
+
+# ---------- Shouldering a long gun ----------
+
+## Where a shouldered stock's butt ends up, in metres along the barrel in
+## front of the shoulder joint: level with it is the pocket inside the
+## shoulder, and keeps the fore-end within the shorter survivor's reach.
+const BUTT_AHEAD := 0.0
+var _pull_w := 0.0
+
+## The aiming clips hold every gun out at arm's length like a pistol, which
+## leaves a long gun's stock floating in front of the chest and its fore-end
+## out of the other hand's reach. While a long gun is up, this draws the
+## right hand back along the barrel until the butt meets the shoulder,
+## bending the elbow, and keeps the hand's turn so the aim doesn't move.
+func _shoulder_gun(delta: float) -> void:
+	var on := _long and hold == "gun" and _gun != null and _in_fist() and _raised() \
+		and (model._anim == null or String(model._anim.current_animation) != "reload")
+	_pull_w = move_toward(_pull_w, 1.0 if on else 0.0, delta * 6.0)
+	if _pull_w <= 0.0 or _gun == null or not _in_fist() or _hand < 0:
+		return
+	var ua := _skel.find_bone("RightArm")
+	var fa := _skel.get_bone_parent(_hand)
+	if ua < 0 or fa < 0 or _skel.get_bone_parent(fa) != ua:
+		return
+	var X := _skel.global_transform
+	var hg := _skel.get_bone_global_pose(_hand)
+	var hb := (X.basis * hg.basis).orthonormalized()
+	var b := hb * _hold
+	var fwd := (b * Vector3.FORWARD).normalized()
+	var box: AABB = _gun.get_meta("aabb", AABB())
+	var pivot: Vector3 = MODELS[weapon_id]["fist"]
+	var fist := X * hg.origin + hb * model.hand_rig.grip_point("Right")
+	var butt := fist + b * (Vector3(0.0, box.get_center().y, box.end.z) - pivot)
+	var ahead := (butt - X * _skel.get_bone_global_pose(ua).origin).dot(fwd)
+	var pull := maxf(ahead - BUTT_AHEAD, 0.0) * _pull_w
+	if pull < 0.002:
+		return
+	var turn := hg.basis.get_rotation_quaternion()
+	_two_bone(ua, fa, _hand, X.affine_inverse() * (X * hg.origin - fwd * pull))
+	_turn_hand_to(fa, _hand, turn)
+
+# ---------- The left hand ----------
+
+## How the left hand holds a long gun at "fore" (weapon space, the middle of
+## the fore-end or front grip): [the way the thumb side of the fist points,
+## the way the palm faces]. "under" cradles a fore-end from below with the
+## thumb toward the muzzle and the wrist dropped a little; "vertical" holds
+## a front grip like a pistol grip, palm against its left side.
+const LEFT_GRIPS := {
+	"under": [Vector3.FORWARD, Vector3(-0.42, 0.9, 0.0)],
+	"vertical": [Vector3.UP, Vector3.RIGHT],
+}
+## A pistol is held two-handed: the left hand closes over the right one,
+## this far from the middle of the right fist (weapon space).
+const PISTOL_LEFT := Vector3(-0.035, -0.012, -0.005)
+
+var _left_w := 0.0   # how far the left hand is on the gun (eased)
+
+## Where the left hand goes on this weapon, as [middle of the fist (world),
+## the hand's turn (world)], or null for a one-handed weapon.
+func _left_target() -> Variant:
+	var def: Dictionary = MODELS.get(weapon_id, {})
+	var rig: HandRig = model.hand_rig
+	if rig == null or _gun == null or hold != "gun" or not def.has("fist"):
+		return null
+	var at: Vector3
+	var thumb: Vector3
+	var palm: Vector3
+	if def.has("fore"):
+		at = def["fore"]
+		var g: Array = LEFT_GRIPS[def.get("fore_grip", "under")]
+		thumb = g[0]
+		palm = g[1]
+	else:
+		var r := deg_to_rad(def.get("rake", 15.0))
+		at = def["fist"] + PISTOL_LEFT
+		thumb = Vector3(0, cos(r), -sin(r))
+		palm = Vector3.RIGHT
+	var h: Dictionary = rig.hands["Left"]
+	var x: Vector3 = thumb * float(h.get("thumb", 1.0))
+	var z: Vector3 = (palm - x * palm.dot(x)).normalized() * float(h["axis"].x)
+	var b := global_basis.orthonormalized() * Basis(x, z.cross(x), z)
+	return [global_transform * at, b]
+
+## Reaches the left arm to the gun while it's up (aimed or firing, not
+## reloading, when the clip's own hand goes to the magazine): a two-joint
+## solve that keeps the elbow on the side the clip bends it, then turns the
+## hand onto the grip, sharing its twist with the forearm.
+func _reach_left(delta: float) -> void:
+	if _skel == null or not _skel.is_inside_tree():
+		return
+	var want: Variant = _left_target()
+	var on := want != null and _raised() and (model._anim == null or String(model._anim.current_animation) != "reload")
+	_left_w = move_toward(_left_w, 1.0 if on else 0.0, delta * 6.0)
+	if want == null or _left_w <= 0.0:
+		return
+	var ua := _skel.find_bone("LeftArm")
+	var fa := _skel.find_bone("LeftForeArm")
+	var ha := _skel.find_bone("LeftHand")
+	if ua < 0 or fa < 0 or ha < 0:
+		return
+	var to_skel := _skel.global_transform.affine_inverse()
+	var hb: Basis = want[1]
+	var w := _skel.get_bone_global_pose(ha).origin
+	var hand_now := _skel.get_bone_global_pose(ha).basis.get_rotation_quaternion()
+	var wrist: Vector3 = to_skel * (want[0] - hb * model.hand_rig.grip_point("Left"))
+	var t := w.lerp(wrist, _left_w)
+	var aim := hand_now.slerp((_skel.global_basis.get_rotation_quaternion().inverse() * hb.get_rotation_quaternion()).normalized(), _left_w)
+	_reach_shoulder(ua, fa, ha, t)
+	_two_bone(ua, fa, ha, t)
+	# Turn the hand onto the grip; the forearm takes half the twist.
+	var c := _skel.get_bone_global_pose(ha).basis.get_rotation_quaternion().inverse() * aim
+	if c.w < 0.0:
+		c = -c
+	var twist := Quaternion(0.0, c.y, 0.0, c.w).normalized()
+	var angle := clampf(wrapf(2.0 * atan2(twist.y, twist.w), -PI, PI), -TWIST_MAX, TWIST_MAX)
+	_pose_bone(fa, _skel.get_bone_pose_rotation(fa) * Quaternion(Vector3.UP, angle * FOREARM_TWIST))
+	_turn_hand_to(fa, ha, aim)
+
+## The most the collarbone turns to bring the shoulder toward a grip the
+## arm can't otherwise reach (radians).
+const COLLAR_MAX := 0.5
+
+## A fore-end just out of reach: the shoulder comes forward (the collarbone
+## turns toward it), as people lean into a long gun, by what the arm lacks.
+func _reach_shoulder(ua: int, fa: int, ha: int, t: Vector3) -> void:
+	var cb := _skel.get_bone_parent(ua)
+	if cb < 0:
+		return
+	var s := _skel.get_bone_global_pose(ua).origin
+	var e := _skel.get_bone_global_pose(fa).origin
+	var short := s.distance_to(t) - (s.distance_to(e) + e.distance_to(_skel.get_bone_global_pose(ha).origin)) * 0.99
+	if short <= 0.0:
+		return
+	var c := _skel.get_bone_global_pose(cb).origin
+	var from := (s - c).normalized()
+	var to := (s + (t - s).normalized() * short - c).normalized()
+	var ang := from.angle_to(to)
+	if ang > COLLAR_MAX:
+		to = from.slerp(to, COLLAR_MAX / ang)
+	_swing_bone(cb, s, c + to * s.distance_to(c))
 
 ## Hand-to-weapon turn that runs the handle through the fist (thumb side to
 ## little finger) with the barrel or the edge toward the front of the fist.
