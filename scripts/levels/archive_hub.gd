@@ -129,13 +129,21 @@ func _street() -> void:
 	# The middle lamp stands beside the courtyard gate (local x 18..22), not
 	# in front of it. Each post gets a slim collider of its own: the box fitted
 	# to the whole model (post and arm) was an invisible metre-deep wall.
+	# A round through the lamp head bursts it and the light goes out.
 	for x in [6.0, 23.4, 34.0]:
-		RoomBuilder.prop(r, "street_lamp_01", Vector3(x, 0.18, 14.6), 180, 1.0, false)
+		var lamp := RoomBuilder.prop(r, "street_lamp_01", Vector3(x, 0.18, 14.6), 180, 1.0, false)
 		_post_collider(r, Vector3(x, 0.18, 14.6), 0.14, 4.6)
 		var l := RoomBuilder.light(r, Vector3(x, 4.6, 13.6), Color(1.0, 0.7, 0.4), 2.4, 11.0, x == 23.4, x == 34.0)
+		Breakable.make_lamp(lamp, [l], "street_lamp_%d" % int(x))
 	# Burning wreck glow at the far end.
 	RoomBuilder.light(r, Vector3(30, 1.0, 7), Color(1.0, 0.45, 0.15), 3.0, 9.0, true, true)
 	_rain(r, Vector3(20, 9, 8), Vector3(19.5, 0, 7.5))
+	# Fuel drums where they pay off: one by the two runners at the east
+	# barricade, one beside the diner window the infected smash through.
+	Breakable.make(r, "fuel_drum", Vector3(36.4, 0.0, 4.1), 30.0, "street_drum_east")
+	Breakable.make(r, "fuel_drum", Vector3(24.9, 0.18, 2.3), 75.0, "street_drum_diner")
+	var crate := Breakable.make(r, "wood", Vector3(2.0, 0.18, 12.9), 15.0, "street_crate", "wooden_crate_01")
+	crate.drop_table = "crate"
 	place_checkpoint("start", Vector3(0, 0, -24), Vector3(6, 3, 6))
 	place_zombie("Z_street_1", Vector3(-8, 0, -22), 30, "shambler", false, "cop")
 	place_zombie("Z_street_2", Vector3(12.5, 0, -25.6), -60, "shambler", false, "mechanic")
@@ -241,7 +249,7 @@ func _street_dressing(r: Node3D) -> void:
 	# Facade details.
 	for at in [[8.5, 4.8, 0.3, 0.0], [22.0, 7.5, 0.3, 0.0], [32.0, 4.6, 15.7, 180.0], [4.0, 7.4, 15.7, 180.0]]:
 		RoomBuilder.prop(r, "exterior_aircon_unit", Vector3(at[0], at[1], at[2]), at[3], 1.0, false)
-	RoomBuilder.prop(r, "security_light", Vector3(18.0, 3.6, 0.3), 0, 1.0, false)
+	Breakable.make_lamp(RoomBuilder.prop(r, "security_light", Vector3(18.0, 3.6, 0.3), 0, 1.0, false), [], "street_security_light")
 	RoomBuilder.prop(r, "korean_public_payphone_01", Vector3(23.5, 1.0, 0.3), 0, 1.0, false)
 	RoomBuilder.prop(r, "planter_box_01", Vector3(10.5, 0.18, 15.3), 180)
 	RoomBuilder.prop(r, "modular_street_seating", Vector3(26.0, 0.18, 15.2), 180)
@@ -299,8 +307,13 @@ func _courtyard() -> void:
 	RoomBuilder.prop(r, "gothic_statue", Vector3(10, 0, 5), 180)
 	RoomBuilder.prop(r, "potted_plant_02", Vector3(1.2, 0, 10.6))
 	RoomBuilder.prop(r, "potted_plant_02", Vector3(18.8, 0, 10.6))
-	RoomBuilder.prop(r, "Barrel_01", Vector3(2, 0, 2), 20)
-	RoomBuilder.prop(r, "wooden_crate_01", Vector3(17.5, 0, 1.5), 10)
+	# A fuel drum by the gate, another near the nurse; an old rain barrel and
+	# a crate that splinter (the crate may hold something).
+	Breakable.make(r, "fuel_drum", Vector3(2, 0, 2), 20.0, "court_drum_gate")
+	Breakable.make(r, "fuel_drum", Vector3(14.6, 0, 1.3), -40.0, "court_drum_east")
+	Breakable.make(r, "wood", Vector3(2.4, 0, 9.9), 60.0, "court_barrel", "Barrel_01")
+	var crate := Breakable.make(r, "wood", Vector3(17.5, 0, 1.5), 10.0, "court_crate", "wooden_crate_01")
+	crate.drop_table = "crate"
 	RoomBuilder.prop(r, "industrial_wall_lamp", Vector3(8.0, 3.0, 11.8), 180, 1.0, false)
 	RoomBuilder.light(r, Vector3(10, 2.8, 11.2), WARM, 1.6, 8.0, true)
 	RoomBuilder.light(r, Vector3(10, 1.2, 5.5), Color(0.5, 0.6, 0.9), 0.6, 5.0)
@@ -396,14 +409,18 @@ func _great_hall() -> void:
 	RoomBuilder.prop(r, "standing_chalkboard_01", Vector3(8.0, 0, 14.6), 160)
 	RoomBuilder.prop(r, "hanging_picture_frame_02", Vector3(0.16, 2.6, 12.6), 90, 1.4, false)
 	RoomBuilder.prop(r, "old_military_crate", Vector3(2.6, 0, 2.6), 15)
-	RoomBuilder.prop(r, "wooden_military_crate", Vector3(3.6, 0, 1.9), -10)
+	var mil := Breakable.make(r, "wood", Vector3(3.6, 0, 1.9), -10.0, "hall_crate", "wooden_military_crate")
+	mil.drop_table = "crate"
+	# The shelter's heater gas by the cots, a can of generator fuel by the sofa.
+	Breakable.make(r, "propane", Vector3(16.2, 0, 15.7), 0.0, "hall_propane")
+	Breakable.make(r, "jerrycan", Vector3(5.6, 0, 16.6), 70.0, "hall_jerrycan")
 	RoomBuilder.prop(r, "plastic_crate_01", Vector3(22.4, 0, 2.2), 5)
 	RoomBuilder.prop(r, "plastic_crate_01", Vector3(22.4, 0.32, 2.2), 30, 1.0, false)
-	RoomBuilder.prop(r, "industrial_wall_sconce", Vector3(0.2, 2.8, 9.0), 90, 1.0, false)
-	RoomBuilder.prop(r, "industrial_wall_sconce", Vector3(23.8, 2.8, 9.0), -90, 1.0, false)
+	var sconce_w := RoomBuilder.prop(r, "industrial_wall_sconce", Vector3(0.2, 2.8, 9.0), 90, 1.0, false)
+	var sconce_e := RoomBuilder.prop(r, "industrial_wall_sconce", Vector3(23.8, 2.8, 9.0), -90, 1.0, false)
 	RoomBuilder.light(r, Vector3(12, 6.4, 9), WARM, 2.2, 16.0, true)
-	RoomBuilder.light(r, Vector3(0.7, 2.7, 9.0), WARM, 1.0, 6.0, false, true)
-	RoomBuilder.light(r, Vector3(23.3, 2.7, 9.0), WARM, 1.0, 6.0)
+	Breakable.make_lamp(sconce_w, [RoomBuilder.light(r, Vector3(0.7, 2.7, 9.0), WARM, 1.0, 6.0, false, true)], "hall_sconce_w")
+	Breakable.make_lamp(sconce_e, [RoomBuilder.light(r, Vector3(23.3, 2.7, 9.0), WARM, 1.0, 6.0)], "hall_sconce_e")
 	RoomBuilder.light(r, Vector3(3, 3.0, 15), WARM, 0.8, 6.0, false, true)
 	RoomBuilder.light(r, Vector3(21, 3.0, 4), COLD, 0.7, 7.0)
 	place_door(Vector3(0, 0, -2), 0, Door.Kind.MANUAL, "wood_panel", 2.4, 3.2, "hall_main")
@@ -432,8 +449,8 @@ func _west_corridor() -> void:
 		"windows": {"n": [[4.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0}]]},
 	})
 	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(11.6, 0, 0.4), 0)
-	RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(4, 3.35, 1.5), 90, 1.0, false)
-	RoomBuilder.light(r, Vector3(4, 3.1, 1.5), SICK, 1.2, 6.0, false, true)
+	var tube := RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(4, 3.35, 1.5), 90, 1.0, false)
+	Breakable.make_lamp(tube, [RoomBuilder.light(r, Vector3(4, 3.1, 1.5), SICK, 1.2, 6.0, false, true)], "corridor_tube")
 	RoomBuilder.light(r, Vector3(10, 3.1, 1.5), SICK, 0.6, 5.0)
 	place_door(Vector3(-15.4, 0, 5), 0, Door.Kind.LOCKED, "wood_panel", 1.2, 2.3, "reading_door", "brass_quill_key")
 	place_zombie("Z_corr_1", Vector3(-22, 0, 6.5), 90, "bloater")
@@ -533,9 +550,12 @@ func _records_vault() -> void:
 	RoomBuilder.prop(r, "cardboard_box_01", Vector3(11.6, 0, 7.6), 37)
 	RoomBuilder.prop(r, "cardboard_box_01", Vector3(11.9, 0, 7.1), 80)
 	RoomBuilder.prop(r, "cardboard_box_01", Vector3(11.7, 0.34, 7.4), 10, 1.0, false)
-	RoomBuilder.prop(r, "wooden_crate_01", Vector3(12.6, 0, 8.5), 80)
+	var vcrate := Breakable.make(r, "wood", Vector3(12.6, 0, 8.5), 80.0, "vault_crate", "wooden_crate_01")
+	vcrate.drop_table = "crate"
+	# Down here a drum is the answer to the brute and the riot shield.
+	Breakable.make(r, "fuel_drum", Vector3(10.6, 0, 6.5), 10.0, "vault_drum")
 	RoomBuilder.prop(r, "hanging_industrial_lamp", Vector3(7, 3.1, 5), 0, 1.0, false)
-	RoomBuilder.prop(r, "propane_tank", Vector3(13, 0, 1), 0)
+	Breakable.make(r, "propane", Vector3(13, 0, 1), 0.0, "vault_propane")
 	RoomBuilder.light(r, Vector3(7, 2.6, 5), Color(1.0, 0.8, 0.55), 1.6, 8.0, true, true)
 	place_zombie("Z_vault_1", Vector3(-4, 0, 22), 180, "riot")
 	place_zombie("Z_vault_grab", Vector3(-8, 0, 24), 200, "grappler")
@@ -556,9 +576,10 @@ func _boiler_room() -> void:
 	})
 	RoomBuilder.prop(r, "portable_generator", Vector3(5, 0, 5), 30)
 	RoomBuilder.prop(r, "power_box_01", Vector3(9.8, 1.4, 3), -90, 1.0, false)
-	RoomBuilder.prop(r, "metal_jerrycan", Vector3(6, 0, 6.2), 80)
-	RoomBuilder.prop(r, "Barrel_01", Vector3(8.6, 0, 8.6))
-	RoomBuilder.prop(r, "Barrel_01", Vector3(7.8, 0, 9.0), 40)
+	Breakable.make(r, "jerrycan", Vector3(6, 0, 6.2), 80.0, "boiler_jerrycan")
+	# Two drums side by side: one goes, the other follows.
+	Breakable.make(r, "fuel_drum", Vector3(8.7, 0, 8.6), 0.0, "boiler_drum_1")
+	Breakable.make(r, "fuel_drum", Vector3(7.95, 0, 9.05), 40.0, "boiler_drum_2")
 	RoomBuilder.light(r, Vector3(5, 3.4, 5), Color(1.0, 0.35, 0.2), 1.4, 9.0, true, true)
 	place_door(Vector3(4, 0, 20.6), 90, Door.Kind.MANUAL, "steel", 1.2, 2.3, "boiler_door")
 	place_pickup("ammo:fuel", Vector3(10.6, 0.1, 22.2), "boiler_fuel")   # beside the jerrycan (it was inside it: no prompt)

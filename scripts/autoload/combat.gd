@@ -7,6 +7,7 @@ const HITBOX_MASK := 1 | 8   # world + hitboxes
 ## Shot sounds that share a recording, and how loud each class carries.
 const SOUND_FOR := {"vk18": "weapon_p9", "flash": "weapon_throw", "frag": "weapon_throw", "knife": "weapon_knife", "hatchet": "weapon_hatchet"}
 var _flame_sound_at := 0
+var _flamed := {}   # breakable -> msec it was last reported burning
 
 static func shot_sound(weapon_id: String) -> String:
 	return SOUND_FOR.get(weapon_id, "weapon_" + weapon_id)
@@ -52,7 +53,10 @@ func _ray(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, di
 	var pierce: int = w.get("pierce", 1)
 	var from := origin
 	var end_point := origin + dir * 80.0
-	for i in pierce:
+	var bodies := 0
+	for i in pierce + 6:
+		if bodies >= pierce:
+			break
 		var q := PhysicsRayQueryParameters3D.create(from, origin + dir * 80.0, HITBOX_MASK, exclude)
 		q.collide_with_areas = true
 		var hit := space.intersect_ray(q)
@@ -60,7 +64,17 @@ func _ray(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, di
 			break
 		end_point = hit.position
 		var col: Object = hit.collider
+		var b := Breakable.of(col)
+		if b:
+			# A drum, a crate, a window, a lamp. Glass and bulbs let the
+			# round fly on.
+			if b.shot(hit.position, hit.normal, dir, float(w["damage"])):
+				exclude.append(col.get_rid())
+				from = hit.position + dir * 0.05
+				continue
+			break
 		if col.has_meta("hit_zone"):
+			bodies += 1
 			Effects.blood(hit.position, hit.normal, dir, _gore(w))
 			_request_damage(col, w["damage"], weapon_id, hit.position, dir)
 			exclude.append(col.get_rid())
@@ -83,9 +97,16 @@ func remote_shot_fx(shooter: Node3D, weapon_id: String, from: Vector3, dir: Vect
 			for i in int(w.get("pellets", 1)):
 				var d := dir.rotated(Vector3.UP, randf_range(-spread, spread) * 0.5)
 				d = d.rotated(shooter.global_transform.basis.x.normalized(), randf_range(-spread, spread) * 0.5)
-				var q := PhysicsRayQueryParameters3D.create(from, from + d * 80.0, HITBOX_MASK, [shooter.get_rid()])
-				q.collide_with_areas = true
-				var hit := space.intersect_ray(q)
+				var ex: Array[RID] = [shooter.get_rid()]
+				var hit := {}
+				for k in 4:   # on through glass and bulbs
+					var q := PhysicsRayQueryParameters3D.create(from, from + d * 80.0, HITBOX_MASK, ex)
+					q.collide_with_areas = true
+					hit = space.intersect_ray(q)
+					var b := Breakable.of(hit.get("collider"))
+					if b == null or not b.kind in ["glass", "lamp"]:
+						break
+					ex.append(hit.collider.get_rid())
 				var end := from + d * 80.0
 				if not hit.is_empty():
 					end = hit.position
@@ -175,11 +196,48 @@ func melee_hit(shooter: Node3D, weapon_id: String, target: Node3D) -> bool:
 	if n > 0:
 		Sfx.play_at("melee_hit", xf * Vector3(0, 1.2, -reach * 0.5), "", -2.0, 6.0)
 		_alert_zombies(shooter.global_position, 6.0)
+	elif _melee_breakable(xf, reach, weapon_id, fwd):
+		return true
 	return n > 0
+
+## A swing with nothing alive in front of it: a crate or barrel splinters,
+## a pane or a low bulb breaks, a steel drum only rings.
+func _melee_breakable(xf: Transform3D, reach: float, weapon_id: String, fwd: Vector3) -> bool:
+	var best: Breakable = null
+	var best_d := INF
+	for b in get_tree().get_nodes_in_group("breakables"):
+		if b.broken or b.body == null:
+			continue
+		for h in [1.2, 0.55]:
+			var c := xf * Vector3(0, h, -reach * 0.55)
+			var d: float = (b.global_transform * b.center).distance_to(c)
+			if d < 0.95 and d < best_d:
+				best_d = d
+				best = b
+	if best == null:
+		return false
+	var at := best.global_transform * best.center - fwd * 0.25
+	if best.explosive():
+		Effects.impact(at, -fwd, null)
+		Sfx.play_at("metal_bang", at, "", -4.0, 6.0)
+		return true
+	Sfx.play_at("melee_hit", at, "", -2.0, 6.0)
+	hurt_breakable(best, float(WeaponDB.WEAPONS[weapon_id]["damage"]), "blade", at, fwd)
+	return true
 
 func _flame(shooter: Node3D, weapon_id: String, w: Dictionary, origin: Vector3, dir: Vector3) -> void:
 	var from: Vector3 = shooter._muzzle_pos() if shooter.has_method("_muzzle_pos") else shooter.muzzle.global_position
 	Effects.flame_stream(shooter, from, dir, w["range"])
+	# Fire on a drum or a can cooks it off; on wood it burns it apart.
+	var now := Time.get_ticks_msec()
+	for b in get_tree().get_nodes_in_group("breakables"):
+		if b.broken or b.kind in ["glass", "lamp"]:
+			continue
+		var at: Vector3 = b.global_transform * b.center
+		var to: Vector3 = at - from
+		if to.length() < w["range"] and to.normalized().dot(dir) > 0.88 and now - int(_flamed.get(b, 0)) > 400:
+			_flamed[b] = now
+			hurt_breakable(b, 12.0, "fire", at - to.normalized() * 0.3, dir)
 	for z in get_tree().get_nodes_in_group("zombies"):
 		var to: Vector3 = z.global_position + Vector3.UP - origin
 		if to.length() < w["range"] and to.normalized().dot(dir) > 0.9:
@@ -225,10 +283,18 @@ const EXPLOSIVE_FF := 0.35
 
 ## Runs on every peer (projectiles are simulated everywhere): each peer hurts
 ## its own player, the host hurts zombies.
-func explode(pos: Vector3, dmg: float, radius: float, weapon_id: String, owner_peer := 0) -> void:
+func explode(pos: Vector3, dmg: float, radius: float, weapon_id: String, owner_peer := 0, sound := "explosion") -> void:
 	Effects.explosion(pos, radius)
-	Sfx.play_at("explosion", pos, "explosion")
+	Sfx.play_at(sound, pos, "explosion", 2.0, 16.0)
 	_alert_zombies(pos, 40.0)
+	# The ground shakes under you, harder the closer you are.
+	for p in get_tree().get_nodes_in_group("players"):
+		if p.is_multiplayer_authority():
+			var near := 1.0 - clampf(p.global_position.distance_to(pos) / (radius * 4.0), 0.0, 1.0)
+			if near > 0.0 and "_shake" in p:
+				p._shake = maxf(p._shake, 0.35 + near * 0.75)
+				if OS.has_feature("mobile"):
+					Input.vibrate_handheld(int(60 + 160 * near), 0.4 + 0.6 * near)
 	if not Cheats.on("no_explosive_ff"):
 		for p in get_tree().get_nodes_in_group("players"):
 			if not p.is_multiplayer_authority():
@@ -238,6 +304,13 @@ func explode(pos: Vector3, dmg: float, radius: float, weapon_id: String, owner_p
 				continue
 			var blocked := _wall_between(p, pos)
 			var amount := dmg * EXPLOSIVE_FF * (1.0 - pd / radius * 0.7) * (0.35 if blocked else 1.0)
+			# A chain of drums going off around you is one long blast, not
+			# three full ones: blasts right after the first hurt much less.
+			var now := Time.get_ticks_msec()
+			if now - int(p.get_meta("blast_at", -100000)) < 800:
+				amount *= 0.35
+			else:
+				p.set_meta("blast_at", now)
 			p.apply_damage(amount, null)
 			var post := get_tree().get_first_node_in_group("horror")
 			if post and post.get("post_fx"):
@@ -252,6 +325,47 @@ func explode(pos: Vector3, dmg: float, radius: float, weapon_id: String, owner_p
 		var d: float = z.global_position.distance_to(pos)
 		if d < radius:
 			z.take_hit(dmg * (1.0 - d / radius * 0.6), weapon_id, "torso", (z.global_position - pos).normalized())
+	# Drums nearby go up in turn, windows blow in, lamps burst, crates fly apart.
+	for b in get_tree().get_nodes_in_group("breakables"):
+		if b.broken:
+			continue
+		var at: Vector3 = b.global_transform * b.center
+		var d: float = at.distance_to(pos)
+		var reach: float = radius * (1.6 if b.kind == "glass" else 1.0) + 0.3
+		if d < reach:
+			b.host_damage(dmg * (1.0 - clampf(d / reach, 0.0, 1.0) * 0.6), "blast", pos, (at - pos).normalized())
+
+# ---------------------------------------------------------------- breakables
+
+## A shot, a blade, a blast or flames reached something breakable (see
+## Breakable). The host decides what happens and tells every phone.
+func hurt_breakable(b: Breakable, dmg: float, how: String, at: Vector3, dir: Vector3) -> void:
+	if not is_instance_valid(b) or b.broken:
+		return
+	if Cheats.on("one_hit_kills"):
+		dmg = 99999.0
+	if multiplayer.is_server():
+		b.host_damage(dmg, how, at, dir)
+	else:
+		_rpc_hurt_breakable.rpc_id(1, b.breakable_id, dmg, how, at, dir)
+
+@rpc("any_peer", "reliable")
+func _rpc_hurt_breakable(id: String, dmg: float, how: String, at: Vector3, dir: Vector3) -> void:
+	if not multiplayer.is_server():
+		return
+	var b := Breakable.find(id)
+	if b:
+		b.host_damage(dmg, how, at, dir)
+
+## Host only: a breakable's fuse is lit, it blows, or it breaks, on every phone.
+func breakable_event(id: String, ev: String, at: Vector3, dir: Vector3, x: float) -> void:
+	_rpc_breakable_event.rpc(id, ev, at, dir, x)
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_breakable_event(id: String, ev: String, at: Vector3, dir: Vector3, x: float) -> void:
+	var b := Breakable.find(id)
+	if b:
+		b.on_event(ev, at, dir, x)
 
 func _wall_between(p: Node3D, pos: Vector3) -> bool:
 	var q := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.3, p.global_position + Vector3.UP * 1.0, 1)

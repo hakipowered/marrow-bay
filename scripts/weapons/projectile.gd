@@ -12,6 +12,7 @@ var _vel := Vector3.ZERO
 var _fuse := -1.0   # throwables bounce until the fuse runs out
 var _spin: Node3D = null    # a thrown grenade tumbling
 var _trail: Node3D = null   # smoke behind it, left to fade when it lands
+var _through: Array[RID] = []   # panes and bulbs it has already gone through
 
 func _ready() -> void:
 	var w: Dictionary = WeaponDB.WEAPONS[weapon_id]
@@ -38,10 +39,7 @@ func _build_look(w: Dictionary) -> void:
 			return
 	match kind:
 		"acid":
-			var sm := SphereMesh.new()
-			sm.radius = 0.1
-			sm.height = 0.2
-			_add_mesh(sm, Mats.trim(Color(0.55, 0.9, 0.1), 0.2))
+			add_child(Effects.acid_glob())
 		"bolt":
 			var rod := CylinderMesh.new()
 			rod.top_radius = 0.007
@@ -163,9 +161,16 @@ func _physics_process(delta: float) -> void:
 			_detonate(global_position)
 			return
 	var space := get_world_3d().direct_space_state
-	var q := PhysicsRayQueryParameters3D.create(global_position, global_position + _vel * delta, (1 | 2) if hostile else (1 | 8))
+	var q := PhysicsRayQueryParameters3D.create(global_position, global_position + _vel * delta, (1 | 2) if hostile else (1 | 8), _through)
 	q.collide_with_areas = true
 	var hit := space.intersect_ray(q)
+	var b := Breakable.of(hit.get("collider"))
+	if b and b.kind in ["glass", "lamp"] and not hostile:
+		# Through a window or a bulb, breaking it on the way.
+		if authoritative and not b.broken:
+			b.host_damage(999.0, "bullet", hit.position, _vel.normalized())
+		_through.append(hit.collider.get_rid())
+		hit = {}
 	if _fuse > 0.0 and not hit.is_empty():
 		# Bounce off walls and floors, losing energy.
 		_vel = _vel.bounce(hit.normal) * 0.3
@@ -188,6 +193,7 @@ func _impact(hit: Dictionary) -> void:
 	if hostile:
 		Sfx.play_at("acid_splash", pos, "", 0.0, 8.0)
 		Decals.splat("acid", pos, hit.get("normal", Vector3.UP))
+		Effects.acid_splash(pos, hit.get("normal", Vector3.UP))
 		for p in get_tree().get_nodes_in_group("players"):
 			if p.is_multiplayer_authority() and p.global_position.distance_to(pos) < 1.6:
 				p.apply_damage(w["damage"], self)
@@ -196,6 +202,10 @@ func _impact(hit: Dictionary) -> void:
 	_drop_trail()
 	if w.has("radius"):
 		Combat.explode(pos, w["damage"], w["radius"], weapon_id, owner_peer)
+	elif not hit.is_empty() and Breakable.of(hit.collider):
+		Effects.impact(pos, hit.get("normal", Vector3.UP), hit.collider)
+		if authoritative:
+			Breakable.of(hit.collider).host_damage(w["damage"], "bullet", pos, _vel.normalized())
 	elif not hit.is_empty() and hit.collider.has_meta("hit_zone"):
 		Effects.blood(pos, hit.get("normal", -_vel.normalized()), _vel.normalized(), 1.6)
 		if authoritative:

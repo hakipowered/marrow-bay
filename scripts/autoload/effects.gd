@@ -468,6 +468,52 @@ func gas_cloud(radius: float) -> GPUParticles3D:
 		[0.65, Color(0.38, 0.46, 0.12, 0.3)], [1.0, Color(0.3, 0.36, 0.1, 0.0)]])
 	g.process_material = pm
 	g.position = Vector3(0, 0.45, 0)
+	# A thick, sickly yellow core rolling over itself where the body burst...
+	var core := GPUParticles3D.new()
+	core.amount = clampi(int(radius * 4.0), 8, 16)
+	core.lifetime = 2.6
+	core.randomness = 0.4
+	core.preprocess = 1.0
+	core.draw_pass_1 = g.draw_pass_1
+	core.material_override = g.material_override
+	core.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	core.visibility_aabb = g.visibility_aabb
+	var cm: ParticleProcessMaterial = pm.duplicate()
+	cm.emission_box_extents = Vector3(radius * 0.35, 0.25, radius * 0.35)
+	cm.initial_velocity_min = 0.1
+	cm.initial_velocity_max = 0.35
+	cm.scale_min = 0.9
+	cm.scale_max = 1.6
+	cm.scale_curve = _curve_tex([[0, 0.4], [1, 1.3]])
+	cm.color_ramp = _ramp_tex([[0.0, Color(0.6, 0.66, 0.16, 0.0)], [0.15, Color(0.62, 0.7, 0.18, 0.6)],
+		[0.6, Color(0.5, 0.58, 0.15, 0.42)], [1.0, Color(0.36, 0.42, 0.12, 0.0)]])
+	core.process_material = cm
+	g.add_child(core)
+	# ...and wisps curling up out of it.
+	var wisps := GPUParticles3D.new()
+	wisps.amount = clampi(int(radius * 2.0), 4, 8)
+	wisps.lifetime = 3.0
+	wisps.randomness = 0.5
+	wisps.preprocess = 1.0
+	wisps.draw_pass_1 = g.draw_pass_1
+	wisps.material_override = g.material_override
+	wisps.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	wisps.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	wisps.visibility_aabb = g.visibility_aabb
+	var wm: ParticleProcessMaterial = pm.duplicate()
+	wm.emission_box_extents = Vector3(radius * 0.5, 0.2, radius * 0.5)
+	wm.spread = 25.0
+	wm.initial_velocity_min = 0.35
+	wm.initial_velocity_max = 0.7
+	wm.gravity = Vector3(0, 0.1, 0)
+	wm.scale_min = 0.6
+	wm.scale_max = 1.1
+	wm.scale_curve = _curve_tex([[0, 0.5], [1, 1.6]])
+	wm.color_ramp = _ramp_tex([[0.0, Color(0.5, 0.6, 0.15, 0.0)], [0.25, Color(0.52, 0.6, 0.16, 0.3)],
+		[1.0, Color(0.4, 0.46, 0.12, 0.0)]])
+	wisps.process_material = wm
+	g.add_child(wisps)
 	return g
 
 func _curve_tex(points: Array) -> CurveTexture:
@@ -492,9 +538,11 @@ func put_out(fire: Node) -> void:
 		l.set_meta("out", true)
 		var t := l.create_tween()
 		t.tween_property(l, "light_energy", 0.0, 0.6)
-	get_tree().create_timer(longest + 0.2, false).timeout.connect(func():
-		if is_instance_valid(fire):
-			fire.queue_free())
+	# A tween on the fire itself, so a scene change that frees it first
+	# leaves nothing behind waiting on it.
+	var t := fire.create_tween()
+	t.tween_interval(longest + 0.2)
+	t.tween_callback(fire.queue_free)
 
 ## Sets someone on fire for a while (the flamethrower's victims).
 func ignite(target: Node3D, secs := 3.0) -> void:
@@ -727,3 +775,204 @@ func detach_trail(trail: Node3D) -> void:
 	scene.add_child(trail)
 	trail.global_transform = at
 	put_out(trail)
+
+# ---------------------------------------------------------------- breakables
+
+## Extra fire for a drum or can of fuel going up, on top of explosion(): a
+## tall rolling column of burning fuel, flaming splashes thrown out in arcs
+## that fall back down, and a long orange glow while it burns off.
+func fuel_blast(pos: Vector3, radius: float) -> void:
+	var r := radius
+	_burst(pos + Vector3.UP * 0.4, _quad(1, 1), _sprite_mat(FIREBALL_TEX, false, 1.3, 0.3), {"amount": 10, "life": 1.5,
+		"life_rand": 0.3, "explosiveness": 0.75, "dir": Vector3.UP, "spread": 14.0, "vmin": 3.0, "vmax": 6.5,
+		"damp": 2.6, "gravity": Vector3(0, 1.2, 0), "smin": 0.3 * r, "smax": 0.44 * r,
+		"scurve": [[0, 0.3], [0.35, 1.0], [1, 1.3]], "amin": 0.0, "amax": 360.0, "sphere": 0.2, "additive": false,
+		"ramp": [[0.0, Color(1, 0.93, 0.8, 1)], [0.3, Color(1, 0.66, 0.32, 0.95)], [0.65, Color(0.5, 0.2, 0.08, 0.7)], [1.0, Color(0.1, 0.08, 0.07, 0)]]})
+	_burst(pos + Vector3.UP * 0.5, _quad(1, 1), _sprite_mat(FIRE_TEX, false, 1.25, 0.0), {"amount": 18, "life": 1.1,
+		"life_rand": 0.35, "dir": Vector3.UP, "spread": 70.0, "vmin": 3.5, "vmax": 8.0, "damp": 0.3,
+		"gravity": Vector3(0, -9.8, 0), "smin": 0.25, "smax": 0.5, "amin": -25.0, "amax": 25.0, "additive": false,
+		"ramp": [[0.0, Color(1, 0.9, 0.7, 1)], [0.55, Color(1, 0.52, 0.16, 0.9)], [1.0, Color(0.35, 0.08, 0.02, 0)]]})
+	# Black smoke from burning fuel rolls up long after the flash.
+	_burst(pos + Vector3.UP * 1.2, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.5), {"amount": 14, "life": 6.0,
+		"life_rand": 0.3, "explosiveness": 0.5, "dir": Vector3.UP, "spread": 20.0, "vmin": 0.8, "vmax": 1.8,
+		"damp": 0.4, "gravity": Vector3(0.15, 0.35, 0.05), "smin": 0.25 * r, "smax": 0.4 * r, "scurve": [[0, 0.4], [1, 1.9]],
+		"amin": 0.0, "amax": 360.0, "sphere": 0.3, "additive": false,
+		"ramp": [[0.0, Color(0.03, 0.03, 0.03, 0.0)], [0.15, Color(0.04, 0.035, 0.03, 0.7)], [1.0, Color(0.08, 0.08, 0.08, 0.0)]]})
+	_light(pos + Vector3.UP * 1.6, Color(1.0, 0.55, 0.22), 9.0, r * 3.2, 2.2, true)
+
+## A gas cylinder bursting: a sharp white-hot flash and a short, fast ball of
+## flame, more bang than burn.
+func gas_burst(pos: Vector3, radius: float) -> void:
+	_burst(pos, _quad(1, 1), _sprite_mat(MUZZLE_TEX, true, 2.5), {"amount": 2, "life": 0.12, "spread": 0.0,
+		"vmin": 0.0, "vmax": 0.0, "gravity": Vector3.ZERO, "smin": radius * 0.45, "smax": radius * 0.6,
+		"amin": 0.0, "amax": 360.0, "frame_min": 0.5, "frame_max": 0.99, "color": Color(1.0, 0.85, 0.6),
+		"ramp": [[0.0, Color(1, 1, 1, 1)], [1.0, Color(1, 0.8, 0.5, 0)]]})
+	_light(pos + Vector3.UP * 0.5, Color(1.0, 0.85, 0.6), 22.0, radius * 3.0, 0.25, true)
+
+## Burning fuel jetting out of a bullet hole, pointing along the node's +Y
+## (turn the returned node to face out of the hole). Until put_out().
+func fire_jet() -> Node3D:
+	var root := Node3D.new()
+	root.name = "FireJet"
+	var p := GPUParticles3D.new()
+	p.amount = 18
+	p.lifetime = 0.45
+	p.randomness = 0.3
+	p.local_coords = false
+	p.draw_pass_1 = _quad(1, 1)
+	p.material_override = _sprite_mat(FIRE_TEX, false, 1.3, 0.0)
+	p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.visibility_aabb = AABB(Vector3(-2, -2, -2), Vector3(4, 5, 4))
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3.UP
+	pm.spread = 9.0
+	pm.initial_velocity_min = 2.2
+	pm.initial_velocity_max = 3.4
+	pm.gravity = Vector3(0, 2.5, 0)
+	pm.damping_min = 2.0
+	pm.damping_max = 3.0
+	pm.scale_min = 0.12
+	pm.scale_max = 0.2
+	pm.scale_curve = _curve_tex([[0, 0.3], [0.35, 1.0], [1, 1.6]])
+	pm.angle_min = -20.0
+	pm.angle_max = 20.0
+	pm.anim_offset_max = 1.0
+	pm.color_ramp = _ramp_tex([[0.0, Color(1, 0.95, 0.8, 1)], [0.3, Color(1, 0.7, 0.3, 1)],
+		[0.75, Color(0.9, 0.3, 0.08, 0.7)], [1.0, Color(0.2, 0.05, 0.02, 0.0)]])
+	p.process_material = pm
+	root.add_child(p)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.55, 0.2)
+	l.light_energy = 1.6
+	l.omni_range = 3.5
+	l.position = Vector3(0, 0.3, 0)
+	l.shadow_enabled = false
+	root.add_child(l)
+	_flickers.append([l, l.light_energy])
+	return root
+
+var _shard_tex: Texture2D
+
+## Four jagged slivers of glass in a 2x2 atlas, drawn once: a pale body, a
+## bright edge where it catches the light.
+func _shards() -> Texture2D:
+	if _shard_tex:
+		return _shard_tex
+	var n := 64
+	var img := Image.create(n * 2, n * 2, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for cell in 4:
+		var ox := (cell % 2) * n
+		var oy := (cell / 2) * n
+		var pts := PackedVector2Array()
+		var k := 3 + cell % 2
+		for i in k:
+			var a := TAU * i / k + rng.randf_range(-0.4, 0.4)
+			var rr := rng.randf_range(0.25, 0.47) * n * (1.6 if i == 0 else 1.0)
+			pts.append(Vector2(n / 2.0, n / 2.0) + Vector2(cos(a), sin(a)) * minf(rr, n * 0.48))
+		for y in n:
+			for x in n:
+				var p := Vector2(x + 0.5, y + 0.5)
+				if not Geometry2D.is_point_in_polygon(p, pts):
+					continue
+				var edge := INF
+				for i in pts.size():
+					var a2 := pts[i]
+					var b2 := pts[(i + 1) % pts.size()]
+					edge = minf(edge, p.distance_to(Geometry2D.get_closest_point_to_segment(p, a2, b2)))
+				var rim := clampf(1.0 - edge / 2.5, 0.0, 1.0)
+				var c := Color(0.75 + 0.25 * rim, 0.85 + 0.15 * rim, 0.95, 0.35 + 0.65 * rim)
+				img.set_pixel(ox + x, oy + y, c)
+	_shard_tex = ImageTexture.create_from_image(img)
+	return _shard_tex
+
+## A pane bursting: glinting shards that spin as they fall, and a little
+## glass dust. size: about the pane's width in metres.
+func glass_shatter(pos: Vector3, normal: Vector3, size := 1.0) -> void:
+	if normal == Vector3.ZERO:
+		normal = Vector3.UP
+	var mat := _sprite_mat(_shards(), true, 1.4)
+	_burst(pos, _quad(1, 1), mat, {"amount": int(18 + 26 * size), "life": 1.4, "life_rand": 0.4,
+		"dir": normal.normalized(), "spread": 70.0, "vmin": 0.8, "vmax": 4.0, "gravity": Vector3(0, -9.8, 0),
+		"smin": 0.035, "smax": 0.12, "amin": 0.0, "amax": 360.0, "sphere": 0.35 * size,
+		"ramp": [[0.0, Color(1, 1, 1, 1)], [0.2, Color(0.6, 0.7, 0.8, 0.7)], [0.35, Color(1, 1, 1, 1)],
+			[0.55, Color(0.5, 0.6, 0.7, 0.6)], [0.75, Color(1, 1, 1, 0.9)], [1.0, Color(0.6, 0.7, 0.8, 0.0)]]})
+	_burst(pos, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.2), {"amount": 4, "life": 1.0, "dir": normal,
+		"spread": 50.0, "vmin": 0.3, "vmax": 0.9, "damp": 1.5, "gravity": Vector3(0, -0.3, 0), "smin": 0.15 * size + 0.1,
+		"smax": 0.25 * size + 0.12, "scurve": [[0, 0.5], [1, 2.0]], "amin": 0.0, "amax": 360.0, "additive": false,
+		"ramp": [[0.0, Color(0.8, 0.85, 0.9, 0.0)], [0.1, Color(0.8, 0.85, 0.9, 0.22)], [1.0, Color(0.8, 0.85, 0.9, 0.0)]]})
+
+## A light bulb shot out: a pop of light, a shower of sparks raining down and
+## a few glints of glass.
+func lamp_burst(pos: Vector3) -> void:
+	var sparks := _axial_mat(true, 0.012, Color(1.0, 0.8, 0.45), 3.5, null, 0, 1, 0.9)
+	_burst(pos, _quad(1.0, 0.14), sparks, {"amount": 28, "life": 1.0, "life_rand": 0.5, "dir": Vector3.DOWN,
+		"spread": 75.0, "vmin": 1.0, "vmax": 4.5, "gravity": Vector3(0, -9.8, 0), "align": true,
+		"ramp": [[0.0, Color(1, 0.95, 0.8, 1)], [0.5, Color(1, 0.6, 0.2, 0.9)], [1.0, Color(0.7, 0.2, 0.05, 0)]]})
+	glass_shatter(pos, Vector3.DOWN, 0.3)
+	_light(pos, Color(1.0, 0.9, 0.7), 7.0, 6.0, 0.1, true)
+
+## Wood smashed apart: chips and splinters flying, a puff of old dust.
+func splinters(pos: Vector3, size := 1.0) -> void:
+	var chips := _axial_mat(false, 0.03, Color(0.32, 0.22, 0.13), 1.0, null, 0, 1, 0.15)
+	_burst(pos, _quad(1.0, 0.09), chips, {"amount": int(20 * size) + 6, "life": 1.2, "life_rand": 0.4, "dir": Vector3.UP,
+		"spread": 80.0, "vmin": 2.0, "vmax": 6.0, "gravity": Vector3(0, -9.8, 0), "align": true, "additive": false,
+		"smin": 0.6, "smax": 1.5})
+	_burst(pos, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.3), {"amount": 6, "life": 1.8, "dir": Vector3.UP,
+		"spread": 80.0, "vmin": 0.4, "vmax": 1.4, "damp": 1.6, "gravity": Vector3(0, -0.15, 0), "smin": 0.3 * size,
+		"smax": 0.5 * size, "scurve": [[0, 0.5], [1, 2.0]], "amin": 0.0, "amax": 360.0, "additive": false, "sphere": 0.25 * size,
+		"ramp": [[0.0, Color(0.42, 0.37, 0.3, 0.0)], [0.1, Color(0.42, 0.37, 0.3, 0.4)], [1.0, Color(0.4, 0.36, 0.3, 0.0)]]})
+
+## A spitter's acid glob bursting: sizzling droplets and a puff of fumes.
+func acid_splash(pos: Vector3, normal: Vector3) -> void:
+	if normal == Vector3.ZERO:
+		normal = Vector3.UP
+	var drops := _axial_mat(false, 0.025, Color(0.55, 0.8, 0.12), 1.4, null, 0, 1, 0.5)
+	_burst(pos + normal * 0.05, _quad(1.0, 0.07), drops, {"amount": 16, "life": 0.6, "life_rand": 0.4, "dir": normal,
+		"spread": 70.0, "vmin": 1.5, "vmax": 4.0, "gravity": Vector3(0, -9.8, 0), "align": true, "additive": false,
+		"smin": 0.6, "smax": 1.3})
+	_burst(pos + normal * 0.1, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.3), {"amount": 6, "life": 1.6, "dir": normal,
+		"spread": 60.0, "vmin": 0.3, "vmax": 0.9, "damp": 1.4, "gravity": Vector3(0, 0.25, 0), "smin": 0.35,
+		"smax": 0.6, "scurve": [[0, 0.5], [1, 1.8]], "amin": 0.0, "amax": 360.0, "additive": false, "sphere": 0.15,
+		"ramp": [[0.0, Color(0.55, 0.65, 0.16, 0.0)], [0.12, Color(0.55, 0.65, 0.16, 0.45)], [1.0, Color(0.45, 0.52, 0.14, 0.0)]]})
+
+## A wet, glistening acid glob in flight, dripping as it goes.
+func acid_glob() -> Node3D:
+	var root := Node3D.new()
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.09
+	sm.height = 0.2
+	mi.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.42, 0.62, 0.08)
+	m.roughness = 0.06
+	m.metallic_specular = 0.9
+	m.emission_enabled = true
+	m.emission = Color(0.35, 0.55, 0.06)
+	m.emission_energy_multiplier = 0.8
+	m.rim_enabled = true
+	m.rim = 0.6
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
+	var drip := CPUParticles3D.new()
+	drip.amount = 14
+	drip.lifetime = 0.5
+	drip.local_coords = false
+	drip.mesh = _quad(1, 1)
+	drip.material_override = _sprite_mat(SMOKE_TEX, false, 1.0, 0.0)
+	drip.draw_order = CPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	drip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	drip.spread = 180.0
+	drip.initial_velocity_min = 0.05
+	drip.initial_velocity_max = 0.2
+	drip.gravity = Vector3(0, -2.0, 0)
+	drip.scale_amount_min = 0.12
+	drip.scale_amount_max = 0.22
+	drip.angle_max = 360.0
+	drip.color_ramp = _ramp([[0.0, Color(0.5, 0.7, 0.12, 0.6)], [1.0, Color(0.4, 0.5, 0.1, 0.0)]])
+	root.add_child(drip)
+	return root

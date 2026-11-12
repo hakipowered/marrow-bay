@@ -53,16 +53,28 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 		var ops: Array = []
 		for op in openings.get(side, []):
 			ops.append({"at": op[0], "w": op[1], "h": op[2] if op.size() > 2 else 2.3, "window": false})
-		# Windows at the same offset form one column (one per storey).
-		var columns := {}
+		# Windows that overlap along the wall form one column (one pane per
+		# storey, each with its own width): a narrow ground-floor window under
+		# a wide upper one shares the gap in the wall instead of the wall
+		# below one pane filling half of the other.
+		var columns: Array = []
 		for wn in r.get("windows", {}).get(side, []):
-			var key := "%.2f/%.2f" % [wn[0], wn[1]]
-			if not columns.has(key):
-				columns[key] = {"at": wn[0], "w": wn[1], "panes": [], "window": true}
-			columns[key]["panes"].append([wn[2], wn[3], wn[4] if wn.size() > 4 else {}])
-		for k in columns:
-			columns[k]["panes"].sort_custom(func(a, b): return a[0] < b[0])
-			ops.append(columns[k])
+			var pane := [wn[2], wn[3], wn[4] if wn.size() > 4 else {}, wn[0], wn[1]]
+			var col: Dictionary = {}
+			for c in columns:
+				if wn[0] < c["at"] + c["w"] - 0.01 and wn[0] + wn[1] > c["at"] + 0.01:
+					col = c
+					break
+			if col.is_empty():
+				col = {"at": wn[0], "w": wn[1], "panes": [], "window": true}
+				columns.append(col)
+			var end: float = maxf(col["at"] + col["w"], wn[0] + wn[1])
+			col["at"] = minf(col["at"], wn[0])
+			col["w"] = end - col["at"]
+			col["panes"].append(pane)
+		for c in columns:
+			c["panes"].sort_custom(func(a, b): return a[0] < b[0])
+			ops.append(c)
 		ops.sort_custom(func(a, b): return a["at"] < b["at"])
 		var cursor := 0.0
 		for op in ops:
@@ -72,8 +84,13 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 			if op["window"]:
 				var y := 0.0
 				for pane in op["panes"]:
+					var pa: float = pane[3]
+					var pw: float = pane[4]
 					_wall_run(root, r, origin, axis, at, at + w, y, pane[0], wall_mat, base, side)
-					_window(root, r, origin, axis, at, w, pane[0], pane[1], side, pane[2])
+					# Wall beside a pane narrower than its column.
+					_wall_run(root, r, origin, axis, at, pa, pane[0], pane[1], wall_mat, base, side)
+					_wall_run(root, r, origin, axis, pa + pw, at + w, pane[0], pane[1], wall_mat, base, side)
+					_window(root, r, origin, axis, pa, pw, pane[0], pane[1], side, pane[2])
 					y = pane[1]
 				_wall_run(root, r, origin, axis, at, at + w, y, size.y, wall_mat, base, side)
 			else:
@@ -175,6 +192,9 @@ static func _window(root: Node3D, r: Dictionary, origin: Vector3, axis: Vector3,
 	# Moonlight through the window.
 	if not opts.get("glass", true):
 		glass.queue_free()
+	else:
+		# Shoot it (or blow it in) and it shatters.
+		Breakable.make_glass(root, glass, sb, Vector2(w, h), "glass_%s_%s_%d_%d" % [r["id"], side, roundi(at * 10), roundi(sill * 10)])
 	var moon: float = opts.get("moon", 3.0)
 	if moon > 0.0:
 		var sl := SpotLight3D.new()

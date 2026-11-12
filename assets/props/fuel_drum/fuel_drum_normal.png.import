@@ -1,0 +1,39 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://cn66wfvfnge2i"
+path.s3tc="res://.godot/imported/fuel_drum_normal.png-099170f7fc8fd52ea7fbaa62f9bb8c31.s3tc.ctex"
+path.etc2="res://.godot/imported/fuel_drum_normal.png-099170f7fc8fd52ea7fbaa62f9bb8c31.etc2.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
+}
+generator_parameters={
+"md5": "8950fb84c1b1af9e563f53ff5cdc11cf"
+}
+
+[deps]
+
+source_file="res://assets/props/fuel_drum/fuel_drum_normal.png"
+dest_files=["res://.godot/imported/fuel_drum_normal.png-099170f7fc8fd52ea7fbaa62f9bb8c31.s3tc.ctex", "res://.godot/imported/fuel_drum_normal.png-099170f7fc8fd52ea7fbaa62f9bb8c31.etc2.ctex"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=1
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=0
