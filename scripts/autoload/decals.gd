@@ -31,10 +31,10 @@ func _blob(c: Color) -> Texture2D:
 ## Default sizes (metres across) by kind; blood varies.
 const SIZE := {"bullet_hole": 0.14, "scorch": 2.5, "acid": 0.7}
 
-func splat(kind: String, pos: Vector3, normal: Vector3, size := -1.0) -> void:
+func splat(kind: String, pos: Vector3, normal: Vector3, size := -1.0) -> Decal:
 	var scene := get_tree().current_scene
 	if scene == null:
-		return
+		return null
 	var d := Decal.new()
 	d.texture_albedo = _textures(kind).pick_random()
 	var s: float = size if size > 0.0 else (randf_range(0.5, 1.1) if kind == "blood" else SIZE.get(kind, 0.08))
@@ -50,3 +50,4 @@ func splat(kind: String, pos: Vector3, normal: Vector3, size := -1.0) -> void:
 		var old = _live.pop_front()
 		if is_instance_valid(old):
 			old.queue_free()
+	return d

@@ -79,6 +79,7 @@ func _ready() -> void:
 		_thunder.volume_db = -6.0
 		add_child(_thunder)
 	Music.play_menu()
+	_version_tag()
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
@@ -92,6 +93,24 @@ func _ready() -> void:
 	Net.session_failed.connect(func(r): _set_status("Connection problem: " + r))
 	_home()
 	_check_invite_link()
+
+## Which game version is running, small in the corner, so it's easy to see
+## that an update arrived (and to match versions for co-op).
+func _version_tag() -> void:
+	if PackMount.version_name == "dev":
+		return
+	var l := Label.new()
+	l.text = "v" + PackMount.version_name
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	l.add_theme_font_size_override("font_size", 24)
+	l.add_theme_color_override("font_color", Color(0.6, 0.55, 0.5, 0.8))
+	l.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	l.offset_left = -400
+	l.offset_top = -60
+	l.offset_right = -32
+	l.offset_bottom = -20
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(l)
 
 func _build_theme() -> void:
 	var sb := StyleBoxFlat.new()

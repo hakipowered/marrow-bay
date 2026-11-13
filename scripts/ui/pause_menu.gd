@@ -49,7 +49,8 @@ func _ready() -> void:
 		_cheats.add_child(c)
 
 func refresh() -> void:
-	_info.text = "Save point: %s\nPlay time: %d min" % [GameState.shared_checkpoint.capitalize().replace("_", " "), int(GameState.play_time_sec / 60.0)]
+	var goal: String = GameState.world_flags.get("objective", "")
+	_info.text = ("Objective: %s\n\n" % goal if goal != "" else "") + "Save point: %s\nPlay time: %d min" % [GameState.shared_checkpoint.capitalize().replace("_", " "), int(GameState.play_time_sec / 60.0)]
 
 func _add(text: String, cb: Callable) -> void:
 	var b := Button.new()

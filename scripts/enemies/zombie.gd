@@ -37,6 +37,10 @@ var _struck := false
 var _poise_t := 0.0       # after a flinch, a moment before the next hit can break its stride
 var _flinch_t := 0.0      # rocked by a hit: barely moves and can't start a swing
 var _shield_hp := 0.0     # riot shield: cracks under fire, then breaks off
+var _last_hit := {}       # the blow that killed it: weapon, body part, direction (host)
+## The last few deaths picked across the horde, so kills in a row don't all
+## go down the same way.
+static var _recent_deaths: Array = []
 
 ## Meshy punch clip: the arms are fully out at 1.5 s of clip time.
 const ATTACK_STRIKE := 1.5
@@ -55,6 +59,31 @@ static var _last_groan_ms := 0
 var agent: NavigationAgent3D
 var model: ZombieModel
 var _hitboxes: Array = []
+## The partner's phone only receives positions; it measures the pace from them
+## so the walk, run and gallop clips play there too.
+var _anim_pos := Vector3.INF
+var _anim_speed := 0.0
+
+## The hound's hitboxes ride on its bones: zone, bone, centre along the bone
+## (m), box size. The ribcage comes first (aim assist aims at the first torso
+## box). Cross-sections are square so the boxes fit whatever the bone's roll.
+const HOUND_ZONES := [
+	["torso", "spine2", 0.06, Vector3(0.33, 0.30, 0.33)],
+	["torso", "chest", 0.05, Vector3(0.32, 0.16, 0.32)],
+	["torso", "spine1", 0.07, Vector3(0.31, 0.17, 0.31)],
+	["torso", "pelvis", 0.12, Vector3(0.30, 0.28, 0.30)],
+	["torso", "neck1", 0.06, Vector3(0.21, 0.16, 0.21)],
+	["head", "neck2", 0.06, Vector3(0.18, 0.12, 0.18)],
+	["head", "head", 0.11, Vector3(0.20, 0.27, 0.20)],
+	["leg", "upperarm_L", 0.08, Vector3(0.1, 0.18, 0.1)],
+	["leg", "upperarm_R", 0.08, Vector3(0.1, 0.18, 0.1)],
+	["leg", "forearm_L", 0.13, Vector3(0.08, 0.27, 0.08)],
+	["leg", "forearm_R", 0.13, Vector3(0.08, 0.27, 0.08)],
+	["leg", "thigh_L", 0.09, Vector3(0.13, 0.2, 0.13)],
+	["leg", "thigh_R", 0.09, Vector3(0.13, 0.2, 0.13)],
+	["leg", "shin_L", 0.13, Vector3(0.08, 0.27, 0.08)],
+	["leg", "shin_R", 0.13, Vector3(0.08, 0.27, 0.08)],
+]
 
 func _ready() -> void:
 	add_to_group("zombies")
@@ -110,6 +139,15 @@ func _ready() -> void:
 
 ## Precise hitboxes sized to the body parts, not one big capsule.
 func _build_hitboxes(h: float) -> void:
+	if data.get("quadruped") and model.has_bones():
+		for z in HOUND_ZONES:
+			var a := _zone_area(z[0], z[3])
+			a.position = Vector3(0, z[2], 0)
+			if model.attach_hitbox(z[1], a):
+				_hitboxes.append(a)
+			else:
+				a.free()
+		return
 	var b: float = data.get("bulk", 1.0)
 	var zones := [
 		["head", Vector3(0, 1.62, 0.04), Vector3(0.24, 0.27, 0.26)],
@@ -119,29 +157,38 @@ func _build_hitboxes(h: float) -> void:
 		["leg", Vector3(-0.12, 0.45, 0), Vector3(0.16, 0.9, 0.16)],
 		["leg", Vector3(0.12, 0.45, 0), Vector3(0.16, 0.9, 0.16)],
 	]
-	if data.get("quadruped"):
-		zones = [["head", Vector3(0, 0.6, -0.55), Vector3(0.22, 0.22, 0.3)], ["torso", Vector3(0, 0.55, 0), Vector3(0.3, 0.32, 0.8)], ["leg", Vector3(0, 0.22, 0), Vector3(0.3, 0.44, 0.7)]]
-	elif data.get("crawl"):
+	if data.get("crawl"):
 		zones = [["head", Vector3(0, 0.3 * h, -0.7 * h), Vector3(0.24, 0.24, 0.26) * h], ["torso", Vector3(0, 0.25 * h, -0.2 * h), Vector3(0.44, 0.3, 0.7) * h], ["arm", Vector3(0, 0.15 * h, -0.8 * h), Vector3(0.6, 0.15, 0.3) * h]]
 	for z in zones:
-		var a := Area3D.new()
-		a.collision_layer = 8
-		a.collision_mask = 0
-		a.monitoring = false
-		a.set_meta("hit_zone", z[0])
-		a.set_meta("enemy", self)
-		a.set_meta("owner_path", str(name))
-		var cs := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = z[2] if (data.get("quadruped") or data.get("crawl")) else z[2] * Vector3(1, h, 1)
-		cs.shape = box
-		a.position = z[1] if (data.get("quadruped") or data.get("crawl")) else z[1] * Vector3(1, h, 1)
-		a.add_child(cs)
+		var a := _zone_area(z[0], z[2] if data.get("crawl") else z[2] * Vector3(1, h, 1))
+		a.position = z[1] if data.get("crawl") else z[1] * Vector3(1, h, 1)
 		add_child(a)
 		_hitboxes.append(a)
 
+func _zone_area(zone: String, size: Vector3) -> Area3D:
+	var a := Area3D.new()
+	a.collision_layer = 8
+	a.collision_mask = 0
+	a.monitoring = false
+	a.set_meta("hit_zone", zone)
+	a.set_meta("enemy", self)
+	a.set_meta("owner_path", str(name))
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	cs.shape = box
+	a.add_child(cs)
+	return a
+
 func _physics_process(delta: float) -> void:
-	model.animate(state, velocity.length(), crippled, head_gone)
+	var pace := velocity.length()
+	if not multiplayer.is_server():
+		if _anim_pos != Vector3.INF and delta > 0.0:
+			var moved := (global_position - _anim_pos) * Vector3(1, 0, 1)
+			_anim_speed = lerpf(_anim_speed, moved.length() / delta, 0.15)
+		_anim_pos = global_position
+		pace = _anim_speed
+	model.animate(state, pace, crippled, head_gone)
 	_groan_t -= delta
 	# Only the host voices groans; the RPC plays them on every phone. Each
 	# one is followed by a pause, and only one of the horde starts at a time.
@@ -507,6 +554,11 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 		return
 	var total: float = dmg * EnemyDB.ZONE_MULT.get(zone, 1.0)
 	hp -= total
+	var flat_v := Vector3(velocity.x, 0.0, velocity.z)
+	_last_hit = {"w": weapon_id, "zone": zone, "dir": dir, "dmg": total, "down": state == S.PLAY_DEAD,
+		"rush": flat_v if state in [S.CHASE, S.CHARGE] and flat_v.length() > 2.3 else Vector3.ZERO}
+	if state == S.PLAY_DEAD and hp > 0.0:
+		wake_from_dead()   # shot where it lay and still alive: it scrambles up
 	if state in [S.IDLE, S.FEED, S.WANDER, S.PLAY_DEAD, S.HIDDEN]:
 		state = S.CRAWL if crippled else S.CHASE
 	if state == S.PINNING and total > 25:
@@ -538,7 +590,7 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 			_set_stagger(0.5)
 		elif state in [S.CHASE, S.CRAWL, S.WANDER]:
 			_flinch_t = 0.55
-	_rpc_hit_fx.rpc(zone, flinch)
+	_rpc_hit_fx.rpc(zone, flinch and hp > 0)
 	if hp <= 0:
 		_die()
 
@@ -572,21 +624,234 @@ func _die() -> void:
 	for h in _hitboxes:
 		h.collision_layer = 0
 	GameState.set_flag("dead:" + str(name))
-	_rpc_die.rpc()
+	_rpc_die.rpc(_death_plan())
 	var drop := WeaponDB.roll_drop(drop_table, _rng)
 	if drop != "none":
 		get_parent().spawn_pickup.rpc(drop, global_position + Vector3(0, 0.05, 0), -1)
 	if data.get("death_gas"):
 		get_parent().spawn_hazard.rpc("acid_gas", global_position, 3.2, 6.0)
 
+# ---------------------------------------------------------------- dying
+
+## Clip speed per death (the choke and the writhing are long as authored).
+const DEATH_SPEED := {"choke": 1.7, "convulse": 1.4, "slow_back": 1.25, "back_shot": 1.25, "headshot": 1.25}
+## Deaths that go where they're pushed: twisted so the body falls along the
+## shot. The rest fold up where they stand.
+const DEATH_PUSHED := ["fall_back", "slow_back", "sit_back", "blown_back", "flip", "back_shot", "sweep"]
+
+## How this one goes down (host). The killing blow picks the kind of death:
+## where the round came from, the weapon, the body part, what it was doing
+## and what it is. The body twists toward the push (a side hit spins it), and
+## the fall is checked against the walls and the floor: a fall that would put
+## its head through a wall or off a ledge is turned, shortened, or swapped for
+## one that folds up on the spot. Both phones play the same plan
+## (ZombieModel.die).
+func _death_plan() -> Dictionary:
+	if data.get("quadruped"):
+		# The hound: cut down at a gallop its legs fold under it; otherwise
+		# it rolls onto one side or the other.
+		var rushing_dog: bool = _last_hit.get("rush", Vector3.ZERO) != Vector3.ZERO
+		return {"c": "death_collapse" if rushing_dog else ("death" if _rng.randf() < 0.5 else "death_left"),
+			"s": _rng.randf_range(0.95, 1.1)}
+	var clips := model.death_clips()
+	if clips.is_empty():
+		return {"y": _rng.randf_range(-1.0, 1.0)}
+	var h := _last_hit
+	var wid: String = h.get("w", "")
+	var w: Dictionary = WeaponDB.WEAPONS.get(wid, {})
+	var kind: String = w.get("kind", "")
+	var zone: String = h.get("zone", "torso")
+	var dir: Vector3 = h.get("dir", Vector3.ZERO)
+	dir.y = 0.0
+	var push_dir := (global_transform.basis.inverse() * dir).normalized() if dir.length() > 0.01 else Vector3.ZERO
+	push_dir.y = 0.0
+	# The round travels toward +Z (local) when it comes from in front of it.
+	var from_back := push_dir.z < -0.35
+	var blast: bool = w.has("radius") or wid == "frag" or (wid != "" and not WeaponDB.WEAPONS.has(wid))
+	var burning := has_node("Burning") or kind == "flame"
+	var shooter := _nearest_player()
+	var near := global_position.distance_to(shooter.global_position) if shooter else 99.0
+	var rush: Vector3 = h.get("rush", Vector3.ZERO)   # how fast it was coming on when it died
+	var rushing := rush != Vector3.ZERO
+	var heavy := variant in ["brute", "bloater", "brood_mother"]
+	# Already lying there (playing dead): it just stays down.
+	if h.get("down", false):
+		var lying := model.lying_clip()
+		if lying != "":
+			return {"c": lying, "from": maxf(model.death_length(lying) - 0.05, 0.0), "k": 1.0}
+	# On its belly (crawler, or legs shot out): it slumps flat where it is.
+	if crippled or data.get("crawl"):
+		return {"c": "knees_face", "from": maxf(model.death_land("knees_face") - 0.35, 0.0), "k": 0.0,
+			"y": _rng.randf_range(-0.25, 0.25), "s": 0.9}
+	# (fall_back is not in any of these: its arms fly out level with the
+	# shoulders as it topples, which reads as a T-pose. It is kept only as a
+	# pose for infected lying in wait.)
+	var pool := {}
+	if blast:
+		pool = {"flip": 3.0, "blown_back": 3.0, "sweep": 1.0}
+	elif burning:
+		pool = {"convulse": 4.0, "knees_face": 1.0, "gut": 1.0}
+	elif kind == "pellets" and near < 6.0 and not from_back:
+		pool = {"blown_back": 3.0, "flip": 1.0, "sit_back": 1.0, "sweep": 1.0}
+	elif from_back:
+		pool = {"back_shot": 3.0, "knees_face": 2.0, "headshot": 1.5 if zone == "head" else 0.0}
+	elif rushing:
+		# Shot dead mid-lunge: its own momentum carries it down onto its face.
+		pool = {"knees_face": 3.0, "headshot": 2.0 if zone == "head" else 0.0, "sweep": 1.0}
+	elif zone == "head":
+		pool = {"headshot": 4.0, "slow_back": 1.0, "sit_back": 1.0, "knees_face": 1.0}
+	elif zone == "leg":
+		pool = {"sweep": 3.0, "knees_face": 2.0, "gut": 1.0}
+	elif kind == "melee":
+		# A knife opens the throat or the gut; a hatchet chops it down.
+		pool = {"gut": 2.0, "knees_face": 2.0, "choke": 1.0 if wid == "knife" else 0.0, "sit_back": 1.0, "sweep": 1.0 if wid == "hatchet" else 0.0}
+	else:
+		pool = {"slow_back": 2.0, "sit_back": 2.0, "gut": 2.0, "knees_face": 2.0, "headshot": 1.0, "choke": 0.6}
+	# The big ones don't somersault; a screamer grabs at its throat; a
+	# spitter folds over its swollen gut.
+	if heavy and not (blast and float(h.get("dmg", 0.0)) >= 300.0):
+		for c in ["flip", "blown_back", "sweep"]:
+			pool.erase(c)
+		pool["knees_face"] = pool.get("knees_face", 0.0) + 2.0
+		pool["gut"] = pool.get("gut", 0.0) + 1.0
+	if variant == "screamer" and not blast:
+		pool["choke"] = pool.get("choke", 0.0) + 3.0
+	if variant == "spitter" and not blast:
+		pool["gut"] = pool.get("gut", 0.0) + 2.0
+	# Hit from the side: it spins as it goes down (the deaths that follow
+	# the push turn it toward where the round was going).
+	if absf(push_dir.x) > 0.7 and not blast:
+		for c in pool:
+			if c in DEATH_PUSHED:
+				pool[c] *= 2.5
+	for c in pool.keys():
+		if not c in clips or pool[c] <= 0.0:
+			pool.erase(c)
+		elif c in _recent_deaths:
+			pool[c] *= 0.2
+	if pool.is_empty():
+		pool = {"knees_face": 1.0}
+	# A blast throws it, a shotgun at arm's length shoves it, a runner's own
+	# speed carries it on.
+	var push := Vector3.ZERO
+	if blast and push_dir != Vector3.ZERO:
+		push = push_dir * clampf(float(h.get("dmg", 100.0)) / 140.0, 0.4, 1.6)
+	elif kind == "pellets" and near < 4.0 and push_dir != Vector3.ZERO:
+		push = push_dir * 0.3
+	elif rushing:
+		push = (global_transform.basis.inverse() * rush).normalized() * 0.6
+		push.y = 0.0
+	push = _room_along(push)
+	var speed_k := (0.85 if variant == "brute" else 0.92 if variant == "bloater" else 1.0) * _rng.randf_range(0.92, 1.1)
+	var order := _weighted_order(pool)
+	var yaw0 := {}
+	for c in order:
+		yaw0[c] = _rng.randf_range(-0.35, 0.35)
+		var fall := model.death_fall(c)
+		var toward := push_dir if push_dir != Vector3.ZERO else push.normalized()
+		if c in DEATH_PUSHED and fall != Vector3.ZERO and toward != Vector3.ZERO:
+			var ang := fall.signed_angle_to(toward, Vector3.UP)
+			if absf(ang) < 2.4:
+				yaw0[c] = clampf(ang, -1.25, 1.25) + _rng.randf_range(-0.15, 0.15)
+	# Any of the deaths that fit, as it falls naturally; then turned a little
+	# more, or cut short; a big twist only as a last resort. (Never spun
+	# right round: a wall at its back makes it fold up toward you instead.)
+	var best := {}
+	var best_blocked := 1 << 20
+	var tries := 0
+	for turn in [[0.0], [0.55, -0.55], [1.1, -1.1]]:
+		for c in order:
+			var fall := model.death_fall(c)
+			for dy in turn:
+				for k in ([1.0, 0.65, 0.35] if fall != Vector3.ZERO else [1.0]):
+					# A few dozen looks at most (a grenade in a corridor kills
+					# five at once on a phone).
+					tries += 1
+					if tries > 30:
+						break
+					var plan := {"c": c, "y": clampf(yaw0[c] + dy, -1.7, 1.7), "k": k, "p": push,
+						"s": DEATH_SPEED.get(c, 1.0) * speed_k}
+					var blocked := _death_blocked(plan)
+					if blocked == 0:
+						_remember_death(c)
+						return plan
+					if blocked < best_blocked:
+						best_blocked = blocked
+						best = plan
+	# Nothing lies fully clear (a cupboard of a room): fold up on the spot.
+	var tight := {"c": "gut" if "gut" in clips else best.get("c", "knees_face"), "y": _rng.randf_range(-0.4, 0.4), "k": 0.4, "p": Vector3.ZERO, "s": speed_k}
+	if _death_blocked(tight) <= best_blocked:
+		best = tight
+	_remember_death(best.get("c", ""))
+	return best
+
+## How many of the body's resting points (head, hands, feet, hips, chest)
+## would end up in a wall, a car or a shelf, or over a drop, for a plan. Also
+## sets the plan's floor step ("f") from the floor under the hips.
+func _death_blocked(plan: Dictionary) -> int:
+	var pts := model.death_points(plan["c"], plan.get("y", 0.0), plan.get("k", 1.0), plan.get("p", Vector3.ZERO))
+	if pts.is_empty():
+		return 0
+	var space := get_world_3d().direct_space_state
+	var chest := global_position + Vector3.UP * 0.9
+	var blocked := 0
+	var floor_dy := 0.0
+	for i in pts.size():
+		var at: Vector3 = global_transform * pts[i]
+		var q := PhysicsRayQueryParameters3D.create(chest, at + Vector3.UP * 0.22, 1 | Door.BARS_LAYER)
+		q.exclude = [get_rid()]
+		if not space.intersect_ray(q).is_empty():
+			blocked += 1
+			continue
+		if i < 2:   # head and hips: is there floor under them, not a drop?
+			var down := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.6, at + Vector3.DOWN * 1.2, 1)
+			down.exclude = [get_rid()]
+			var hit := space.intersect_ray(down)
+			if hit.is_empty() or (hit.position as Vector3).y < global_position.y - 0.55:
+				blocked += 2
+			elif i == 1:
+				floor_dy = clampf((hit.position as Vector3).y - global_position.y, -0.5, 0.5)
+	plan["f"] = floor_dy
+	return blocked
+
+## A push shortened so it stops short of a wall.
+func _room_along(push: Vector3) -> Vector3:
+	if push.length() < 0.01:
+		return Vector3.ZERO
+	var world_dir := global_transform.basis * push.normalized()
+	var from := global_position + Vector3.UP * 0.8
+	var q := PhysicsRayQueryParameters3D.create(from, from + world_dir * (push.length() + 0.7), 1 | Door.BARS_LAYER)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return push
+	return push.normalized() * maxf(from.distance_to(hit.position) - 0.7, 0.0)
+
+## The pool's clips, most likely first (a weighted shuffle).
+func _weighted_order(pool: Dictionary) -> Array:
+	var keyed := []
+	for c in pool:
+		# Exponential race: smaller key wins, more weight means smaller keys.
+		keyed.append([-log(maxf(_rng.randf(), 0.0001)) / float(pool[c]), c])
+	keyed.sort_custom(func(a, b): return a[0] < b[0])
+	var out := []
+	for e in keyed:
+		out.append(e[1])
+	return out
+
+static func _remember_death(c: String) -> void:
+	_recent_deaths.append(c)
+	while _recent_deaths.size() > 3:
+		_recent_deaths.pop_front()
+
 @rpc("authority", "reliable", "call_local")
 func _rpc_scream() -> void:
 	model.play_once("scream", 0.1)
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_die() -> void:
+func _rpc_die(plan := {}) -> void:
 	state = S.DEAD
-	model.die(head_gone)
+	model.die(head_gone, plan)
 	if Sfx.voice(_sound_id("death"), self, 0.0, 3.0, 26.0) == null:
 		Sfx.voice("zombie_death", self, 0.0, 3.0, 26.0)
 	if data.get("death_gas"):
@@ -595,7 +860,9 @@ func _rpc_die() -> void:
 @rpc("authority", "unreliable", "call_local")
 func _rpc_hit_fx(zone: String, flinch := false) -> void:
 	model.hit_react(zone, flinch)
-	Sfx.play_at("flesh_hit", global_position + Vector3.UP, "", -4.0, 6.0)
+	Sfx.play_at("flesh_hit", global_position + Vector3.UP * (0.55 if data.get("quadruped") else 1.0), "", -4.0, 6.0)
+	if flinch and data.get("quadruped") and state != S.DEAD:
+		Sfx.voice("hound_hurt", self, 2.0, 3.0, 24.0)
 
 @rpc("authority", "unreliable", "call_local")
 func _shield_block(cracked: float) -> void:

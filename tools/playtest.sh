@@ -7,8 +7,9 @@
 #
 # Quick pass: the level probe (holes out of the level, infected placed inside
 # props or falling through the floor, items no one can pick up), the
-# existing rule tests (walls, doors, crowd, death flow, story, weapons, music,
-# barrels: every gun on every drum), the
+# existing rule tests (walls, doors, crowd, death flow, infected deaths, story,
+# the vault power and elevator, weapons, music, barrels: every gun on every
+# drum), the
 # bot's weapon / bag / save / death sections, and the co-op tests with two
 # copies of the game through a local relay (needs node and the ws package:
 # `npm i ws` anywhere and point NODE_PATH at its node_modules, or install it
@@ -50,7 +51,9 @@ run door_sweep       180 --script tests/door_sweep.gd
 run door_reach       180 --script tests/door_reach.gd
 run crowd_rules      300 --script tests/crowd_rules.gd
 run death_flow       300 --script tests/death_flow.gd
+run death_variety    180 --fixed-fps 60 --script tests/death_variety.gd
 run story            300 --script tests/story_test.gd
+run power_route      300 --fixed-fps 60 --script tests/power_route.gd
 run weapon_sweep     300 --script tests/weapon_sweep.gd
 run music            180 --script tests/music_test.gd
 run music_quiet      300 --script tests/music_quiet.gd
@@ -84,6 +87,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	RELAY=$!
 	sleep 1
 	coop coop_peer tests/coop_peer.gd
+	coop coop_version tests/coop_version.gd
 	coop coop_story tests/coop_story.gd
 	coop coop_death tests/coop_death.gd
 	coop coop_playtest tests/playtest_coop.gd

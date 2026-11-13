@@ -4,6 +4,12 @@
 // Uploads (PUT /upload/<key>) need the UPLOAD_TOKEN secret, or an Ed25519
 // content signature for web:/pack: keys only (see uploadAllowed).
 //
+// The APK is a thin base; the game itself is content packs the app keeps up
+// to date (tools/content/README.md in the repo):
+//   GET/HEAD /packs/manifest.json   the newest content set (KV packs:manifest)
+//   GET/HEAD /packs/<file>          one pack, streamed from 20 MiB KV chunks
+//                                   pack:<file>:<i> (+ packmeta:<file>), Range ok
+//
 // /play/ is the browser version (Godot Web export, see tools/build_web.sh and
 // tools/upload_web.sh). Its files live under web:<build>/<file>:<i> in the
 // same chunk format, listed in web:manifest; the manifest is switched only
@@ -81,6 +87,19 @@ export default {
       return new Response(icon, { headers: { "content-type": "image/png", "cache-control": "public, max-age=3600" } });
     }
 
+    if (path === "/packs/manifest.json") {
+      const m = await env.BUILDS.get("packs:manifest");
+      if (!m) return new Response("no content uploaded yet", { status: 404 });
+      return new Response(request.method === "HEAD" ? null : m, {
+        headers: { "content-type": "application/json", "cache-control": "no-store", "access-control-allow-origin": "*" },
+      });
+    }
+    if (path.startsWith("/packs/")) {
+      const file = decodeURIComponent(path.slice("/packs/".length));
+      if (!/^[\w.-]+\.pck$/.test(file)) return new Response("not found", { status: 404 });
+      return servePack(request, env, ctx, file);
+    }
+
     if (path === "/play") return Response.redirect(url.origin + "/play/" + url.search, 301);
     if (path.startsWith("/play/")) return servePlay(request, env, ctx, path.slice("/play/".length) || "index.html");
 
@@ -110,11 +129,83 @@ export default {
 
     if (path === "/" || path === "/index.html") {
       const web = await env.BUILDS.get("web:manifest", { type: "json", cacheTtl: 60 });
-      return new Response(page(manifest, web), { headers: { "content-type": "text/html; charset=utf-8" } });
+      const content = await env.BUILDS.get("packs:manifest", { type: "json", cacheTtl: 60 });
+      return new Response(page(manifest, web, content), { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     return new Response("not found", { status: 404 });
   },
 };
+
+// ---------------------------------------------------------------------------
+// Content packs (/packs/)
+
+// Streams one pack out of its KV chunks, whole or a byte range. Packs are
+// named after their SHA-256, so they never change: cache them forever.
+async function servePack(request, env, ctx, file) {
+  const meta = await env.BUILDS.get("packmeta:" + file, { type: "json" });
+  if (!meta) return new Response("not found", { status: 404 });
+  const size = meta.size;
+  const chunk = meta.chunk || 20971520;
+  let start = 0;
+  let end = size - 1;
+  let status = 200;
+  const range = request.headers.get("range");
+  if (range) {
+    const m = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (m && (m[1] !== "" || m[2] !== "")) {
+      if (m[1] === "") {
+        start = Math.max(0, size - parseInt(m[2], 10));
+      } else {
+        start = parseInt(m[1], 10);
+        if (m[2] !== "") end = Math.min(parseInt(m[2], 10), size - 1);
+      }
+      if (start > end || start >= size) {
+        return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+      }
+      status = 206;
+    }
+  }
+  const length = end - start + 1;
+  const headers = {
+    "content-type": "application/octet-stream",
+    "content-length": String(length),
+    "accept-ranges": "bytes",
+    "cache-control": "public, max-age=31536000, immutable",
+    etag: `"${meta.sha256}"`,
+    "x-sha256": meta.sha256,
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "content-length, content-range, x-sha256",
+  };
+  if (status === 206) headers["content-range"] = `bytes ${start}-${end}/${size}`;
+  if (request.method === "HEAD" || length === 0) return new Response(null, { status, headers });
+  const { readable, writable } = new FixedLengthStream(length);
+  const pump = async () => {
+    try {
+      for (let i = Math.floor(start / chunk); i <= Math.floor(end / chunk); i++) {
+        const lo = Math.max(start - i * chunk, 0);
+        const hi = Math.min(end - i * chunk, chunk - 1, size - 1 - i * chunk);
+        const key = `pack:${file}:${i}`;
+        const whole = lo === 0 && i * chunk + hi === Math.min((i + 1) * chunk, size) - 1;
+        if (whole) {
+          const part = await env.BUILDS.get(key, { type: "stream", cacheTtl: 3600 });
+          if (!part) throw new Error("missing " + key);
+          await part.pipeTo(writable, { preventClose: true });
+        } else {
+          const buf = await env.BUILDS.get(key, { type: "arrayBuffer", cacheTtl: 3600 });
+          if (!buf) throw new Error("missing " + key);
+          const w = writable.getWriter();
+          await w.write(new Uint8Array(buf, lo, hi - lo + 1));
+          w.releaseLock();
+        }
+      }
+      await writable.close();
+    } catch (e) {
+      await writable.abort(e);
+    }
+  };
+  ctx.waitUntil(pump());
+  return new Response(readable, { status, headers });
+}
 
 // ---------------------------------------------------------------------------
 // Browser version (/play/)
@@ -190,11 +281,12 @@ function waitingPage() {
 <body><h1>RAGOON CITY</h1><p>The browser version is being uploaded. Try again in a few minutes.</p></body></html>`;
 }
 
-function page(m, web) {
+function page(m, web, content) {
   const size = m ? (m.size / 1048576).toFixed(0) + " MB" : "";
   const ver = m ? m.version : "";
+  const game = content ? (content.packs.reduce((n, p) => n + p.size, 0) / 1048576).toFixed(0) + " MB" : "";
   const btn = m
-    ? `<a class="btn" href="/RaGoonCity.apk">Download for Android</a><p class="meta">Version ${ver} · ${size} · use Wi-Fi</p>`
+    ? `<a class="btn" href="/RaGoonCity.apk">Download for Android</a><p class="meta">App ${ver} · ${size}${game ? ` · then the game itself (${game}) downloads inside the app` : ""} · use Wi-Fi</p>`
     : `<p class="meta">No build uploaded yet.</p>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -222,6 +314,7 @@ ${web ? `<a class="btn alt" href="/play/">Play in the browser</a><p class="meta"
 <li>If Android asks, allow installs from this app.</li>
 <li>If Samsung blocks it: <b>Settings → Security and privacy → Auto Blocker</b>, turn it off.</li>
 <li>If Play Protect warns: <b>More details → Install anyway</b>.</li>
+<li>Open RaGoon City. The first start downloads the game; after that it updates itself every time you open it. You only need this page again if the game says it needs the new app.</li>
 <li>To play together: one of you taps <b>Co-op: Invite a Friend</b> and shares the room code, the other taps <b>Join with Code</b>.</li>
 </ol>
 </main></body></html>`;
