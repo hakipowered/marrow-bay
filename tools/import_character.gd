@@ -19,7 +19,7 @@ const ZOMBIE_CLIPS := {
 	"a0": "shamble", "a1": "sprint", "a2": "idle", "a3": "attack", "a4": "grab",
 	"a5": "scream", "a6": "hit", "a7": "death", "a8": "rise", "a9": "crawl",
 }
-const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl", "attack", "feed",
+const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl", "attack", "feed", "trot",
 		"stalk", "casual_walk", "injured_walk", "look_around"]
 const IN_PLACE := ["walk", "run", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl",
 		"stalk", "casual_walk", "injured_walk", "hit"]
