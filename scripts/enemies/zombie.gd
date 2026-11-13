@@ -9,7 +9,16 @@ enum S { IDLE, WANDER, CHASE, ATTACK, STAGGER, CRAWL, DEAD, FEED, PLAY_DEAD, HID
 @export var variant := "shambler"
 @export var look := ""
 @export var start_asleep := false
-@export var state: S = S.IDLE
+@export var state: S = S.IDLE:
+	set(v):
+		var was := state
+		state = v
+		# Up in its vent there's nothing on the floor to bump into or shoot;
+		# out of it (whatever woke it, on every phone) it's solid again.
+		if v == S.HIDDEN:
+			_set_solid(false)
+		elif was == S.HIDDEN and v != S.DEAD:
+			_set_solid(true)
 @export var crippled := false
 @export var head_gone := false
 
@@ -207,8 +216,6 @@ func _physics_process(delta: float) -> void:
 			_last_groan_ms = now
 			_groan_t = _rng.randf_range(4.5, 9.0) if state == S.CHASE else _rng.randf_range(8.0, 16.0)
 			_groan.rpc(_sound_id("chase" if state == S.CHASE else "idle"))
-	if state == S.HIDDEN:
-		_set_solid(false)   # up in its vent: nothing on the floor to bump into or shoot
 	if not multiplayer.is_server():
 		return
 	if state == S.DEAD:
