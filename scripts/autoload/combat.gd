@@ -293,7 +293,7 @@ func explode(pos: Vector3, dmg: float, radius: float, weapon_id: String, owner_p
 			var near := 1.0 - clampf(p.global_position.distance_to(pos) / (radius * 4.0), 0.0, 1.0)
 			if near > 0.0 and "_shake" in p:
 				p._shake = maxf(p._shake, 0.35 + near * 0.75)
-				if OS.has_feature("mobile"):
+				if WebPlatform.can_vibrate():
 					Input.vibrate_handheld(int(60 + 160 * near), 0.4 + 0.6 * near)
 	if not Cheats.on("no_explosive_ff"):
 		for p in get_tree().get_nodes_in_group("players"):

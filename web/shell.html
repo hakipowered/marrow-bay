@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0606">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>$GODOT_PROJECT_NAME</title>
+<style>
+html, body, #canvas { margin: 0; padding: 0; border: 0; }
+html, body { width: 100%; height: 100%; }
+body {
+	background: #0b0606; color: #eadfd6; overflow: hidden;
+	touch-action: none; overscroll-behavior: none;
+	-webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+#canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+#canvas:focus { outline: none; }
+#boot {
+	position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column;
+	align-items: center; justify-content: flex-end; padding: 24px 20px max(40px, env(safe-area-inset-bottom));
+	background: #0b0606 url(splash.jpg) center / cover no-repeat;
+	box-sizing: border-box; transition: opacity .5s;
+}
+#boot::before {
+	content: ""; position: absolute; inset: 0;
+	background: linear-gradient(180deg, #0b060666 0%, #0b060633 40%, #0b0606ee 78%, #0b0606 100%);
+}
+#boot > * { position: relative; }
+#boot h1 {
+	margin: 0 0 4px; color: #e0321f; letter-spacing: .08em; font-size: clamp(30px, 8vw, 54px);
+	text-shadow: 0 2px 18px #000;
+}
+#boot .tag { margin: 0 0 22px; color: #c9b8ac; text-shadow: 0 1px 6px #000; text-align: center; }
+#panel { width: min(520px, 100%); text-align: center; }
+#bar { height: 10px; border-radius: 6px; background: #ffffff1a; overflow: hidden; border: 1px solid #ffffff22; }
+#fill { height: 100%; width: 0; background: linear-gradient(90deg, #8e130c, #e0321f); transition: width .2s; }
+#bar.busy #fill { width: 35%; animation: busy 1.2s ease-in-out infinite; }
+@keyframes busy { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+#msg { margin: 10px 0 0; color: #b9a89c; font-size: 15px; min-height: 22px; }
+#play {
+	display: none; width: 100%; margin-top: 4px; padding: 18px; border-radius: 14px; font: inherit; font-size: 21px;
+	font-weight: 700; letter-spacing: .06em; color: #fff; background: #8e130c; border: 1px solid #d0402f; cursor: pointer;
+	box-shadow: 0 6px 30px #6b0d0899;
+}
+#play:active { background: #b3190f; }
+#note { display: none; margin-top: 14px; color: #d7cbc2; font-size: 15px; text-align: left; }
+#note b { color: #fff; }
+#fs {
+	display: none; position: fixed; z-index: 3; left: 50%; top: max(8px, env(safe-area-inset-top)); transform: translateX(-50%);
+	padding: 6px 14px; border-radius: 18px; border: 1px solid #ffffff40; background: #00000088; color: #fff;
+	font: 600 13px system-ui, sans-serif; letter-spacing: .04em; opacity: .75;
+}
+</style>
+$GODOT_HEAD_INCLUDE
+</head>
+<body>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<noscript>RaGoon City needs JavaScript.</noscript>
+<div id="boot">
+	<h1>RAGOON CITY</h1>
+	<p class="tag">Two-player co-op survival horror. The city has gone silent.</p>
+	<div id="panel">
+		<div id="bar" class="busy"><div id="fill"></div></div>
+		<p id="msg">Loading the city…</p>
+		<button id="play" type="button">ENTER THE CITY</button>
+		<div id="note"></div>
+	</div>
+</div>
+<button id="fs" type="button">⛶ Full screen</button>
+<script src="$GODOT_URL"></script>
+<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+(function () {
+	const boot = document.getElementById('boot');
+	const bar = document.getElementById('bar');
+	const fill = document.getElementById('fill');
+	const msg = document.getElementById('msg');
+	const play = document.getElementById('play');
+	const note = document.getElementById('note');
+	const fsBtn = document.getElementById('fs');
+	const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+	let running = false;
+
+	function fail(text, html) {
+		bar.style.display = 'none';
+		play.style.display = 'none';
+		msg.textContent = text;
+		if (html) { note.innerHTML = html; note.style.display = 'block'; }
+	}
+
+	// Keep cached game data from being cleared when the phone runs low on space.
+	try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+	document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length) {
+		fail('This browser can\'t run RaGoon City.',
+			'Open this page in <b>Chrome</b> or <b>Samsung Internet</b> (not inside another app\'s built-in browser).<br><br>Missing: ' + missing.join(', '));
+		return;
+	}
+
+	const exe = GODOT_CONFIG.executable;
+	const pack = GODOT_CONFIG.mainPack || (exe + '.pck');
+	let engine = null;
+	let restartPending = false;
+
+	function makeEngine() {
+		return new Engine(Object.assign({}, GODOT_CONFIG, {
+			onProgress: function (current, total) {
+				if (current > 0 && total > 0) {
+					bar.classList.remove('busy');
+					fill.style.width = Math.min(100, (current / total) * 100).toFixed(1) + '%';
+					msg.textContent = 'Loading the city… ' + mb(current) + ' / ' + mb(total) + ' MB';
+				}
+			},
+			onExit: function (code) {
+				running = false;
+				if (restartPending) {
+					// The game asked to restart (new content was installed): start a
+					// fresh engine in this page, which keeps full screen and sound.
+					restartPending = false;
+					restart();
+					return;
+				}
+				fsBtn.style.display = 'none';
+				boot.style.display = 'flex';
+				boot.style.opacity = '1';
+				fail('The game stopped' + (code ? ' (code ' + code + ')' : '') + '.', 'Reload the page to play again. Your saves are kept.');
+			},
+		}));
+	}
+
+	// Called by the game (PackMount.restart) right before it quits.
+	window.ragoonRestart = function () { restartPending = true; return true; };
+
+	function load() {
+		engine = makeEngine();
+		window.ragoonEngine = engine;
+		return Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]);
+	}
+
+	function start() {
+		// ?verbose=1 turns on Godot's verbose log in the browser console.
+		const extra = /[?&]verbose=1/.test(location.search) ? ['--verbose'] : [];
+		return engine.start({ args: ['--main-pack', pack].concat(GODOT_CONFIG.args || [], extra) }).then(function () {
+			running = true;
+			boot.style.opacity = '0';
+			setTimeout(() => { boot.style.display = 'none'; }, 500);
+			syncFsButton();
+		}, function (err) {
+			fail('The game couldn\'t start.', String(err && err.message || err));
+		});
+	}
+
+	function restart() {
+		boot.style.display = 'flex';
+		boot.style.opacity = '1';
+		bar.style.display = 'block';
+		bar.classList.add('busy');
+		fill.style.width = '0';
+		play.style.display = 'none';
+		msg.textContent = 'Restarting with the new content…';
+		// Let the old instance finish tearing down before the next one starts.
+		setTimeout(function () { load().then(start, function (err) { fail('Couldn\'t restart the game. Reload the page.', String(err && err.message || err)); }); }, 50);
+	}
+
+	load().then(function () {
+		bar.style.display = 'none';
+		msg.textContent = 'Ready. Headphones on.';
+		play.style.display = 'block';
+	}, function (err) {
+		fail('Couldn\'t load the game. Check your connection and reload.', String(err && err.message || err));
+	});
+
+	function goFullscreen() {
+		const el = document.documentElement;
+		const req = el.requestFullscreen || el.webkitRequestFullscreen;
+		if (req && !document.fullscreenElement) {
+			try { const p = req.call(el, { navigationUI: 'hide' }); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+		}
+	}
+
+	let wakeLock = null;
+	async function keepAwake() {
+		try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+	}
+	document.addEventListener('visibilitychange', () => { if (running && document.visibilityState === 'visible') keepAwake(); });
+
+	function syncFsButton() {
+		const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+		const standalone = window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+		fsBtn.style.display = running && !isFs && !standalone && (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) ? 'block' : 'none';
+	}
+	document.addEventListener('fullscreenchange', syncFsButton);
+	document.addEventListener('webkitfullscreenchange', syncFsButton);
+	fsBtn.addEventListener('click', goFullscreen);
+
+	play.addEventListener('click', function () {
+		play.disabled = true;
+		msg.textContent = 'Starting…';
+		goFullscreen();
+		keepAwake();
+		start();
+	});
+}());
+</script>
+</body>
+</html>

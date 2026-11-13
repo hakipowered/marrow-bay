@@ -201,7 +201,9 @@ func _home() -> void:
 	_btn("Play Solo", func(): _character_select("solo"))
 	_btn("Co-op: Invite a Friend", func(): _character_select("host"))
 	_btn("Co-op: Join with Code", func(): _character_select("join"))
-	_btn("Co-op: Same Wi-Fi", _lan_menu)
+	# Browsers can't open the direct phone-to-phone connection Same Wi-Fi uses.
+	if not WebPlatform.is_web():
+		_btn("Co-op: Same Wi-Fi", _lan_menu)
 
 func _continue_menu() -> void:
 	_clear()
@@ -287,6 +289,8 @@ func _lobby_host(code: String) -> void:
 		DisplayServer.clipboard_set(msg)
 		if OS.has_feature("android"):
 			OS.shell_open("https://wa.me/?text=" + msg.uri_encode())
+		elif WebPlatform.share(msg):
+			pass
 		_set_status("Invite copied. Waiting for your friend..."))
 	_btn("Cancel", func(): Net.close(); _home())
 
@@ -299,7 +303,7 @@ func _join_menu(prefill := "") -> void:
 	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_code_edit.custom_minimum_size = Vector2(0, 120)
 	_panel.add_child(_code_edit)
-	_btn("Paste Invite", func(): _code_edit.text = Net.parse_code(DisplayServer.clipboard_get()))
+	_btn("Paste Invite", func(): _code_edit.text = Net.parse_code(await WebPlatform.read_clipboard(self)))
 	_btn("Join", func():
 		Net.join_online(_code_edit.text, _char)
 		_set_status("Connecting..."))
@@ -327,6 +331,13 @@ func _check_invite_link() -> void:
 		if a.to_lower().begins_with("ragooncity://"):
 			_char = "obcera"
 			_join_menu(Net.parse_code(a))
+	# Browser version: an invite link opens /play/?join=CODE.
+	var web_code := Net.parse_code(WebPlatform.url_param("join"))
+	if web_code.length() == 6:
+		WebPlatform.clear_url_params()
+		_char = "obcera"
+		_custom = GameState.look(_char)
+		_join_menu(web_code)
 
 func _on_session_ready() -> void:
 	if GameState.mode == GameState.Mode.SOLO:
