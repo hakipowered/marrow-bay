@@ -11,6 +11,11 @@ extends Node3D
 ## Placed in the wall: local +z points out into the vault, +x is the player's
 ## right as they face the doors, the origin is on the floor in the middle of
 ## the doorway, in the wall's centre plane. The car is built behind the wall.
+##
+## `arrived` builds the same car at the bottom of the shaft (chapter 2, the
+## Undercroft): no note, the B2 sign, the car light dead after the ride with
+## only a red battery lamp, the doors shut until the arrival scene opens
+## them (flag c2_arrival), and no going back up.
 
 const FLAG_OPEN := "lift:open"
 const CARD := "vault_card"
@@ -21,6 +26,7 @@ const CAR := Vector3(1.8, 2.7, 2.8)
 const CAR_LIGHT := 0.5
 
 var is_open := false
+var arrived := false
 var _leaves: Array[Node3D] = []
 var _blocker: StaticBody3D
 var _outer: Area3D
@@ -34,8 +40,18 @@ var _lamp_light: OmniLight3D
 var _line_cool := 0.0
 
 func _ready() -> void:
-	add_to_group("vault_power")
 	add_to_group("vault_elevator")
+	if arrived:
+		_build_doors()
+		_build_front()
+		_build_car()
+		set_powered(false, false)
+		var red := UndercroftPower.emergency_light(self, Vector3(CAR.x - 0.3, CAR.y - 0.35, -CAR.z + 0.4), -90.0, 0.35, 3.5)
+		red.name = "CarBattery"
+		if GameState.has_flag("c2_arrival"):
+			_set_open(true, false)
+		return
+	add_to_group("vault_power")
 	_build_doors()
 	_build_front()
 	_build_car()
@@ -93,6 +109,9 @@ func _build_doors() -> void:
 			RoomBuilder._box(leaf, Vector3((k - 1) * half * 0.28, DOOR_H * 0.55, 0.025), Vector3(0.03, DOOR_H * 0.62, 0.012), _steel(0.3), false)
 		RoomBuilder._box(leaf, Vector3(0, 0.18, 0.024), Vector3(half - 0.04, 0.32, 0.01), _steel(0.18), false)
 		_leaves.append(leaf)
+	_blocker = _collider(Vector3(0, DOOR_H / 2.0, -0.2), Vector3(DOOR_W, DOOR_H, 0.12))
+	if arrived:
+		return
 	# A note taped to the right-hand leaf, beside the seam.
 	var note := Label3D.new()
 	note.text = "LIFT DEAD AGAIN.\nVault breaker tripped.\nReset it in the BOILER ROOM,\nthrough the vault, east door.\n            - O.V."
@@ -128,7 +147,6 @@ func _build_doors() -> void:
 		tape.position = Vector3(-0.12 + x, 1.6, 0.033)
 		tape.rotation.z = deg_to_rad(randf_range(-20, 20))
 		_leaves[1].add_child(tape)
-	_blocker = _collider(Vector3(0, DOOR_H / 2.0, -0.2), Vector3(DOOR_W, DOOR_H, 0.12))
 
 ## The vault side: steel frame, the floor lamp over the doors, the call
 ## panel with its card reader, and the stencilled sign.
@@ -159,7 +177,7 @@ func _build_front() -> void:
 	_lamp_light.position = Vector3(0, DOOR_H + 0.15, face + 0.4)
 	add_child(_lamp_light)
 	var sign := Label3D.new()
-	sign.text = "STAFF LIFT  -  SERVICE TUNNELS"
+	sign.text = "B2  -  UNDERCROFT  SERVICE  LEVEL" if arrived else "STAFF LIFT  -  SERVICE TUNNELS"
 	sign.font_size = 36
 	sign.outline_size = 0
 	sign.pixel_size = 0.0016
@@ -271,7 +289,7 @@ func set_powered(on: bool, _animate: bool) -> void:
 
 func _set_open(open: bool, animate: bool) -> void:
 	is_open = open
-	if open:
+	if open and not arrived:
 		GameState.set_flag(FLAG_OPEN)
 	_blocker.collision_layer = 0 if open else 1
 	_outer.collision_layer = 0 if open else 16
@@ -329,7 +347,15 @@ func in_car(p: Vector3) -> bool:
 
 # ------------------------------------------------------------------ use
 
+## The arrival scene: the doors grind open on the service level.
+func open_on_arrival(animate := true) -> void:
+	_set_open(true, animate)
+	if animate:
+		Sfx.play_at("flood_door_grind", global_position + Vector3.UP * 1.4, "metal_bang", -6.0, 8.0)
+
 func interact_text(player: Node, _handle := -1) -> String:
+	if arrived:
+		return "Go back up" if is_open and in_car(player.global_position) else ""
 	if is_open:
 		return "Go down" if in_car(player.global_position) else ""
 	if not VaultCircuit.is_on():
@@ -339,6 +365,12 @@ func interact_text(player: Node, _handle := -1) -> String:
 	return "Use the vault key card"
 
 func interact(player: Node, _handle := -1) -> void:
+	if arrived:
+		Sfx.play_at("lift_dead", doors_point(), "", 0.0, 6.0)
+		var hud := get_tree().get_first_node_in_group("hud")
+		if hud:
+			hud.toast("Dead. The car isn't going back up. The only way is on.")
+		return
 	if is_open:
 		if in_car(player.global_position):
 			_rpc_ride.rpc_id(1, player.peer_id)

@@ -74,6 +74,10 @@ var _long := false                # a long gun hangs lower than a pistol
 ## running) carries it lowered at her side.
 const RAISED_ANIMS := ["shoot_walk", "run_shoot", "reload"]
 
+## Put away while both hands are busy (cranking the generator): hidden, and
+## both hands close round the handle.
+var stowed := false
+
 func _ready() -> void:
 	top_level = true
 	# After the AnimationPlayer has posed the skeleton this frame.
@@ -122,6 +126,12 @@ func _process(delta: float) -> void:
 	# libraries while the AnimationPlayer is mid-update crashes the engine.
 	if model._skel != _skel:
 		_bind(model._skel)
+	if stowed:
+		visible = false
+		if model.hand_rig:
+			model.hand_rig.pose["Right"] = "fist"
+			model.hand_rig.pose["Left"] = "fist"
+		return
 	_set_fingers()
 	if _in_fist():
 		_grip = _fist_basis(MODELS[weapon_id])
@@ -143,6 +153,9 @@ func _in_fist() -> bool:
 ## itself each frame, so the gun never trails the hand by a frame.
 func _follow() -> void:
 	if model == null or not is_instance_valid(model) or model._skel != _skel:
+		return
+	if stowed:
+		visible = false
 		return
 	if _skel == null or _hand < 0 or _gun == null:
 		visible = false

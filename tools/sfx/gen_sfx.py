@@ -95,6 +95,33 @@ SOUNDS = {
     "stalker_step": (3, 0.8, -15, "one very heavy boot footstep on a hard floor, deep thud"),
     "stalker_swing": (2, 0.9, -14, "a huge fist swinging through the air, heavy whoosh"),
     "stalker_kneel": (1, 1.2, -17, "a very heavy man kneeling down, leather creak and coat rustle"),
+    # Chapter 2, the Undercroft: the generator, the flood door, the master clock
+    "engine_cough": (3, 1.6, -15, "an old diesel engine being hand cranked: one heavy compression thump and a wheezing cough from the exhaust, it doesn't catch"),
+    "engine_start": (1, 4.0, -12, "a big old diesel generator catching after hand cranking: sputtering coughs that build into a roaring clattering engine, black smoke"),
+    "engine_run": (1, 5.0, -20, "a big old diesel generator running steadily in a concrete hall: a deep rhythmic clattering chug and mechanical hum, constant, loopable"),
+    "fuel_pour": (1, 2.6, -18, "pouring diesel from a metal jerrycan into a steel tank through a funnel: glugging liquid, metal can rattle"),
+    "fuse_clip": (1, 0.9, -17, "pushing a heavy ceramic cartridge fuse into brass spring clips in a steel cabinet: a firm metallic snap"),
+    "crank_fit": (1, 1.0, -17, "fitting a heavy iron starting handle onto an engine's crank stub: a solid metal clunk and ratchet click"),
+    "crank_clatter": (1, 1.4, -16, "a heavy iron crank handle flung off a spinning engine, clattering and bouncing on a concrete plinth"),
+    "chute_rumble": (2, 1.8, -14, "something heavy sliding down a steel coal chute: a rumbling scrape, loose coal rattling and pouring"),
+    "flood_alarm": (1, 3.0, -18, "an old industrial klaxon alarm wailing in a tunnel, a harsh rising and falling electric horn, loopable"),
+    "flood_door_grind": (1, 7.0, -13, "a huge riveted steel flood door grinding slowly upward on a motor: deep grinding metal, chain rattle, motor strain"),
+    "clock_unlock": (1, 1.2, -18, "a small brass key winding an old clock: a few ratchet clicks and a spring tightening"),
+    "clock_clack": (2, 0.5, -20, "a single sharp mechanical clack of a slave clock's minute hand jumping forward"),
+    "clock_chime": (2, 3.0, -14, "a deep old regulator clock striking once: a heavy resonant gong-like bell, long ring"),
+    "clock_tick": (2, 0.5, -24, "one loud tick of an old pendulum regulator clock, wooden case"),
+    "drawer_open": (1, 0.8, -17, "a spring-loaded wooden drawer in a clock's plinth snapping open"),
+    "pa_crackle": (1, 1.6, -18, "an old public address loudspeaker crackling on with static and a short feedback whine"),
+    "door_bang": (2, 1.2, -12, "something huge pounding a steel door from the other side: one heavy booming impact, the door rattling in its frame"),
+    # The Warden (chapter 2 boss): a big man, turned
+    "warden_growl": (3, 2.2, -18, "a huge man turned into a monster: a deep wet rattling growl through clenched teeth, heavy breathing"),
+    "warden_roar": (2, 2.6, -11, "a huge man turned into a monster roaring in rage, deep ragged human voice tearing, echoing"),
+    "warden_attack": (3, 0.9, -15, "a huge man grunting with effort as he swings a heavy weapon, a short bestial snarl"),
+    "warden_pain": (3, 1.4, -15, "a huge monstrous man bellowing in pain, choked and ragged"),
+    "warden_death": (1, 3.5, -14, "a huge monstrous man's dying groan, a long rattling exhale fading out"),
+    "warden_slam": (2, 1.2, -12, "a heavy steel baton slammed into a concrete floor: a booming crack and debris"),
+    "baton_whoosh": (3, 0.5, -17, "a heavy steel police baton swung hard through the air, deep whoosh"),
+    "baton_hit": (3, 0.5, -14, "a heavy steel baton striking a person: a dull meaty thud"),
 }
 
 

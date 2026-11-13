@@ -5,13 +5,20 @@ extends SceneTree
 ## is how the west corridor's green wall kept showing the reading room's
 ## orange plaster through it. Checks every box RoomBuilder made, and prints
 ## WALLS OK, or WALLS FAIL with each overlapping pair.
+## Another level: `-- res://scenes/levels/undercroft.tscn`.
 var frames := 0
 
 func _process(_d: float) -> bool:
 	frames += 1
 	if frames == 3:
+		var gs = root.get_node("GameState")
+		var a := OS.get_cmdline_user_args()
+		if a.size() > 0:
+			gs.level_path = a[0]
+			gs.shared_checkpoint = "ch2_lift" if a[0].ends_with("undercroft.tscn") else "start"
+			gs.set_flag("story_c2_arrival")
 		root.get_node("Net").start_solo("obcera")
-		change_scene_to_file(root.get_node("GameState").level_path)
+		change_scene_to_file(gs.level_path)
 	if frames == 30:
 		_check()
 	return false

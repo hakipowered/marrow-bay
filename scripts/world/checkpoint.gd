@@ -47,5 +47,9 @@ func _rpc_reached() -> void:
 	if hud:
 		hud.toast("Checkpoint reached together" if Net.is_coop() else "Checkpoint reached")
 
+## Whether this player is standing in it now.
+func holds(p: Node) -> bool:
+	return p is Player and _inside.has(p.peer_id)
+
 func spawn_transform(index: int) -> Transform3D:
 	return global_transform.translated_local(Vector3((index * 2 - 1) * 0.8, 0, 0))

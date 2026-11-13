@@ -45,10 +45,16 @@ const DESC := {
 const KEY_NAMES := {
 	"brass_quill_key": ["Brass Quill Key", "A heavy brass key with a quill engraved on its bow. One of the archive's old locks will take it."],
 	"vault_card": ["Vault Elevator Key Card", "Warden Hardass's staff card for the lift in the records vault, worn white at the edges. The lift runs on the vault's own circuit: no power, no ride. The breaker for it is in the boiler room."],
+	"clock_key": ["Brass Winding Key", "A small brass crank key, polished by thirty years of one man's fingers. It fits the winding hole of a big clock."],
+	"fuse": ["Field Fuse", "A porcelain cartridge fuse the size of a fist, stamped GPO 60A FIELD. The engine hall generator won't excite without it."],
+	"diesel_can": ["Jerrycan of Diesel", "Twenty litres of red diesel from the coal yard shed. Heavy, and it sloshes. The generator's day tank is dry."],
+	"crank_handle": ["Starting Handle", "The generator's iron starting handle, from Warden Hardass's belt. It's still warm."],
 }
 
 const FILES := {
 	"lift_note": ["Note on the Lift Doors", "LIFT DEAD AGAIN.\n\nVault breaker tripped when the city went dark. The lift runs off the vault circuit, not the generator, so nothing moves down here until somebody resets it.\n\nBreaker panel is in the BOILER ROOM: through the vault, east door. Big red handle on the right of the box. Push it all the way up.\n\nDon't send anyone down alone.\n\n- O.V."],
+	"keeper_ledger": ["Keeper's Night Ledger", "ORRIN VELL. KEEPER, RIVER DISTRICT SERVICE TUNNELS. NIGHT LEDGER.\n\n2 Oct. Rounds 11 to 4. All slave clocks true to the master. Pump room dry.\n\n9 Oct. Knocking again under the deep stacks. Told the Warden. He says it's the river. The river doesn't keep time.\n\n14 Oct. It knocks on the minute. Every minute, the same as the clocks.\n\n15 Oct. I pulled the field fuse at ten past eleven so nothing down here could run without me. Locked it in the master clock's drawer. The winding key is on the surveyor's desk in the survey room, under his lamp. Whoever needs the engine needs the clock first.\n\n16 Oct. The Warden has stopped coming down. I can hear it counting."],
+	"survey_note": ["Survey Office Memo, 1891", "RIVER DISTRICT SURVEY: FIELD NOTE, 1891.\n\nThe old burial ground under Ashgrove Street was not cleared when the walled street was built over it. The parish register gives some four hundred and seventy interments. The bones recovered by the drainage gangs come to some three hundred.\n\nThe men will not work the Deep Tunnel heading after dark. They say they hear tallying.\n\nRecommend the heading be bricked up and the matter not entered in the public survey.\n\n- J. Arkwright, Assistant Surveyor"],
 	"shelter_log": ["Shelter Log", "Night two. We sealed the hall doors with forty-one people inside.\n\nThe wardens said the buses would come at dawn. Dawn came. No buses.\n\nA woman by the reading room has a bite on her wrist she keeps hidden under her sleeve. Nobody wants to be the one to say it.\n\nIf you're reading this, don't open the vault stairs alone. Whatever we put down there was still knocking this morning."],
 }
 

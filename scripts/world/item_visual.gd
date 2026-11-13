@@ -7,8 +7,27 @@ const MODEL_FOR := {
 	"medkit": "medical_box", "herb_green": "fern_02", "herb_red": "fern_02", "herb_mix": "fern_02", "herb_gg": "fern_02",
 }
 
+## Key items with their own scanned models (assets/props/<id>/<id>.glb,
+## see tools/props/README.md): the model and its longest side in metres.
+const PROP_FOR := {
+	"key:fuse": ["fuse", 0.16], "key:clock_key": ["clock_key", 0.12],
+	"key:crank_handle": ["crank_handle", 0.5],
+}
+
 static func build(item: String) -> Node3D:
 	var root := Node3D.new()
+	if PROP_FOR.has(item) and ResourceLoader.exists("res://assets/props/%s/%s.glb" % [PROP_FOR[item][0], PROP_FOR[item][0]]):
+		var m := UndercroftKit.meshy(root, PROP_FOR[item][0], Vector3.ZERO, randf() * 360.0, PROP_FOR[item][1], false)
+		m.position.y = 0.005
+		return root
+	if item == "key:diesel_can":
+		# The jerrycan from the coal yard shed: the CC0 can, full size.
+		var path := "res://assets/polyhaven/models/metal_jerrycan/metal_jerrycan.gltf"
+		if ResourceLoader.exists(path):
+			var j: Node3D = load(path).instantiate()
+			j.rotation_degrees.y = randf() * 360.0
+			root.add_child(j)
+			return root
 	# Guns, blades and grenades use the same models the survivors hold, lying
 	# on their side.
 	if item.begins_with("weapon:"):

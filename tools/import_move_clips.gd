@@ -14,22 +14,39 @@ extends SceneTree
 ## The hips are pinned in place; how far the roll carries the body forward
 ## over time is kept as metadata ("travel", seconds -> metres) so the player
 ## controller can move the capsule along the same curve.
+##
+## The "work" set is built the same way into <id>_work.res: looping chores
+## at a machine, played in place. "crank" (preset 331, a squat and heave) is
+## the survivors heaving the Undercroft generator's starting handle round
+## (chapter 2). Clips go to build_tmp/work/<id>/a331.glb:
+##
+##   godot --headless --path . --script tools/import_move_clips.gd -- work zegan obcera
 
-const CLIPS := {"r1": "roll"}
+const SETS := {
+	"roll": {"files": {"r1": "roll"}, "loop": false},
+	"work": {"files": {"a331": "crank"}, "loop": true},
+}
 
 func _initialize() -> void:
-	for id in OS.get_cmdline_user_args():
-		_build(id)
+	var args := OS.get_cmdline_user_args()
+	var set_name := "roll"
+	if not args.is_empty() and SETS.has(args[0]):
+		set_name = args[0]
+		args = args.slice(1)
+	for id in args:
+		_build(id, set_name)
 	quit(0)
 
-func _build(id: String) -> void:
+func _build(id: String, set_name: String) -> void:
+	var CLIPS: Dictionary = SETS[set_name]["files"]
+	var looping: bool = SETS[set_name]["loop"]
 	var lib := AnimationLibrary.new()
 	var rest_q := {}
 	var rest_o := {}
 	var parents := {}
 	var hip_y := 0.0
 	for f in CLIPS:
-		var path := "res://build_tmp/roll/%s/%s.glb" % [id, f]
+		var path := "res://build_tmp/%s/%s/%s.glb" % [set_name, id, f]
 		if not ResourceLoader.exists(path):
 			printerr("missing ", path)
 			continue
@@ -56,7 +73,7 @@ func _build(id: String) -> void:
 				anim = ap.get_animation(n).duplicate(true)
 				break
 		var clip: String = CLIPS[f]
-		anim.loop_mode = Animation.LOOP_NONE
+		anim.loop_mode = Animation.LOOP_LINEAR if looping else Animation.LOOP_NONE
 		var travel := PackedVector2Array()
 		for t in range(anim.get_track_count() - 1, -1, -1):
 			var bone := anim.track_get_path(t).get_concatenated_subnames()
@@ -82,6 +99,6 @@ func _build(id: String) -> void:
 	lib.set_meta("rest_o", rest_o)
 	lib.set_meta("parents", parents)
 	lib.set_meta("hip_y", hip_y)
-	var out := "res://assets/characters/%s/%s_roll.res" % [id, id]
+	var out := "res://assets/characters/%s/%s_%s.res" % [id, id, set_name]
 	var err := ResourceSaver.save(lib, out, ResourceSaver.FLAG_COMPRESS)
 	print("saved ", out, " ", error_string(err), " ", lib.get_animation_list())

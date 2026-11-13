@@ -52,6 +52,11 @@ var input_locked := false
 ## Set by a story scene that is animating this body itself (standing up from
 ## the wreck, a gesture): the usual idle/walk playback leaves it alone.
 var cutscene_pose := false
+## A chore at a machine (cranking the Undercroft generator, "crank"): she
+## stays put, plays that clip with the weapon put away and the camera free.
+## Moving the stick, rolling, a real blow or going down stops it.
+var working := ""
+signal work_stopped
 
 # Synced to the partner.
 @export var sync_yaw := 0.0
@@ -284,6 +289,7 @@ func _physics_process(delta: float) -> void:
 		body.rotation.y = lerp_angle(body.rotation.y, sync_yaw, 0.35)
 		if sync_weapon != held.weapon_id:
 			_show_weapon(sync_weapon)
+		held.stowed = sync_anim in WORK_CLIPS
 		_downed_t = _downed_t + delta if downed else 0.0
 		model.move_speed = sync_speed
 		model.play(sync_anim, sync_aiming)
@@ -324,6 +330,9 @@ func _physics_process(delta: float) -> void:
 		sync_anim = "idle"
 		if not cutscene_pose:
 			model.play("idle", false)
+		return
+	if working != "":
+		_tick_work(delta)
 		return
 	_read_keyboard()
 	# Look
@@ -458,6 +467,8 @@ func _tag_self() -> void:
 func roll() -> void:
 	if rolling or _roll_cd > 0.0 or downed or pinned or input_locked or cutscene_pose or dead:
 		return
+	if working != "":
+		stop_work()
 	if model._anim == null or not model._anim.has_animation("combat/roll"):
 		return
 	var d := Basis(Vector3.UP, yaw) * Vector3(move_input.x, 0, move_input.y)
@@ -503,6 +514,54 @@ func _tick_roll(delta: float) -> void:
 		rolling = false
 		dodging = false
 		_roll_cd = 0.25
+
+## The clips that are chores (Player.working): the weapon is put away.
+const WORK_CLIPS := ["crank"]
+
+func start_work(clip: String, face_yaw: float) -> void:
+	if downed or dead or rolling:
+		return
+	working = clip
+	move_input = Vector2.ZERO
+	aiming = false
+	fire_held = false
+	_reloading = 0.0
+	body.rotation.y = face_yaw
+	sync_yaw = face_yaw
+	held.stowed = true
+
+func stop_work() -> void:
+	if working == "":
+		return
+	working = ""
+	held.stowed = false
+	sync_anim = "idle"
+	work_stopped.emit()
+
+func _tick_work(delta: float) -> void:
+	_read_keyboard()
+	if working == "":
+		return   # rolled out of it
+	yaw -= look_delta.x * 0.0045
+	pitch = clamp(pitch - look_delta.y * 0.0035, -1.2, 0.9)
+	look_delta = Vector2.ZERO
+	pivot.rotation = Vector3(pitch, yaw, 0)
+	spring.spring_length = lerp(spring.spring_length, CAM_DIST, 10 * delta)
+	camera.fov = lerp(camera.fov, 68.0, 10 * delta)
+	velocity = Vector3.ZERO
+	aiming = false
+	fire_held = false
+	sync_aiming = false
+	sync_speed = 0.0
+	sync_yaw = body.rotation.y
+	sync_anim = working
+	model.move_speed = 0.0
+	model.play(working, false)
+	_tick_shake(delta)
+	sync_lamp = _lamp_aim()
+	_aim_flashlight(delta, sync_lamp)
+	if move_input.length() > 0.5:
+		stop_work()
 
 func _read_keyboard() -> void:
 	var space := Input.is_physical_key_pressed(KEY_SPACE)
@@ -970,10 +1029,13 @@ func apply_damage(amount: float, from: Node = null) -> void:
 	# A real blow (a bite, a swipe, acid, a blast) staggers; burn and gas
 	# ticks only sting, or the survivor would be stuck flinching in a fire.
 	var blow := amount >= 9.0 or from is Zombie
+	if blow:
+		stop_work()
 	_feel_hit(amount, from, blow)
 	if blow:
 		_rpc_hurt_fx.rpc(amount)
 	if hp <= 0.0:
+		stop_work()
 		downed = true
 		_downed_t = 0.0
 		pinned = false
@@ -1038,6 +1100,11 @@ func _screen_dir(src: Vector3) -> Vector2:
 	var local := camera.global_transform.basis.inverse() * (src - camera.global_position)
 	var d := Vector2(local.x, local.z)
 	return d.normalized() if d.length() > 0.01 else Vector2.ZERO
+
+## A jolt of the camera from something big nearby (an engine catching, a
+## boss's slam). 0.5 is a hard shove, 1.0 the heaviest hit.
+func shake(amount: float) -> void:
+	_shake = maxf(_shake, amount)
 
 func _tick_shake(delta: float) -> void:
 	if camera == null:
@@ -1141,12 +1208,17 @@ func use_item(id: String) -> bool:
 ## that ray meets.
 func _update_focus() -> void:
 	var target: Node = _nearest_pickup()
-	if target == null:
+	# An item she has no room for doesn't block what she's looking at (a
+	# drop by the generator's crank hid "Crank the engine" behind "Bag full").
+	if target == null or not target.interact_text(self).begins_with("Pick up"):
+		var looked: Node = null
 		var hit: Object = interact_ray.get_collider() if interact_ray.is_colliding() else null
 		if hit and hit.has_method("interact_text"):
-			target = hit
+			looked = hit
 		elif hit and hit.get_parent() and hit.get_parent().has_method("interact_text"):
-			target = hit.get_parent()
+			looked = hit.get_parent()
+		if looked and (target == null or looked.interact_text(self) != ""):
+			target = looked
 	# The prompt follows the text, not just the target: a taken item is freed
 	# (and a freed node compares equal to null, so a target check alone kept
 	# "Pick up ..." on screen), and a door's text changes once it opens.

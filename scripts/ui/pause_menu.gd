@@ -51,12 +51,20 @@ func _ready() -> void:
 	# freed (a lambda stayed connected after a Continue reloaded the level,
 	# and the next cheat toggle hit the old, freed buttons: SCRIPT ERROR).
 	Cheats.changed.connect(_on_cheat_changed)
+	# Jump to a chapter (both phones go).
+	for i in Cheats.CHAPTERS.size():
+		var b := Button.new()
+		b.text = Cheats.CHAPTERS[i][0]
+		b.add_theme_font_size_override("font_size", 28)
+		b.custom_minimum_size = Vector2(0, 72)
+		b.pressed.connect(func(): Cheats.jump_to_chapter(i))
+		_cheats.add_child(b)
 
 var _cheat_buttons := {}
 
 func _on_cheat_changed(n: String, v: bool) -> void:
 	var c: CheckButton = _cheat_buttons.get(n)
-	if c:
+	if c and is_instance_valid(c):
 		c.set_pressed_no_signal(v)
 
 func refresh() -> void:

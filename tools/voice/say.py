@@ -8,6 +8,7 @@
 
 Writes assets/audio/voice/<character>/<line_id>.ogg (mono, trimmed, loudness-matched).
 Pass --direction "[whispering]" to override the default delivery tags (Eleven v4 voices only).
+Pass --story to write a cutscene line to assets/audio/voice/story/<line_id>.ogg instead.
 Listen to the result before committing: generations vary, so re-run for another take.
 """
 import argparse
@@ -43,6 +44,7 @@ def main():
     ap.add_argument("text")
     ap.add_argument("--scream", action="store_true")
     ap.add_argument("--direction")
+    ap.add_argument("--story", action="store_true", help="write to assets/audio/voice/story/ (cutscene and story lines)")
     a = ap.parse_args()
     cast = json.load(open(os.path.join(HERE, "cast.json")))
     c = cast[a.character]
@@ -56,7 +58,7 @@ def main():
                                       "output_format": "wav", "language_code": "English (US)"})
     target = c.get("loudness_lufs", cast["loudness_lufs"][kind])
     mask = c.get("mask_filter", "")
-    out_dir = os.path.join(ROOT, "assets", "audio", "voice", a.character)
+    out_dir = os.path.join(ROOT, "assets", "audio", "voice", "story" if a.story else a.character)
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, f"{a.line_id}.ogg")
     with tempfile.TemporaryDirectory() as tmp:

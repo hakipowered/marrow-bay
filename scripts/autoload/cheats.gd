@@ -19,6 +19,13 @@ const LIST := {
 	"no_explosive_ff": "No explosive friendly fire",
 }
 
+## Chapter select (cheat menu): both phones load a chapter's first level
+## together, each survivor keeping their bag. [button text, level, checkpoint]
+const CHAPTERS := [
+	["Go to chapter 1: the Archive", "res://scenes/levels/archive_hub.tscn", "start"],
+	["Go to chapter 2: the Undercroft", "res://scenes/levels/undercroft.tscn", "ch2_lift"],
+]
+
 var flags: Dictionary = {}
 
 func _ready() -> void:
@@ -52,3 +59,28 @@ func _apply(name: String, value: bool) -> void:
 	if name == "show_hitboxes":
 		get_tree().debug_collisions_hint = value
 	changed.emit(name, value)
+
+func jump_to_chapter(i: int) -> void:
+	if i < 0 or i >= CHAPTERS.size():
+		return
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		_rpc_jump_request.rpc_id(1, i)
+		return
+	if multiplayer.has_multiplayer_peer() and multiplayer.get_peers().size() > 0:
+		_rpc_jump.rpc(i)
+	_jump(i)
+
+@rpc("any_peer", "reliable")
+func _rpc_jump_request(i: int) -> void:
+	if multiplayer.is_server():
+		jump_to_chapter(i)
+
+@rpc("authority", "reliable")
+func _rpc_jump(i: int) -> void:
+	_jump(i)
+
+func _jump(i: int) -> void:
+	get_tree().paused = false
+	var level := get_tree().get_first_node_in_group("level")
+	if level and level.has_method("change_level"):
+		level.change_level(CHAPTERS[i][1], CHAPTERS[i][2])

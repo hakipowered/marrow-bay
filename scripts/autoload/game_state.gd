@@ -13,7 +13,8 @@ var character_by_peer: Dictionary = {}
 var customization_by_peer: Dictionary = {}
 ## Last checkpoint that every player in the session was standing at together.
 var shared_checkpoint: String = "start"
-var level_path: String = "res://scenes/levels/archive_hub.tscn"
+const FIRST_LEVEL := "res://scenes/levels/archive_hub.tscn"
+var level_path: String = FIRST_LEVEL
 ## Persistent world flags (opened doors, picked items, solved puzzles).
 var world_flags: Dictionary = {}
 ## peer_id -> inventory snapshot, filled from the players on save.
@@ -79,6 +80,8 @@ func set_shared_checkpoint(id: String) -> void:
 	shared_checkpoint_changed.emit(id)
 
 func reset_run() -> void:
+	# A new game starts at the beginning, even after reaching a later chapter.
+	level_path = FIRST_LEVEL
 	shared_checkpoint = "start"
 	world_flags.clear()
 	inventories.clear()

@@ -10,7 +10,11 @@ extends SceneTree
 ##   (about 4x faster than real time). One section: add `-- only <name>`:
 ##   probe   level holes, infected inside props or falling through the
 ##           floor, items hidden inside props (about 30 s)
-##   route   the whole first area solo, room by room (about 90 s)
+##   route   the whole first area solo, room by room (about 90 s), then
+##           down the elevator and on through chapter 2 (route2)
+##   probe2  the level probe on chapter 2, the Undercroft
+##   route2  chapter 2 on its own, from the lift (with about the bag a
+##           player has by the end of chapter 1)
 ##   scares  walks into the scares that bring infected in (the diner
 ##           shutter, the reading-room ceiling) looking where a player
 ##           would, and checks they come through their way in and get up
@@ -60,6 +64,17 @@ const AREAS := {
 	"vault": Rect2(-10, 16, 14, 10), "boiler": Rect2(4, 16, 10, 10),
 	"diner": Rect2(3.4, -35, 7.2, 5),
 }
+## Rooms of the Undercroft (chapter 2).
+const AREAS2 := {
+	"lift": Rect2(0, 0, 7, 6), "corridor": Rect2(7, 1.5, 32, 3),
+	"lodge": Rect2(8, 4.5, 7, 6), "survey": Rect2(9, -9.5, 12, 11),
+	"gallery": Rect2(21, -9.5, 14, 11), "stair": Rect2(31.5, -12.5, 3, 3),
+	"muster": Rect2(19, 4.5, 14, 10), "hall": Rect2(39, -6, 16, 18),
+	"yard": Rect2(55, -6, 22, 18), "stacks": Rect2(43, 12, 8, 8),
+}
+const UNDERCROFT := "res://scenes/levels/undercroft.tscn"
+## The rooms of the level she's in (AREAS or AREAS2).
+var areas: Dictionary = AREAS
 var _ammo_used := 0
 var _hits_landed := 0
 var _dry_at := -1.0
@@ -279,6 +294,8 @@ func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 func cross(front: Vector3, back: Vector3, tag := "") -> bool:
 	await go_to(front, 40.0, true, tag + " (front) ")
 	await _recover()
+	if OS.has_environment("PT_DEBUG"):
+		print("PTDBG cross %s from %s t=%.1f" % [tag, _v(p.global_position), sim_t])
 	var end := sim_t + 10.0
 	var ref: Vector3 = p.global_position
 	var ref_t := sim_t
@@ -301,6 +318,8 @@ func cross(front: Vector3, back: Vector3, tag := "") -> bool:
 		to.y = 0
 		if to.length() < 0.45:
 			_stop()
+			if OS.has_environment("PT_DEBUG"):
+				print("PTDBG crossed %s at %s t=%.1f" % [tag, _v(p.global_position), sim_t])
 			return true
 		if sim_t - ref_t > 0.5:
 			if p.global_position.distance_to(ref) < 0.1:
@@ -375,8 +394,8 @@ func _path(target: Vector3) -> PackedVector3Array:
 	return path
 
 func _area_of(v: Vector3) -> String:
-	for k in AREAS:
-		if AREAS[k].has_point(Vector2(v.x, v.z)):
+	for k in areas:
+		if areas[k].has_point(Vector2(v.x, v.z)):
 			return k
 	return "outside"
 
@@ -482,6 +501,11 @@ func pick_up_node(node: Node) -> bool:
 		await face(pos)
 		await physics_frame
 		var prompt: String = p._prompt_text
+		# No room for it: the prompt says so, or (beside a door, the crank)
+		# gives way to the thing she's looking at.
+		if not prompt.begins_with("Pick up") and not p.inventory.can_take(node.item):
+			_note("bag full, left %s" % tag)
+			return false
 		if prompt == "" or not (prompt.begins_with("Pick up") or prompt.begins_with("Bag full")):
 			if attempt == 2:
 				_bug("pickups", "no 'Pick up' prompt next to %s at %s (prompt '%s', item %.1f m above her feet)" % [tag, _v(pos), prompt, pos.y - p.global_position.y], "noprompt:" + tag)
@@ -544,6 +568,8 @@ func _best_gun() -> String:
 func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 	if _busy_fighting or not is_instance_valid(z):
 		return false
+	if z.is_in_group("boss"):
+		return await fight_warden(z)
 	_busy_fighting = true
 	var kind: String = z.variant
 	_fight_kind = kind
@@ -631,7 +657,7 @@ func _heal() -> void:
 ## wakes them), then pick up what they dropped.
 func clear_area(area: String, max_t := 120.0) -> void:
 	await _recover()
-	var r: Rect2 = AREAS[area]
+	var r: Rect2 = areas[area]
 	var end := sim_t + max_t
 	var tries := {}
 	while sim_t < end and not p.downed:
@@ -657,7 +683,7 @@ func clear_area(area: String, max_t := 120.0) -> void:
 
 ## Pick up what the infected dropped in a room, as a player would.
 func collect_drops(area: String) -> void:
-	var r: Rect2 = AREAS[area]
+	var r: Rect2 = areas[area]
 	for d in get_nodes_in_group("pickups"):
 		if not is_instance_valid(d) or not str(d.name).begins_with("Drop_") or d._taken:
 			continue
@@ -705,7 +731,7 @@ func _monitor() -> void:
 		if z.hp < _zhp.get(key, z.hp) - 0.1:
 			_hits_landed += 1
 		_zhp[key] = z.hp
-		var now: bool = z.state == ZS.ATTACK and z._struck
+		var now: bool = z.state == ZS.ATTACK and z.get("_struck") == true   # the Warden has none
 		if now and not _struck.get(key, false):
 			_strikes += 1
 			var hit: bool = p.hp < _prev_hp
@@ -776,7 +802,8 @@ func _monitor() -> void:
 	# 6. Music while fighting only ordinary infected (no brute, charger or
 	#    boss coming for her): the 0.9 feedback wants no tense track there.
 	if _fight_kind != "":
-		var heavy := false
+		# A scripted big fight (the generator's crank waves) asks for it.
+		var heavy: bool = MUSIC._forced_action > 0.0
 		for z in _zombies():
 			if z.state in [ZS.CHASE, ZS.ATTACK, ZS.CHARGE, ZS.PINNING] and z.global_position.distance_to(p.global_position) < 18.0:
 				var zd: Dictionary = z.data
@@ -839,7 +866,7 @@ func _floor_checks() -> void:
 	var bodies: Array = []
 	for z in get_nodes_in_group("zombies"):
 		if is_instance_valid(z) and z.is_inside_tree() and z.state != ZS.HIDDEN:
-			bodies.append([z, z.model])
+			bodies.append([z, z.get("model")])   # the Warden has no ZombieModel
 	for m in _orphans:
 		if is_instance_valid(m) and m.is_inside_tree():
 			bodies.append([m, m])
@@ -996,8 +1023,14 @@ func _main() -> void:
 		await _run_probe()
 	if only == "scares":
 		await _run_scares()
+	if only == "probe2":
+		await _run_probe2()
+	if only == "warden2":
+		await _run_warden2()
 	if only in ["", "route"]:
 		await _run_route()
+	if only in ["", "route", "route2"]:
+		await _run_route2()
 	if only in ["", "weapons"]:
 		await _run_weapons()
 	if only in ["", "bag"]:
@@ -1039,6 +1072,7 @@ func _start_solo() -> void:
 		await physics_frame
 	p = get_first_node_in_group("players")
 	_prev_hp = p.hp
+	areas = AREAS2 if GS.level_path == UNDERCROFT else AREAS
 
 ## Level integrity, once per level: places where you can walk off the floor
 ## into the void (a room side with no wall and nothing next to it), and
@@ -1048,6 +1082,11 @@ func probe_level() -> void:
 	var step := 0.25
 	var floor_at := {}
 	var bounds := Rect2(-28, -36, 52, 64)
+	if areas != AREAS:
+		bounds = Rect2()
+		for k in areas:
+			bounds = areas[k] if bounds.size == Vector2.ZERO else bounds.merge(areas[k])
+		bounds = bounds.grow(2.0)
 	var x := bounds.position.x
 	while x < bounds.end.x:
 		var z := bounds.position.y
@@ -1435,15 +1474,16 @@ func _run_route() -> void:
 	await clear_area("boiler", 90.0)
 	await pick_up("boiler_fuel")
 	await pick_up("boiler_powder")
-	await _power_and_lift()
-	# Anyone left standing in the area?
+	# Anyone left standing in the area? (Before the ride: it loads chapter 2,
+	# with a new survivor node and chapter 2's infected.)
 	var left := []
 	for z in _zombies():
 		if z.state != ZS.HIDDEN:
 			left.append("%s(%s) at %s" % [z.name, ZS.keys()[z.state], _v(z.global_position)])
 	if not left.is_empty():
 		_note("infected still standing after the route: " + ", ".join(left))
-	_note("route finished at %.0fs, hp %.0f, died %d times, bag %s" % [sim_t, p.hp, _deaths, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+	_note("chapter 1 route finished at %.0fs, hp %.0f, died %d times, bag %s" % [sim_t, p.hp, _deaths, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+	await _power_and_lift()
 
 ## The end of the first area: throw the vault breaker in the boiler room,
 ## back through the vault to the elevator, the key card, into the car and
@@ -1495,13 +1535,378 @@ func _power_and_lift() -> void:
 		_bug("power", "the ride ended without the story_elevator flag")
 	_note("rode the vault elevator: chapter 1 done at %.0fs" % sim_t)
 
+# ---------------------------------------------------------------- chapter 2
+
+## Chapter 2's level check (the Undercroft): the same probe as the first
+## area, then 25 s standing in the lift while the infected settle.
+func _run_probe2() -> void:
+	GS.reset_run()
+	GS.level_path = UNDERCROFT
+	GS.shared_checkpoint = "ch2_lift"
+	GS.set_flag("story_c2_arrival")
+	await _start_solo()
+	CHEATS.set_cheat("god_mode", true)
+	await _wait(1.0)
+	if CUTS.active:
+		CUTS._on_skip_pressed()
+	probe_level()
+	await _wait(25.0)
+	CHEATS.set_cheat("god_mode", false)
+
+## Chapter 2 played through like a person: the arrival, every room cleared
+## and picked over, the master clock, the Tallyman's hunt, the diesel, the
+## tannoy, the Warden, cranking the generator through its waves, the flood
+## door and the deep stacks. After the first area's route it carries on in
+## the same run (her bag from chapter 1); on its own (`only route2`) she
+## starts at the lift with what a player usually has by then.
+func _run_route2() -> void:
+	# Straight on from chapter 1's ride (the elevator scene sets the level),
+	# or chapter 2 on its own.
+	var chained: bool = GS.level_path == UNDERCROFT and GS.has_flag("story_elevator")
+	if not chained:
+		GS.reset_run()
+		GS.level_path = UNDERCROFT
+		GS.shared_checkpoint = "ch2_lift"
+		await _start_solo()
+		# About what's left at the end of chapter 1 (tools/balance_report.py).
+		p.inventory.add_weapon("m12")
+		p.inventory.add_ammo("9mm", 30)
+		p.inventory.add_ammo("shells", 8)
+		p.inventory.add_item("herb_green", 2)
+	else:
+		# Off the elevator: the new level loads, then its first scene.
+		await _until_t(func(): return _level() != null and _level().name == "Undercroft" and get_first_node_in_group("players") != null, 20.0)
+		await _wait(0.5)
+		p = get_first_node_in_group("players")
+		_prev_hp = p.hp
+		areas = AREAS2
+	if _level() == null or _level().name != "Undercroft":
+		_bug("chapter2", "chapter 2's level didn't load (%s)" % GS.level_path)
+		return
+	var t0 := sim_t
+	# ---- the arrival
+	if not await _until_t(func(): return CUTS.active, 12.0):
+		_bug("chapter2", "the arrival scene didn't start in the lift")
+	else:
+		await _wait_cutscene_end(4.0)
+	if not GS.has_flag("story_c2_arrival"):
+		_bug("chapter2", "arrival finished but story_c2_arrival not set")
+	var lift = get_first_node_in_group("vault_elevator")
+	if lift == null or not lift.is_open:
+		_bug("chapter2", "the lift doors didn't open after the arrival")
+	_shot("c2_lift")
+	p.equip("p9")
+	# Out of the car (the navmesh was baked with its doors shut).
+	await cross(Vector3(-1.3, 0, 3.0), Vector3(1.6, 0, 3.0), "the lift doors")
+	await pick_up("c2_lift_ammo")
+	# ---- the service tunnel
+	await clear_area("corridor", 120.0)
+	await pick_up("c2_corr_herb")
+	# ---- the engine hall: its scene, then the generator's three gaps
+	await go_to(Vector3(40.6, 0, 3.0), 40.0, true, "engine hall ")
+	if await _until_t(func(): return CUTS.active, 6.0):
+		await _wait_cutscene_end(3.0)
+	elif not GS.has_flag("story_c2_hall"):
+		_bug("chapter2", "walking into the engine hall didn't start its scene")
+	await clear_area("hall", 90.0)
+	for id in ["c2_hall_ammo", "c2_hall_powder", "c2_hall_fuel"]:
+		await pick_up(id)
+	var gen: Node = _level().find_child("GeneratorSet", true, false)
+	# ---- the keeper's lodge (the safe room)
+	await open_door("lodge_door", Vector3(11.0, 0, 3.4), Vector3(11.0, 1, 4.6))
+	await cross(Vector3(11.0, 0, 3.4), Vector3(11.0, 0, 6.0), "the lodge door")
+	_shot("c2_lodge")
+	for id in ["c2_ledger", "c2_lodge_ribbon", "c2_lodge_herb", "c2_lodge_shells"]:
+		await pick_up(id)
+	# ---- the survey room: the winding key
+	await cross(Vector3(11.0, 0, 6.0), Vector3(11.0, 0, 3.0), "the lodge door (out)")
+	await open_door("survey_door", Vector3(12.0, 0, 2.7), Vector3(12.0, 1, 1.4))
+	await cross(Vector3(12.0, 0, 2.7), Vector3(12.0, 0, 0.0), "the survey room door")
+	_shot("c2_survey")
+	await clear_area("survey", 90.0)
+	for id in ["c2_clock_key", "c2_survey_note", "c2_survey_ammo"]:
+		await pick_up(id)
+	if not p.inventory.key_items.has("clock_key"):
+		_bug("chapter2", "no winding key after the survey room")
+	# ---- the clock gallery and the master clock
+	await open_door("gallery_west_door", Vector3(20.1, 0, -4.4), Vector3(21.0, 1, -4.4))
+	await cross(Vector3(20.1, 0, -4.4), Vector3(22.2, 0, -4.4), "the gallery door")
+	_shot("c2_gallery")
+	await clear_area("gallery", 90.0)
+	for id in ["c2_gallery_shells", "c2_gallery_red"]:
+		await pick_up(id)
+	var clock: Node = _level().find_child("MasterClock", true, false)
+	var front: Vector3 = clock.global_position + clock.global_basis.z * 1.5
+	if not await go_to(front, 30.0, true, "master clock "):
+		await _warp(front, "to the master clock")
+	await face(clock.global_position + Vector3.UP * 1.1)
+	if await use_thing("Wind the master clock", "the master clock"):
+		await _wait(9.0)
+		if not GS.has_flag("c2_clock_open"):
+			_bug("chapter2", "wound the master clock and its drawer didn't open")
+	_shot("c2_clock")
+	await pick_up("c2_fuse")
+	if not p.inventory.key_items.has("fuse"):
+		_bug("chapter2", "no fuse after the master clock")
+	# ---- the hunt
+	if await _until_t(func(): return CUTS.active, 12.0):
+		await _wait_cutscene_end(3.0)
+	if not GS.has_flag("story_c2_hunt"):
+		_bug("chapter2", "taking the fuse didn't bring the Tallyman")
+	# ---- the coal yard: the diesel (he follows; she keeps moving)
+	await go_to(Vector3(57.0, 0, 2.0), 60.0, true, "the coal yard ")
+	_shot("c2_yard")
+	await clear_area("yard", 150.0)
+	for id in ["c2_diesel", "c2_yard_ammo", "c2_yard_shells", "c2_yard_herb"]:
+		await pick_up(id)
+	if not p.inventory.key_items.has("diesel_can"):
+		_bug("chapter2", "no diesel after the coal yard")
+	# ---- diesel and fuse in
+	await _gen_use(gen, Vector3(-0.1, 0, 0), Vector3(0, 0, 1), 1.0, "Pour in the diesel")
+	await _gen_use(gen, Vector3(0.7, 0, 0), Vector3(0, 0, 1), 1.9, "Fit the fuse")
+	if not (gen.fitted("fuel") and gen.fitted("fuse")):
+		_bug("chapter2", "diesel and fuse not both in the generator")
+	# ---- Hardass on the tannoy: it waits until she's clear of the Tallyman
+	if not await _evade_until(func(): return CUTS.active or GS.has_flag("story_c2_intercom"), 90.0):
+		_bug("chapter2", "the tannoy scene never started after the diesel and fuse (Tallyman %s)" % _stalker_where())
+	if CUTS.active:
+		await _wait_cutscene_end(3.0)
+	# ---- the muster room and the Warden
+	for tries in 3:
+		if GS.has_flag("c2_warden_dead"):
+			break
+		if not GS.has_flag("story_c2_warden"):
+			await open_door("muster_door", Vector3(26.1, 0, 3.4), Vector3(26.1, 1, 4.7))
+			await cross(Vector3(26.1, 0, 3.4), Vector3(26.1, 0, 6.4), "the muster room door")
+			if await _until_t(func(): return CUTS.active, 8.0):
+				await _wait_cutscene_end(4.0)
+			elif not GS.has_flag("story_c2_warden"):
+				_bug("chapter2", "walking into the muster room didn't start the Warden scene")
+				break
+		var b: Node = _level().get_node_or_null("Warden")
+		if b == null:
+			_bug("chapter2", "no Warden in the muster room after his scene")
+			break
+		_shot("c2_warden")
+		await fight_warden(b)
+		await _recover()
+	if not GS.has_flag("c2_warden_dead"):
+		_bug("chapter2", "couldn't beat the Warden")
+		CHEATS.set_cheat("one_hit_kills", true)
+		var b: Node = _level().get_node_or_null("Warden")
+		if b:
+			b.take_hit(9999.0, "p9", "torso", -b.global_basis.z)
+		await _wait(2.0)
+		CHEATS.set_cheat("one_hit_kills", false)
+	await _wait(2.0)
+	for id in ["c2_crank", "c2_muster_shells", "c2_muster_ammo", "c2_muster_herb"]:
+		await pick_up(id)
+	if not p.inventory.key_items.has("crank_handle") and not gen.fitted("crank"):
+		_bug("chapter2", "no starting handle after the Warden")
+	# Back out through the muster door (doors are walls to the navmesh).
+	await cross(Vector3(26.1, 0, 6.4), Vector3(26.1, 0, 3.0), "the muster room door (out)")
+	# ---- crank it, seeing off the waves
+	await _gen_use(gen, Vector3(-2.0, 0, 0), Vector3(-1, 0, 0), 1.1, "Fit the starting handle")
+	await _crank(gen, 300.0)
+	if not gen.running():
+		_bug("chapter2", "the generator never caught (progress %.2f)" % gen.progress)
+		return
+	_shot("c2_power")
+	await _wait(6.0)
+	if not GS.has_flag("c2_flood_open"):
+		_bug("chapter2", "the generator runs and the flood door stayed down")
+	# ---- the deep stacks
+	await clear_area("hall", 60.0)
+	await go_to(Vector3(46.0, 0, 14.5), 40.0, true, "the deep stacks ")
+	if await _until_t(func(): return CUTS.active, 8.0):
+		await _wait_cutscene_end(4.0)
+	await pick_up("c2_stacks_ammo")
+	if not GS.has_flag("c2_complete"):
+		_bug("chapter2", "reached the deep stacks and chapter 2 didn't finish")
+	_note("chapter 2 done in %.0fs, hp %.0f, bag %s" % [sim_t - t0, p.hp, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+
+func _stalker_where() -> String:
+	var st = get_first_node_in_group("stalker")
+	if st == null or not st.active:
+		return "gone"
+	return "%.1f m away" % st.global_position.distance_to(p.global_position)
+
+## Away from the Tallyman until `cond` holds: to whichever of a few far-off
+## spots is furthest from him, again and again (he walks slower than she runs).
+func _evade_until(cond: Callable, max_t: float) -> bool:
+	var spots := [Vector3(8.5, 0, 3.0), Vector3(36.0, 0, 3.0), Vector3(66.0, 0, 3.0), Vector3(46.0, 0, -4.5), Vector3(28.0, 0, -6.0)]
+	var end := sim_t + max_t
+	while sim_t < end:
+		if cond.call():
+			return true
+		var st = get_first_node_in_group("stalker")
+		var from: Vector3 = st.global_position if st and st.active else p.global_position
+		var best: Vector3 = spots[0]
+		for s in spots:
+			if s.distance_to(from) > best.distance_to(from):
+				best = s
+		var leg_end := sim_t + 10.0
+		var path := _path(best)
+		var i := 0
+		while sim_t < leg_end and i < path.size() and not cond.call():
+			var to: Vector3 = path[i] - p.global_position
+			to.y = 0.0
+			if to.length() < 0.45:
+				i += 1
+				continue
+			_steer(to, true)
+			await physics_frame
+		_stop()
+		await _wait(0.5)
+		await _recover()
+	return cond.call()
+
+## One of the generator's parts, through its real prompt.
+func _gen_use(gen: Node, local: Vector3, n: Vector3, dist: float, expect: String) -> bool:
+	var at: Vector3 = gen.global_transform * local
+	var stand: Vector3 = Vector3(at.x, 0, at.z) + n * dist
+	# Drops from the waves lying where she stands would take the prompt:
+	# a player picks them up first.
+	for pk in get_nodes_in_group("pickups"):
+		if is_instance_valid(pk) and not pk._taken and Vector2(pk.global_position.x - stand.x, pk.global_position.z - stand.z).length() < 1.6:
+			await pick_up_node(pk)
+	if not await go_to(stand, 40.0, true, expect + " "):
+		await _warp(stand, "to the generator (" + expect + ")")
+	await face(Vector3(at.x, 1.0, at.z))
+	_stop()
+	await _wait(0.2)
+	# Something dropped at her feet since: take it, like a player would.
+	for i in 3:
+		if not p._prompt_text.begins_with("Pick up"):
+			break
+		p.interact()
+		await _wait(0.6)
+		await face(Vector3(at.x, 1.0, at.z))
+	return await use_thing(expect, "the generator")
+
+## Heave the handle; let go to see off anything that comes close, then go
+## back to it (in co-op the partner covers; solo she has to do both).
+func _crank(gen: Node, max_t: float) -> void:
+	var end := sim_t + max_t
+	var lets_go := 0
+	while sim_t < end and not gen.running():
+		await _recover()
+		var z := _threat(7.0)
+		if z:
+			if p.working == "crank":
+				lets_go += 1
+			p.stop_work()
+			await fight(z)
+			continue
+		if p.working != "crank":
+			await _gen_use(gen, Vector3(-2.0, 0, 0), Vector3(-1, 0, 0), 1.1, "Crank the engine")
+			if p.working != "crank":
+				_bug("chapter2", "'Crank the engine' didn't put her on the handle")
+				return
+		await _wait(0.25)
+	_note("cranking: %.0f s, let go %d times to fight, waves %d, progress %.2f" % [max_t - (end - sim_t), lets_go, gen._waves_done, gen.progress])
+
+## Just the Warden fight, the bot's way (for working on his fight):
+## `-- only warden2`.
+func _run_warden2() -> void:
+	GS.reset_run()
+	for f in ["story_c2_arrival", "c2_arrival", "story_c2_hall", "story_c2_hunt", "c2_hunt", "c2_hunt_over", "story_c2_intercom", "story_c2_warden", "c2_clock_open", "taken:c2_fuse"]:
+		GS.set_flag(f)
+	GS.level_path = UNDERCROFT
+	GS.shared_checkpoint = "ch2_lift"
+	await _start_solo()
+	p.inventory.add_weapon("m12")
+	p.inventory.add_ammo("9mm", 45)
+	p.inventory.add_ammo("shells", 12)
+	p.inventory.add_item("herb_green", 2)
+	var b: Node = _level().get_node_or_null("Warden")
+	if b == null:
+		_bug("chapter2", "no Warden in the muster room on a load")
+		return
+	await _warp(Vector3(26.0, 0, 6.4), "into the muster room")
+	await fight_warden(b)
+	if not GS.has_flag("c2_warden_dead"):
+		_bug("chapter2", "couldn't beat the Warden")
+
+## The Warden: legs while the shield is up (or round to the growth on his
+## back), anything once it's gone, the growth whenever he kneels, and keep
+## out of his reach.
+func fight_warden(b: Node) -> bool:
+	if _busy_fighting or not is_instance_valid(b):
+		return false
+	_busy_fighting = true
+	_fight_kind = "warden"
+	var end := sim_t + 240.0
+	var hp0: float = b.hp
+	var last_hp: float = b.hp
+	var progress_t := sim_t
+	var gun := _best_gun()
+	if gun != "":
+		p.equip(gun)
+	while sim_t < end and is_instance_valid(b) and b.state != ZS.DEAD and not p.downed:
+		if p.hp < 45.0:
+			_heal()
+		var to: Vector3 = b.global_position - p.global_position
+		to.y = 0.0
+		var dist: float = to.length()
+		var kneeling: bool = b._act == "kneel"
+		var zone := "torso"
+		if kneeling:
+			zone = "wound"
+		elif b._shield_hp > 0.0:
+			zone = "leg"
+		var aim_pt: Vector3 = b.global_position + Vector3.UP * 1.2
+		for a in b._hitboxes:
+			if is_instance_valid(a) and a.get_meta("hit_zone", "") == zone:
+				aim_pt = a.global_position
+		var err: float = _aim_at(aim_pt)
+		p.aiming = true
+		# Keep 4 to 7 m off him, circling so his charge goes into a wall.
+		var side := to.cross(Vector3.UP).normalized() * (1.0 if int(sim_t / 3.0) % 2 == 0 else -1.0)
+		if dist < 4.0 and not kneeling:
+			_steer(-to.normalized() + side * 0.6, false, false)
+		elif dist > 8.0:
+			_steer(to.normalized() + side * 0.5, false, false)
+		else:
+			p.move_input = Vector2.ZERO
+		var q := PhysicsRayQueryParameters3D.create(p.camera.global_position, aim_pt, 1 | 8, [p.get_rid()])
+		q.collide_with_areas = true
+		var hit: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(q)
+		var clear: bool = hit.is_empty() or (hit.collider is Area3D and hit.collider.get_meta("enemy", null) == b)
+		p.fire_held = err < (2.5 if dist < 5.0 else 1.6) and p._reloading <= 0.0 and clear
+		if OS.has_environment("WARDEN_DEBUG") and Engine.get_physics_frames() % 60 == 0:
+			print("WDBG t=%.1f dist %.1f err %.1f clear %s hit %s gun %s mag %d fire %s act '%s' zone %s" % [sim_t, dist, err, clear, (str(hit.collider.name) + ":" + str(hit.collider.get_meta("hit_zone", ""))) if not hit.is_empty() else "-", p.inventory.equipped, p.inventory.mag.get(p.inventory.equipped, 0), p.fire_held, b._act, zone])
+		var w: Dictionary = WeaponDB.WEAPONS.get(p.inventory.equipped, {})
+		if w.has("ammo") and p.inventory.mag.get(p.inventory.equipped, 0) == 0 and p.inventory.ammo_count(w["ammo"]) == 0:
+			var g := _best_gun()
+			if g == "" or g == "knife" or g == p.inventory.equipped:
+				_note("out of ammo against the Warden at hp %.0f of %.0f" % [b.hp, b.max_hp])
+				break
+			p.equip(g)
+		if b.hp < last_hp:
+			last_hp = b.hp
+			progress_t = sim_t
+		if sim_t - progress_t > 25.0:
+			_note("no damage on the Warden for 25 s (hp %.0f, act '%s', shield %.0f)" % [b.hp, b._act, b._shield_hp])
+			break
+		await physics_frame
+	_stop()
+	_busy_fighting = false
+	_fight_kind = ""
+	var won: bool = is_instance_valid(b) and b.state == ZS.DEAD
+	_note("Warden fight: hp %.0f -> %.0f in %.0f s, she has hp %.0f%s" % [hp0, b.hp if is_instance_valid(b) else 0.0, 240.0 - (end - sim_t), p.hp, ", won" if won else ""])
+	if won:
+		_kills["warden"] = 1
+	return won
+
 # ---------------------------------------------------------------- weapons
 
 ## Every weapon: it fires (or swings / throws), makes a sound, uses ammo and
 ## hurts an infected standing in front of her.
 func _run_weapons() -> void:
-	if p == null or not is_instance_valid(p) or _level() == null:
+	if p == null or not is_instance_valid(p) or _level() == null or GS.level_path == UNDERCROFT:
 		GS.reset_run()
+		GS.level_path = "res://scenes/levels/archive_hub.tscn"
 		GS.set_flag("story_intro")
 		await _start_solo()
 	CHEATS.set_cheat("all_weapons", true)
@@ -1595,8 +2000,9 @@ func _collect_audio(n: Node, out: Array) -> void:
 # ---------------------------------------------------------------- bag
 
 func _run_bag() -> void:
-	if p == null or not is_instance_valid(p) or _level() == null:
+	if p == null or not is_instance_valid(p) or _level() == null or GS.level_path == UNDERCROFT:
 		GS.reset_run()
+		GS.level_path = "res://scenes/levels/archive_hub.tscn"
 		GS.set_flag("story_intro")
 		await _start_solo()
 	var hud := _hud()
@@ -1664,8 +2070,9 @@ func _find_by_method(n: Node, m: String) -> Node:
 # ---------------------------------------------------------------- saves
 
 func _run_save() -> void:
-	if p == null or not is_instance_valid(p) or _level() == null:
+	if p == null or not is_instance_valid(p) or _level() == null or GS.level_path == UNDERCROFT:
 		GS.reset_run()
+		GS.level_path = "res://scenes/levels/archive_hub.tscn"
 		GS.set_flag("story_intro")
 		await _start_solo()
 	var cp: String = GS.shared_checkpoint
@@ -1707,8 +2114,9 @@ func _norm(v: Variant) -> String:
 ## Solo death: she goes down, the game over screen comes, Continue puts her
 ## back at the checkpoint with the run as it was there, not an old save.
 func _run_death() -> void:
-	if p == null or not is_instance_valid(p) or _level() == null:
+	if p == null or not is_instance_valid(p) or _level() == null or GS.level_path == UNDERCROFT:
 		GS.reset_run()
+		GS.level_path = "res://scenes/levels/archive_hub.tscn"
 		GS.set_flag("story_intro")
 		await _start_solo()
 	# A stale autosave from some other run sits on the phone.

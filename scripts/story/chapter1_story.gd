@@ -5,7 +5,8 @@ extends Node3D
 ## the shelter banner, Warden Hardass in the archivist's office, the first
 ## sighting of the Tallyman through the reading room's frosted glass, and the
 ## ride down in the vault elevator once the power is back (BreakerPanel,
-## VaultElevator), where this build's chapter 1 ends.
+## VaultElevator), where chapter 1 ends and the game goes on to chapter 2,
+## the Undercroft (Chapter2Story).
 ##
 ## ArchiveHub adds one of these. Cutscenes asks cutscene(id) for a scene's steps
 ## and calls on_cutscene_end(id) on every phone when it ends or is skipped;
@@ -27,7 +28,9 @@ const HARDASS_REST := Vector3(18.9, 0.0, 6.0)
 ## way down to the records vault", which never said where the power was.
 const OBJ_POWER := "Get the power on: the breaker is in the boiler room, through the vault"
 const OBJ_LIFT := "Take the vault elevator down"
-const OBJ_END := "End of chapter 1 in this build. Chapter 2 starts from the elevator"
+## Chapter 2 starts where the elevator stops.
+const NEXT_LEVEL := "res://scenes/levels/undercroft.tscn"
+const NEXT_CHECKPOINT := "ch2_lift"
 const OBJ_OLD_WARDEN := "Find a way down to the records vault"
 
 ## Story triggers, checked by the host. A scene starts when a player walks
@@ -65,6 +68,11 @@ func _ready() -> void:
 	_restore_objective.call_deferred()
 
 func _restore_objective() -> void:
+	# A save from after the ride (older builds put them back in the vault
+	# with nowhere to go): on to chapter 2.
+	if GameState.has_flag("story_elevator"):
+		_to_chapter2()
+		return
 	# Saves from before the breaker worked still carry the old, vague goal.
 	if GameState.has_flag("story_warden") and GameState.world_flags.get("objective", "") == OBJ_OLD_WARDEN:
 		GameState.world_flags["objective"] = OBJ_LIFT if VaultCircuit.is_on() else OBJ_POWER
@@ -151,10 +159,7 @@ func on_cutscene_end(id: String) -> void:
 				hud.toast("Got: Vault elevator key card")
 			Cutscenes.set_objective(OBJ_LIFT if VaultCircuit.is_on() else OBJ_POWER)
 		"elevator":
-			var lift := _lift()
-			if lift:
-				lift.reopen_after_ride()
-			Cutscenes.set_objective(OBJ_END)
+			_to_chapter2()
 
 ## Prologue: the narrated film, the crash film, then the street in the engine.
 func _intro() -> Array:
@@ -295,8 +300,8 @@ func _warden() -> Array:
 	]
 
 ## The vault elevator: the doors shut on the vault, the car drops, the light
-## dies. The end of chapter 1 for now (chapter 2 isn't built yet), so the
-## scene ends with the two of them back at the open doors.
+## dies, and the car hits the bottom in the dark. Chapter 2 picks up from
+## there, in the Undercroft (on_cutscene_end loads it on both phones).
 func _elevator() -> Array:
 	var lift := _lift()
 	if lift == null:
@@ -326,10 +331,15 @@ func _elevator() -> Array:
 		{"do": "shake", "amount": 0.03, "t": 0.5},
 		{"do": "wait", "t": 0.7},
 		{"do": "fade", "to": 1.0, "t": 0.5},
-		{"do": "sfx", "file": SFX % "title_hit", "vol": -8.0},
-		{"do": "chapter", "num": "END OF CHAPTER 1", "name": "TO BE CONTINUED", "t": 4.6},
-		{"do": "wait", "t": 0.4},
+		{"do": "wait", "t": 1.2},
 	]
+
+## Into chapter 2 on every phone. Also for a save made after the ride in an
+## older build, which still put them back in the vault.
+func _to_chapter2() -> void:
+	var level := get_tree().get_first_node_in_group("level")
+	if level and level.has_method("change_level"):
+		level.change_level(NEXT_LEVEL, NEXT_CHECKPOINT)
 
 func _lift() -> Node:
 	return get_tree().get_first_node_in_group("vault_elevator")

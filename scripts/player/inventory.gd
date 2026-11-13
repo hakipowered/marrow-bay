@@ -162,6 +162,12 @@ func add_key(id: String) -> void:
 		key_items.append(id)
 		changed.emit()
 
+## A key item used up (the diesel poured in, the fuse fitted).
+func remove_key(id: String) -> void:
+	if key_items.has(id):
+		key_items.erase(id)
+		changed.emit()
+
 func add_file(id: String) -> void:
 	if not files.has(id):
 		files.append(id)
