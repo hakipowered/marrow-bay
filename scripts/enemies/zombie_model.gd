@@ -701,8 +701,9 @@ func land() -> void:
 	_clip = clip
 	_anim.play(clip, 0.15)
 	if _deaths:
-		_anim.seek(maxf(death_land(_lying) - 0.45, 0.0), true)
-		_anim.speed_scale = 1.3
+		# Already folding when it hits: on the floor a beat later.
+		_anim.seek(maxf(death_land(_lying) - 0.2, 0.0), true)
+		_anim.speed_scale = 1.2
 	else:
 		_anim.seek(1.7, true)
 		_anim.speed_scale = 1.5
