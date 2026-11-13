@@ -37,6 +37,7 @@ SOUNDS = {
     "hound_alert": (2, 1.2, -16, "a rabid dog's sudden vicious bark and snarl"),
     "hound_attack": (2, 0.9, -15, "a rabid dog lunging and snapping its jaws, savage snarl"),
     "hound_death": (2, 1.6, -18, "a monstrous dog's dying yelp fading into a gurgle"),
+    "hound_hurt": (3, 0.8, -16, "a big vicious dog hit hard: a sharp pained yelp snapping straight back into a snarl"),
     # Mutated infected (spitter, ventling)
     "mutant_idle": (2, 2.4, -20, "a mutated creature's wet clicking throat and slimy breathing"),
     "mutant_chase": (2, 1.8, -18, "a mutated creature's shrill chittering screech while running"),

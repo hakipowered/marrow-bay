@@ -3,8 +3,10 @@ extends Node3D
 ## Enemy body. Human infected use a rigged, animated scanned model
 ## (res://assets/characters/enemies/<model>/<model>.glb plus <model>_anims.res),
 ## made infected by shaders/infected_body.gdshader. The clip follows the synced
-## `state`, so both players see the same thing. Types with no model yet (hound,
-## larva, brood mother) build a stand-in whose silhouette matches the type.
+## `state`, so both players see the same thing. The hound has its own scanned,
+## rigged dog (shaders/infected_hound.gdshader; clips from tools/hound/).
+## Types with no model yet (larva, brood mother) are never spawned
+## (EnemyDB.has_model); the stand-in builders below are only for tests.
 
 var variant := "shambler"
 var look := "office"
@@ -21,6 +23,10 @@ var _loop_offset := 0.0
 var _speed_var := 1.0
 var _wander_clip := "shamble"
 var _mat: ShaderMaterial
+var _hound := false
+var _skel: Skeleton3D = null
+var _bone_att := {}
+var _last_state := -1
 
 ## Which scanned model each look uses (several looks share one body).
 const MODEL_FOR_LOOK := {
@@ -51,6 +57,8 @@ const SHIELD_OFFSET := Vector3(0.0, 0.16, 0.09)
 const SHIELD_ROT := Vector3(0, 0, 0)
 ## Native speed of each moving clip in m/s, so feet don't slide.
 const CLIP_SPEED := {"shamble": 0.75, "walk": 1.3, "run": 3.6, "sprint": 5.0, "crawl": 0.5}
+## The hound's gaits (tools/hound/animate.py): walk, trot, gallop.
+const HOUND_CLIP_SPEED := {"walk": 1.0, "trot": 2.5, "run": 4.1}
 static var _mesh_cache := {}
 
 const LOOK_COLORS := {
@@ -78,12 +86,12 @@ const LOOK_COLORS := {
 }
 
 func _ready() -> void:
-	if not data.get("quadruped") and not data.get("tiny") and variant != "brood_mother" and _load_rigged():
+	if not data.get("tiny") and variant != "brood_mother" and _load_rigged():
 		return
-	var c: Array = LOOK_COLORS.get(look, LOOK_COLORS["office"])
 	if data.get("quadruped"):
-		_build_hound(c)
-	elif data.get("crawl"):
+		return   # no hound model: EnemyDB.has_model keeps it out of the game
+	var c: Array = LOOK_COLORS.get(look, LOOK_COLORS["office"])
+	if data.get("crawl"):
 		_build_crawler(c)
 	else:
 		_build_biped(c)
@@ -103,8 +111,13 @@ func _ready() -> void:
 
 func _load_rigged() -> bool:
 	var id: String = MODEL_FOR_LOOK.get(look, MODEL_FOR_LOOK.get(variant, "mechanic"))
+	_hound = data.get("quadruped", false)
+	if _hound:
+		id = "hound"
 	var own := true
 	if not ResourceLoader.exists("res://assets/characters/enemies/%s/%s.glb" % [id, id]):
+		if _hound:
+			return false
 		id = "mechanic"
 		own = false
 	var path := "res://assets/characters/enemies/%s/%s.glb" % [id, id]
@@ -127,6 +140,7 @@ func _load_rigged() -> bool:
 	ClipFix.fix_library(lib)
 	_anim.add_animation_library("", lib)
 	_rigged = true
+	_skel = m.find_child("Skeleton3D", true, false) as Skeleton3D
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(str(get_parent().name) + look) if get_parent() else randi()
 	_loop_offset = rng.randf()
@@ -292,7 +306,7 @@ func _infect(mi: MeshInstance3D, id: String, rnd: float) -> void:
 	var std := mi.get_active_material(0) as StandardMaterial3D
 	mi.mesh = _mesh_cache[key]
 	_mat = ShaderMaterial.new()
-	_mat.shader = preload("res://shaders/infected_body.gdshader")
+	_mat.shader = preload("res://shaders/infected_hound.gdshader") if id == "hound" else preload("res://shaders/infected_body.gdshader")
 	if std:
 		_mat.set_shader_parameter("albedo_tex", std.albedo_texture)
 		_mat.set_shader_parameter("has_normal", std.normal_enabled and std.normal_texture != null)
@@ -360,10 +374,13 @@ func _animate_rigged(state: int, speed: float, crippled: bool) -> void:
 	var dt := get_process_delta_time()
 	# A swing starting always shows from its first frame (the strike is timed
 	# from it), even if a scream or a flinch was still finishing.
-	if state == Zombie.S.ATTACK and _clip != "attack" and not (crippled or data.get("crawl")):
+	if state == Zombie.S.ATTACK and _clip not in ["attack", "lunge", "bite"] and not (crippled or data.get("crawl")):
 		_oneshot = 0.0
 	if _oneshot > 0.0:
 		_oneshot -= dt
+		return
+	if _hound:
+		_animate_hound(state, speed)
 		return
 	var runner: bool = data.get("runner", false) or variant in ["runner", "hound"]
 	match state:
@@ -407,6 +424,39 @@ func _animate_rigged(state: int, speed: float, crippled: bool) -> void:
 					clip = "walk"
 				# Clip speed follows the ground speed so the feet don't skate.
 				_play(clip, 0.3, clampf(speed / CLIP_SPEED[clip], 0.5, 1.8), true)
+
+## The hound: idles or feeds on a kill, walks, trots or gallops by pace, leaps
+## at you when it comes in at a gallop or snaps when it's already close, and
+## reels from a hit. The bite lands on the clip's 1.5 s mark like a swing.
+func _animate_hound(state: int, speed: float) -> void:
+	var entered := state != _last_state
+	_last_state = state
+	match state:
+		Zombie.S.IDLE, Zombie.S.HIDDEN:
+			_play("idle", 0.4, _speed_var * 0.9, true)
+		Zombie.S.FEED:
+			_play("feed", 0.4, _speed_var, true)
+		Zombie.S.ATTACK:
+			if entered or _clip not in ["lunge", "bite"]:
+				var at := Zombie.attack_timing(data)
+				var clip := "lunge" if _clip in ["run", "lunge"] and entered else "bite"
+				_clip = ""
+				_play(clip, 0.08, at["speed"])
+				_anim.seek(at["from"], true)
+		Zombie.S.STAGGER:
+			_play("hit", 0.1, 0.8)
+		Zombie.S.DEAD, Zombie.S.PLAY_DEAD:
+			pass
+		_:
+			if speed < 0.15:
+				_play("idle", 0.3, _speed_var * 0.9, true)
+			else:
+				var clip := "walk"
+				if speed > 3.0 or state == Zombie.S.CHARGE:
+					clip = "run"
+				elif speed > 1.5:
+					clip = "trot"
+				_play(clip, 0.22, clampf(speed / HOUND_CLIP_SPEED[clip], 0.6, 1.8), true)
 
 func _mesh(kind: String, size: Vector3, pos: Vector3, color: Color, rough := 0.85) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -461,16 +511,22 @@ func _build_crawler(c: Array) -> void:
 	_parts["arm_l"].rotation.x = -1.4
 	_parts["arm_r"].rotation.x = -1.4
 
-func _build_hound(c: Array) -> void:
-	_parts["torso"] = _mesh("cap", Vector3(0.3, 0.85, 0.3), Vector3(0, 0.55, 0), c[0])
-	_parts["torso"].rotation.x = PI / 2
-	_parts["head"] = _mesh("box", Vector3(0.2, 0.2, 0.32), Vector3(0, 0.65, -0.55), c[2])
-	for x in [-0.12, 0.12]:
-		for z in [-0.3, 0.3]:
-			_parts["leg_%s_%s" % [x, z]] = _mesh("cap", Vector3(0.08, 0.5, 0.08), Vector3(x, 0.25, z), c[1])
+## Hitboxes that ride on a bone (the hound's), so a leaping, reeling or dead
+## hound is hit where its body actually is. False if there's no such bone.
+func attach_hitbox(bone: String, area: Area3D) -> bool:
+	if _skel == null or _skel.find_bone(bone) < 0:
+		return false
+	var att: BoneAttachment3D = _bone_att.get(bone)
+	if att == null:
+		att = BoneAttachment3D.new()
+		att.bone_name = bone
+		_skel.add_child(att)
+		_bone_att[bone] = att
+	att.add_child(area)
+	return true
 
-func attach_hitbox(_zone: String, _area: Area3D) -> void:
-	pass  # hitboxes are created on the Zombie body itself
+func has_bones() -> bool:
+	return _skel != null
 
 func animate(state: int, speed: float, crippled: bool, head_gone: bool) -> void:
 	if _rigged:
@@ -531,6 +587,15 @@ func drop_from_ceiling() -> void:
 
 func die(_head_gone: bool) -> void:
 	_dead = true
+	if _hound and _anim:
+		# Shot down at full tilt its legs fold under it; otherwise it rolls
+		# onto one side or the other.
+		var pick := "death_collapse"
+		if _clip not in ["run", "trot", "lunge"]:
+			pick = "death" if hash(str(get_parent().name)) % 2 == 0 else "death_left"
+		_anim.speed_scale = randf_range(0.95, 1.1)
+		_anim.play(pick, 0.12)
+		return
 	if _anim and _anim.has_animation("death"):
 		_anim.speed_scale = randf_range(0.95, 1.2)
 		_anim.play("death", 0.1)

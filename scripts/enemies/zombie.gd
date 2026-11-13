@@ -55,6 +55,31 @@ static var _last_groan_ms := 0
 var agent: NavigationAgent3D
 var model: ZombieModel
 var _hitboxes: Array = []
+## The partner's phone only receives positions; it measures the pace from them
+## so the walk, run and gallop clips play there too.
+var _anim_pos := Vector3.INF
+var _anim_speed := 0.0
+
+## The hound's hitboxes ride on its bones: zone, bone, centre along the bone
+## (m), box size. The ribcage comes first (aim assist aims at the first torso
+## box). Cross-sections are square so the boxes fit whatever the bone's roll.
+const HOUND_ZONES := [
+	["torso", "spine2", 0.06, Vector3(0.33, 0.30, 0.33)],
+	["torso", "chest", 0.05, Vector3(0.32, 0.16, 0.32)],
+	["torso", "spine1", 0.07, Vector3(0.31, 0.17, 0.31)],
+	["torso", "pelvis", 0.12, Vector3(0.30, 0.28, 0.30)],
+	["torso", "neck1", 0.06, Vector3(0.21, 0.16, 0.21)],
+	["head", "neck2", 0.06, Vector3(0.18, 0.12, 0.18)],
+	["head", "head", 0.11, Vector3(0.20, 0.27, 0.20)],
+	["leg", "upperarm_L", 0.08, Vector3(0.1, 0.18, 0.1)],
+	["leg", "upperarm_R", 0.08, Vector3(0.1, 0.18, 0.1)],
+	["leg", "forearm_L", 0.13, Vector3(0.08, 0.27, 0.08)],
+	["leg", "forearm_R", 0.13, Vector3(0.08, 0.27, 0.08)],
+	["leg", "thigh_L", 0.09, Vector3(0.13, 0.2, 0.13)],
+	["leg", "thigh_R", 0.09, Vector3(0.13, 0.2, 0.13)],
+	["leg", "shin_L", 0.13, Vector3(0.08, 0.27, 0.08)],
+	["leg", "shin_R", 0.13, Vector3(0.08, 0.27, 0.08)],
+]
 
 func _ready() -> void:
 	add_to_group("zombies")
@@ -110,6 +135,15 @@ func _ready() -> void:
 
 ## Precise hitboxes sized to the body parts, not one big capsule.
 func _build_hitboxes(h: float) -> void:
+	if data.get("quadruped") and model.has_bones():
+		for z in HOUND_ZONES:
+			var a := _zone_area(z[0], z[3])
+			a.position = Vector3(0, z[2], 0)
+			if model.attach_hitbox(z[1], a):
+				_hitboxes.append(a)
+			else:
+				a.free()
+		return
 	var b: float = data.get("bulk", 1.0)
 	var zones := [
 		["head", Vector3(0, 1.62, 0.04), Vector3(0.24, 0.27, 0.26)],
@@ -119,29 +153,38 @@ func _build_hitboxes(h: float) -> void:
 		["leg", Vector3(-0.12, 0.45, 0), Vector3(0.16, 0.9, 0.16)],
 		["leg", Vector3(0.12, 0.45, 0), Vector3(0.16, 0.9, 0.16)],
 	]
-	if data.get("quadruped"):
-		zones = [["head", Vector3(0, 0.6, -0.55), Vector3(0.22, 0.22, 0.3)], ["torso", Vector3(0, 0.55, 0), Vector3(0.3, 0.32, 0.8)], ["leg", Vector3(0, 0.22, 0), Vector3(0.3, 0.44, 0.7)]]
-	elif data.get("crawl"):
+	if data.get("crawl"):
 		zones = [["head", Vector3(0, 0.3 * h, -0.7 * h), Vector3(0.24, 0.24, 0.26) * h], ["torso", Vector3(0, 0.25 * h, -0.2 * h), Vector3(0.44, 0.3, 0.7) * h], ["arm", Vector3(0, 0.15 * h, -0.8 * h), Vector3(0.6, 0.15, 0.3) * h]]
 	for z in zones:
-		var a := Area3D.new()
-		a.collision_layer = 8
-		a.collision_mask = 0
-		a.monitoring = false
-		a.set_meta("hit_zone", z[0])
-		a.set_meta("enemy", self)
-		a.set_meta("owner_path", str(name))
-		var cs := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = z[2] if (data.get("quadruped") or data.get("crawl")) else z[2] * Vector3(1, h, 1)
-		cs.shape = box
-		a.position = z[1] if (data.get("quadruped") or data.get("crawl")) else z[1] * Vector3(1, h, 1)
-		a.add_child(cs)
+		var a := _zone_area(z[0], z[2] if data.get("crawl") else z[2] * Vector3(1, h, 1))
+		a.position = z[1] if data.get("crawl") else z[1] * Vector3(1, h, 1)
 		add_child(a)
 		_hitboxes.append(a)
 
+func _zone_area(zone: String, size: Vector3) -> Area3D:
+	var a := Area3D.new()
+	a.collision_layer = 8
+	a.collision_mask = 0
+	a.monitoring = false
+	a.set_meta("hit_zone", zone)
+	a.set_meta("enemy", self)
+	a.set_meta("owner_path", str(name))
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	cs.shape = box
+	a.add_child(cs)
+	return a
+
 func _physics_process(delta: float) -> void:
-	model.animate(state, velocity.length(), crippled, head_gone)
+	var pace := velocity.length()
+	if not multiplayer.is_server():
+		if _anim_pos != Vector3.INF and delta > 0.0:
+			var moved := (global_position - _anim_pos) * Vector3(1, 0, 1)
+			_anim_speed = lerpf(_anim_speed, moved.length() / delta, 0.15)
+		_anim_pos = global_position
+		pace = _anim_speed
+	model.animate(state, pace, crippled, head_gone)
 	_groan_t -= delta
 	# Only the host voices groans; the RPC plays them on every phone. Each
 	# one is followed by a pause, and only one of the horde starts at a time.
@@ -538,7 +581,7 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 			_set_stagger(0.5)
 		elif state in [S.CHASE, S.CRAWL, S.WANDER]:
 			_flinch_t = 0.55
-	_rpc_hit_fx.rpc(zone, flinch)
+	_rpc_hit_fx.rpc(zone, flinch and hp > 0)
 	if hp <= 0:
 		_die()
 
@@ -595,7 +638,9 @@ func _rpc_die() -> void:
 @rpc("authority", "unreliable", "call_local")
 func _rpc_hit_fx(zone: String, flinch := false) -> void:
 	model.hit_react(zone, flinch)
-	Sfx.play_at("flesh_hit", global_position + Vector3.UP, "", -4.0, 6.0)
+	Sfx.play_at("flesh_hit", global_position + Vector3.UP * (0.55 if data.get("quadruped") else 1.0), "", -4.0, 6.0)
+	if flinch and data.get("quadruped") and state != S.DEAD:
+		Sfx.voice("hound_hurt", self, 2.0, 3.0, 24.0)
 
 @rpc("authority", "unreliable", "call_local")
 func _shield_block(cracked: float) -> void:
