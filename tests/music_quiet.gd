@@ -6,8 +6,9 @@ extends SceneTree
 ##  1. Exploring the reading room, the hall's west end and the diner street
 ##     with the Tallyman asleep: no music.
 ##  2. Infected chasing her from behind a wall: no music.
-##  3. A brute and two more chasing her in plain sight: the action track.
-##  4. The Tallyman awake and on her: the action track.
+##  3. A brute and two more chasing her in plain sight: a fight (the fight
+##     track, none for now: Music.FIGHT_TRACK).
+##  4. The Tallyman awake and on her: a fight.
 ## Prints MUSIC QUIET OK, or MUSIC QUIET FAIL with the reasons.
 var frames := 0
 var stage := 0
@@ -58,6 +59,8 @@ func _process(d: float) -> bool:
 			var tr: String = music.current_track()
 			if tr != "":
 				heard[tr] = true
+			if music.fighting():
+				heard["(fight)"] = true
 			if t > 4.0:
 				notes.append("exploring at %s: threat %.1f, track '%s'" % [str(spots[spot]), music.threat, tr])
 				if not heard.is_empty():
@@ -90,8 +93,10 @@ func _process(d: float) -> bool:
 						z.state = z.S.CHASE
 			if music.current_track() != "":
 				heard[music.current_track()] = true
+			if music.fighting():
+				heard["(fight)"] = true
 			if t > 4.0:
-				notes.append("brute and two shamblers behind a wall: threat %.1f, track '%s'" % [music.threat, music.current_track()])
+				notes.append("brute and two shamblers behind a wall: threat %.1f, track '%s', fight %s" % [music.threat, music.current_track(), music.fighting()])
 				if not heard.is_empty():
 					fails.append("music %s for infected behind a wall" % str(heard.keys()))
 				heard.clear()
@@ -110,9 +115,9 @@ func _process(d: float) -> bool:
 					if z.state != z.S.ATTACK:
 						z.state = z.S.CHASE
 			if t > 3.0:
-				notes.append("brute and two shamblers in sight: threat %.1f, track '%s'" % [music.threat, music.current_track()])
-				if music.current_track() != "action":
-					fails.append("no action music for a brute in plain sight")
+				notes.append("brute and two shamblers in sight: threat %.1f, track '%s', fight %s" % [music.threat, music.current_track(), music.fighting()])
+				if not music.fighting() or music.current_track() != music.FIGHT_TRACK:
+					fails.append("a brute in plain sight isn't a fight")
 				_clear()
 				t = 0.0
 				stage = 6
@@ -130,9 +135,9 @@ func _process(d: float) -> bool:
 			var st = get_first_node_in_group("stalker")
 			p.global_position = st.global_position + Vector3(4, 0, 0)
 			if t > 3.0:
-				notes.append("Tallyman awake 4 m away: threat %.1f, track '%s'" % [music.threat, music.current_track()])
-				if music.current_track() != "action":
-					fails.append("no music with the Tallyman awake and on her")
+				notes.append("Tallyman awake 4 m away: threat %.1f, track '%s', fight %s" % [music.threat, music.current_track(), music.fighting()])
+				if not music.fighting() or music.current_track() != music.FIGHT_TRACK:
+					fails.append("the awake Tallyman on her isn't a fight")
 				stage = 8
 		8:
 			for n in notes:

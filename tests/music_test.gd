@@ -32,19 +32,19 @@ func _process(delta: float) -> bool:
 				_step = 15; _t = 0.0
 		15:
 			if _t > 0.2:
-				_check(music.current_track() == "", "no action music for a few shamblers")
+				_check(music.current_track() == "" and not music.fighting(), "no fight for a few shamblers")
 				music.threat = 7.0   # a brute, a charger, or a big breach
 				_step = 2; _t = 0.0
 		2:
 			if _t > 0.2:
-				_check(music.current_track() == "action", "action music for a big fight")
+				_check(music.fighting() and music.current_track() == music.FIGHT_TRACK, "a big fight plays the fight track ('%s')" % music.FIGHT_TRACK)
 				music.threat = 0.0
 				_step = 3; _t = 0.0
 		3:
 			if _t > 3.0 and _t < 3.2:
-				_check(music.current_track() == "action", "action music holds after the fight")
+				_check(music.fighting() and music.current_track() == music.FIGHT_TRACK, "the fight holds after the last blow")
 			if _t > 10.0:
-				_check(music.current_track() == "", "action music ends after calm")
+				_check(music.current_track() == "" and not music.fighting(), "the fight ends after calm")
 				music.boss = "brood_mother"
 				_step = 4; _t = 0.0
 		4:

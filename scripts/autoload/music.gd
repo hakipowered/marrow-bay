@@ -2,7 +2,8 @@ extends Node
 ## Game music. One track plays at a time and changes with a crossfade.
 ## Each track loops by fading into its own start a few seconds before the end,
 ## so there is never a gap. In game the track is chosen by priority:
-## boss fight > action (a big fight: a brute, a crowd, the Tallyman on you) > safe room > none.
+## boss fight > FIGHT_TRACK (a big fight: a brute, a crowd, the Tallyman on
+## you; none for now) > safe room > none.
 ## Ordinary infected get no music, only the ambience and a low string bed
 ## (HorrorDirector): a couple of shamblers aren't a battle.
 ## With no track, only the HorrorDirector's ambience plays.
@@ -10,6 +11,11 @@ extends Node
 const DIR := "res://assets/audio/music/%s.ogg"
 const FADE := 2.5
 const LOOP_OVERLAP := 4.0
+## The track for a big fight (a brute and more, a horde breaking in, the
+## awake Tallyman on her). Empty: fights play no music, only the ambience and
+## the infected themselves. Bulmaim hated "action" (0.10 playtest), so it's
+## out until there's a fight track he picks.
+const FIGHT_TRACK := ""
 ## Which theme each boss uses. Bosses not listed use boss_2.
 const BOSS_THEMES := {"brood_mother": "boss_1"}
 ## Action music starts at this threat score and stops after it has stayed
@@ -88,6 +94,10 @@ func force_action(seconds: float) -> void:
 func current_track() -> String:
 	return _track
 
+## Whether the game counts this as a big fight (FIGHT_TRACK plays when set).
+func fighting() -> bool:
+	return _action
+
 func _process(delta: float) -> void:
 	if in_game:
 		_forced_action = max(0.0, _forced_action - delta)
@@ -101,8 +111,8 @@ func _process(delta: float) -> void:
 		var want := ""
 		if boss != "":
 			want = BOSS_THEMES.get(boss, "boss_2")
-		elif _action:
-			want = "action"
+		elif _action and FIGHT_TRACK != "":
+			want = FIGHT_TRACK
 		elif in_safe_room:
 			want = "safe_room"
 		if override_track != "":
