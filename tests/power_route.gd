@@ -152,29 +152,24 @@ func _process(_d: float) -> bool:
 			# Scenes run on the wall clock (Cutscenes._sleep), not frames.
 			wait_to = Time.get_ticks_msec() + 45000
 		6:
-			if cs.active and Time.get_ticks_msec() < wait_to:
+			# The ride's own scene (the arrival scene follows it straight on).
+			if cs.active and cs.current == "elevator" and Time.get_ticks_msec() < wait_to:
 				return false
-			_check(not cs.active, "the ride ends by itself")
+			_check(not (cs.active and cs.current == "elevator"), "the ride ends by itself")
 			_check(gs.has_flag("story_elevator"), "story_elevator flag")
 			_check(gs.level_path == "res://scenes/levels/undercroft.tscn" and gs.shared_checkpoint == "ch2_lift", "the ride takes them on to chapter 2 (%s, %s)" % [gs.level_path, gs.shared_checkpoint])
 			step = 7
-			wait_to = frames + 90
+			wait_to = Time.get_ticks_msec() + 20000
 		7:
-			if frames < wait_to:
+			# Until chapter 2 has loaded and its first scene is running.
+			var up: bool = current_scene != null and current_scene.name == "Undercroft" and cs.active and cs.current == "c2_arrival"
+			if not up and Time.get_ticks_msec() < wait_to:
 				return false
 			_check(current_scene != null and current_scene.name == "Undercroft", "chapter 2's level is loaded (%s)" % (str(current_scene.name) if current_scene else "-"))
 			p = get_first_node_in_group("players")
 			var lift2 = current_scene.find_child("VaultElevator", true, false) if current_scene else null
 			_check(p != null and lift2 != null and lift2.in_car(p.global_position), "she comes out of the same lift car, at the bottom of the shaft")
 			_check(cs.active and cs.current == "c2_arrival", "the chapter 2 arrival scene plays (%s)" % str(cs.current))
-			print("POWER ROUTE OK" if fails.is_empty() else "POWER ROUTE FAIL: %s" % str(fails))
-			quit(0 if fails.is_empty() else 1)
-	return false
-			lift = current_scene.find_child("VaultElevator", true, false)
-			breaker = current_scene.find_child("BreakerPanel", true, false)
-			circuit = current_scene.find_child("VaultCircuit", true, false)
-			_check(circuit._lights[0].visible and lift._car_light.visible, "after a reload the vault is lit")
-			_check(lift.is_open and absf(breaker._handle.rotation.x - breaker.HANDLE_ON) < 0.05, "after a reload the doors are open and the handle is up")
 			print("POWER ROUTE OK" if fails.is_empty() else "POWER ROUTE FAIL: %s" % str(fails))
 			quit(0 if fails.is_empty() else 1)
 	return false

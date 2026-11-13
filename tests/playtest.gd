@@ -294,6 +294,8 @@ func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 func cross(front: Vector3, back: Vector3, tag := "") -> bool:
 	await go_to(front, 40.0, true, tag + " (front) ")
 	await _recover()
+	if OS.has_environment("PT_DEBUG"):
+		print("PTDBG cross %s from %s t=%.1f" % [tag, _v(p.global_position), sim_t])
 	var end := sim_t + 10.0
 	var ref: Vector3 = p.global_position
 	var ref_t := sim_t
@@ -316,6 +318,8 @@ func cross(front: Vector3, back: Vector3, tag := "") -> bool:
 		to.y = 0
 		if to.length() < 0.45:
 			_stop()
+			if OS.has_environment("PT_DEBUG"):
+				print("PTDBG crossed %s at %s t=%.1f" % [tag, _v(p.global_position), sim_t])
 			return true
 		if sim_t - ref_t > 0.5:
 			if p.global_position.distance_to(ref) < 0.1:
@@ -497,6 +501,11 @@ func pick_up_node(node: Node) -> bool:
 		await face(pos)
 		await physics_frame
 		var prompt: String = p._prompt_text
+		# No room for it: the prompt says so, or (beside a door, the crank)
+		# gives way to the thing she's looking at.
+		if not prompt.begins_with("Pick up") and not p.inventory.can_take(node.item):
+			_note("bag full, left %s" % tag)
+			return false
 		if prompt == "" or not (prompt.begins_with("Pick up") or prompt.begins_with("Bag full")):
 			if attempt == 2:
 				_bug("pickups", "no 'Pick up' prompt next to %s at %s (prompt '%s', item %.1f m above her feet)" % [tag, _v(pos), prompt, pos.y - p.global_position.y], "noprompt:" + tag)
@@ -1416,15 +1425,16 @@ func _run_route() -> void:
 	await clear_area("boiler", 90.0)
 	await pick_up("boiler_fuel")
 	await pick_up("boiler_powder")
-	await _power_and_lift()
-	# Anyone left standing in the area?
+	# Anyone left standing in the area? (Before the ride: it loads chapter 2,
+	# with a new survivor node and chapter 2's infected.)
 	var left := []
 	for z in _zombies():
 		if z.state != ZS.HIDDEN:
 			left.append("%s(%s) at %s" % [z.name, ZS.keys()[z.state], _v(z.global_position)])
 	if not left.is_empty():
 		_note("infected still standing after the route: " + ", ".join(left))
-	_note("route finished at %.0fs, hp %.0f, died %d times, bag %s" % [sim_t, p.hp, _deaths, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+	_note("chapter 1 route finished at %.0fs, hp %.0f, died %d times, bag %s" % [sim_t, p.hp, _deaths, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+	await _power_and_lift()
 
 ## The end of the first area: throw the vault breaker in the boiler room,
 ## back through the vault to the elevator, the key card, into the car and
@@ -1501,7 +1511,10 @@ func _run_probe2() -> void:
 ## the same run (her bag from chapter 1); on its own (`only route2`) she
 ## starts at the lift with what a player usually has by then.
 func _run_route2() -> void:
-	if p == null or not is_instance_valid(p) or GS.level_path != UNDERCROFT:
+	# Straight on from chapter 1's ride (the elevator scene sets the level),
+	# or chapter 2 on its own.
+	var chained: bool = GS.level_path == UNDERCROFT and GS.has_flag("story_elevator")
+	if not chained:
 		GS.reset_run()
 		GS.level_path = UNDERCROFT
 		GS.shared_checkpoint = "ch2_lift"
@@ -1713,6 +1726,13 @@ func _gen_use(gen: Node, local: Vector3, n: Vector3, dist: float, expect: String
 	await face(Vector3(at.x, 1.0, at.z))
 	_stop()
 	await _wait(0.2)
+	# Something dropped at her feet since: take it, like a player would.
+	for i in 3:
+		if not p._prompt_text.begins_with("Pick up"):
+			break
+		p.interact()
+		await _wait(0.6)
+		await face(Vector3(at.x, 1.0, at.z))
 	return await use_thing(expect, "the generator")
 
 ## Heave the handle; let go to see off anything that comes close, then go

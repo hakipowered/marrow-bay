@@ -50,6 +50,8 @@ const MOVES := {
 ## The kneel clip goes down and straight back up: he stays at its lowest
 ## point, heaving, until he's had enough.
 const KNEEL_AT := 0.5
+## No second blow on the same survivor for this long (milliseconds).
+const HIT_GRACE_MS := 1100
 ## The overhead swing takes both hands, so it waits for the shield to go.
 const PHASE1 := [["slash", 3.0], ["combo", 2.5], ["shield_push", 1.5]]
 const PHASE2 := [["combo2", 3.0], ["combo", 2.0], ["swing", 1.5], ["slam", 2.0], ["ground_slam", 1.5], ["stomp", 1.0]]
@@ -492,6 +494,12 @@ func _land(hit: Array) -> void:
 		if not _clear(p) or p.get("dodging"):
 			continue
 		if dmg > 0.0:
+			# The infected's grace (Zombie.GRACE_MS), shorter: a combo lands
+			# two of its three blows on someone who stands there, but a
+			# survivor with her back to the lockers isn't hit-locked.
+			if Time.get_ticks_msec() - int(p.get_meta("struck_ms", -100000)) < HIT_GRACE_MS:
+				continue
+			p.set_meta("struck_ms", Time.get_ticks_msec())
 			_rpc_hurt.rpc(p.get_path(), dmg)
 		else:
 			_rpc_shove.rpc(p.get_path())

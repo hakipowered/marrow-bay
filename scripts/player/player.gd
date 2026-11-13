@@ -1208,12 +1208,17 @@ func use_item(id: String) -> bool:
 ## that ray meets.
 func _update_focus() -> void:
 	var target: Node = _nearest_pickup()
-	if target == null:
+	# An item she has no room for doesn't block what she's looking at (a
+	# drop by the generator's crank hid "Crank the engine" behind "Bag full").
+	if target == null or not target.interact_text(self).begins_with("Pick up"):
+		var looked: Node = null
 		var hit: Object = interact_ray.get_collider() if interact_ray.is_colliding() else null
 		if hit and hit.has_method("interact_text"):
-			target = hit
+			looked = hit
 		elif hit and hit.get_parent() and hit.get_parent().has_method("interact_text"):
-			target = hit.get_parent()
+			looked = hit.get_parent()
+		if looked and (target == null or looked.interact_text(self) != ""):
+			target = looked
 	# The prompt follows the text, not just the target: a taken item is freed
 	# (and a freed node compares equal to null, so a target check alone kept
 	# "Pick up ..." on screen), and a door's text changes once it opens.

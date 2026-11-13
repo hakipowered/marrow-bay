@@ -446,6 +446,8 @@ func _spawn_later(level: Node, id: String, variant: String, delay: float) -> voi
 		if UndercroftKit.out_of_sight(get_tree(), j):
 			pos = j
 	if mode == "drop":
+		# Anywhere in the shaft, so they don't all land on one spot.
+		pos += Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3))
 		_rpc_chute.rpc(pos)
 		await get_tree().create_timer(0.5).timeout
 	level.spawn_zombie_synced.rpc(id, pos, variant, mode)

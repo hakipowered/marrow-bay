@@ -306,18 +306,24 @@ func _tick_drop(delta: float) -> void:
 		if is_on_floor():
 			_drop_phase = 2
 			_drop_t = 2.6
-			collision_mask = 1 | 2 | 4 | Door.BARS_LAYER
+			collision_mask = DROP_LYING_MASK
 			_landed.rpc()
 	else:
 		_drop_t -= delta
 		if _drop_t <= 0.0:
 			_drop_phase = 0
+			collision_mask = 1 | 2 | 4 | Door.BARS_LAYER
 			wake_from_dead()
+
+## Crumpled where it landed: not pushed about by other infected yet. One
+## dropping down the same hole lands on top of it, and two overlapping
+## bodies pushed it through the floor (the coal chute in chapter 2).
+const DROP_LYING_MASK := 1 | 2 | Door.BARS_LAYER
 
 @rpc("authority", "reliable", "call_local")
 func _landed() -> void:
 	_drop_phase = maxi(_drop_phase, 2)
-	collision_mask = 1 | 2 | 4 | Door.BARS_LAYER
+	collision_mask = DROP_LYING_MASK
 	model.land()
 	Sfx.play_at("body_fall", global_position + Vector3.UP * 0.3, "", 8.0, 12.0)
 	Effects.dust_puff(global_position + Vector3.UP * 0.05, 1.0)
