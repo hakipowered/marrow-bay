@@ -1102,6 +1102,29 @@ func probe_level() -> void:
 				by = str(hit.collider.get_parent().name if hit.collider.get_parent() else hit.collider.name)
 		if seen == 0:
 			_bug("level", "item %s at %s is hidden inside %s: no 'Pick up' prompt from any side" % [pk.pickup_id, _v(pk.global_position), by], "pickin:" + str(pk.pickup_id))
+	# Scares wired to nothing (0.10: "the dead wake up" in the Great Hall
+	# fired with no one lying there): a wake-up needs infected in its group
+	# lying in wait, a shutter or a room scare needs that node in the level.
+	var lvl := _level()
+	for t in lvl.get_children():
+		if not str(t.name).begins_with("Scare_"):
+			continue
+		var sid: String = t.scare_id
+		match str(t.kind):
+			"wake_dead":
+				var lying := 0
+				for zz in get_nodes_in_group(t.group):
+					if zz.state == ZS.PLAY_DEAD:
+						lying += 1
+				if lying == 0:
+					_bug("level", "scare '%s' wakes the dead in group '%s', but no infected is lying there in that group" % [sid, t.group], "scarewire:" + sid)
+			"shutter_burst":
+				var sh: Node = lvl.find_child(t.room, true, false)
+				if sh == null or not sh.has_method("burst") or t.spots.is_empty():
+					_bug("level", "scare '%s' has no shutter '%s' or no infected behind it" % [sid, t.room], "scarewire:" + sid)
+			"lights_out":
+				if lvl.get_node_or_null(NodePath(t.room)) == null:
+					_bug("level", "scare '%s' turns out the lights in '%s', which isn't in the level" % [sid, t.room], "scarewire:" + sid)
 
 ## Quick level check (about a minute): the level probe, then 25 s with
 ## her standing at the start under god mode while the infected settle and
@@ -1178,6 +1201,29 @@ func _run_scares() -> void:
 				_bug("scares", "the infected from the ceiling got up at the wrong height, %s" % _v(z.global_position))
 			if is_instance_valid(z) and z.state != ZS.DEAD:
 				await fight(z, "", 20.0)
+	# 3. The Great Hall: walking toward the vault between two bodies on the
+	# floor, both get up at once (the far one is out of its own 2.2 m reach,
+	# so only the scare can wake it).
+	var dead: Array = get_nodes_in_group("hall_dead")
+	if dead.size() < 2:
+		_bug("scares", "'the dead wake up' in the Great Hall has %d infected lying there, not 2" % dead.size())
+	await _scare_walk(Vector3(-5.0, 0.05, 12.0), Vector3(-8.0, 0.05, 15.2), Vector3(-8.4, 0.4, 13.3))
+	var all_up := func() -> bool:
+		for z in dead:
+			if is_instance_valid(z) and z.state == ZS.PLAY_DEAD:
+				return false
+		return true
+	if not dead.is_empty() and not await _until_t(all_up, 1.5):
+		var still := []
+		for z in dead:
+			if is_instance_valid(z) and z.state == ZS.PLAY_DEAD:
+				still.append(str(z.name))
+		_bug("scares", "'the dead wake up' in the Great Hall: walking between them, %s stayed lying" % ", ".join(still))
+	elif not dead.is_empty():
+		_note("the Great Hall dead got up together as she walked between them")
+	for z in dead:
+		if is_instance_valid(z) and z.state != ZS.DEAD:
+			await fight(z, "", 20.0)
 	CHEATS.set_cheat("god_mode", false)
 
 ## Stand at `from` looking at `look`, then step to `to` (inside the trigger).

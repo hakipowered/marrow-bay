@@ -486,6 +486,12 @@ func _great_hall() -> void:
 	place_zombie("Z_hall_1", Vector3(6, 0, 12), 200, "shambler", true, "suit")
 	place_zombie("Z_hall_possum1", Vector3(-9, 0, 13), 30, "possum")
 	place_zombie("Z_hall_possum2", Vector3(-7.8, 0, 13.6), 160, "possum")
+	# Lying among the dead on the way to the vault: stepping between them
+	# (the hall_wake scare) gets both up at once.
+	for zn in ["Z_hall_possum1", "Z_hall_possum2"]:
+		var hz := get_node_or_null(zn)
+		if hz:
+			hz.add_to_group("hall_dead")
 	place_zombie("Z_hall_scream", Vector3(9, 0, 4), 180, "screamer")
 	place_zombie("Z_hall_2", Vector3(-8, 0, 8), 120, "shambler", false, "office")
 	place_pickup("ammo:9mm", Vector3(-1, 1.05, 8), "hall_desk_ammo")
