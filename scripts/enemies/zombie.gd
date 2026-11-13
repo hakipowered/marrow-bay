@@ -56,6 +56,11 @@ var _recoil_t := 0.0
 ## Voices: a groan, then a pause before the next. Across the whole horde only
 ## one groan starts at a time, so a crowd murmurs instead of droning.
 static var _last_groan_ms := 0
+## Dropping in through a hole in the ceiling (HorrorDirector body_drop):
+## 1 falling limp, 2 crumpled on the floor until _drop_t runs out, then it
+## gets up like a possum does.
+var _drop_phase := 0
+var _drop_t := 0.0
 var agent: NavigationAgent3D
 var model: ZombieModel
 var _hitboxes: Array = []
@@ -202,7 +207,13 @@ func _physics_process(delta: float) -> void:
 			_last_groan_ms = now
 			_groan_t = _rng.randf_range(4.5, 9.0) if state == S.CHASE else _rng.randf_range(8.0, 16.0)
 			_groan.rpc(_sound_id("chase" if state == S.CHASE else "idle"))
-	if not multiplayer.is_server() or state == S.DEAD:
+	if not multiplayer.is_server():
+		return
+	if state == S.DEAD:
+		if not is_on_floor():   # killed in mid-air (falling through a hole): it still comes down
+			velocity.x = 0.0
+			velocity.z = 0.0
+			_fall_and_slide(delta)
 		return
 	_attack_cd -= delta
 	_special_cd -= delta
@@ -214,6 +225,10 @@ func _physics_process(delta: float) -> void:
 			_look_for_players(9.0 if state == S.IDLE else 4.5)
 			velocity = Vector3.ZERO
 		S.PLAY_DEAD:
+			if _drop_phase > 0:
+				_tick_drop(delta)
+				_fall_and_slide(delta)
+				return
 			velocity = Vector3.ZERO
 			var p := _nearest_player()
 			# Waits until someone walks past, then gets up behind them.
@@ -263,9 +278,52 @@ func _physics_process(delta: float) -> void:
 	if data.get("spawner") and state != S.DEAD and _special_cd <= 0 and _nearest_player() and global_position.distance_to(_nearest_player().global_position) < 18.0:
 		_special_cd = data["spawn_every"]
 		get_parent().spawn_zombie_synced.rpc("%s_spawn%d" % [name, _rng.randi() % 100000], global_position + Vector3(_rng.randf_range(-1.5, 1.5), 0, 1.5), data["spawner"])
+	_fall_and_slide(delta)
+
+func _fall_and_slide(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= 18.0 * delta
 	move_and_slide()
+
+## Every phone, right after the spawn: it starts falling from where it was
+## put (inside the hole). Until it lands it passes through survivors, so it
+## never ends up standing on someone's head.
+func drop_in() -> void:
+	_drop_phase = 1
+	state = S.PLAY_DEAD
+	collision_mask = 1 | Door.BARS_LAYER
+	var p := _nearest_player()
+	if p and multiplayer.is_server():
+		# Facing her: it crumples away from her and gets up looking at her.
+		var to := p.global_position - global_position
+		rotation.y = atan2(-to.x, -to.z)
+	model.fall()
+
+func _tick_drop(delta: float) -> void:
+	velocity.x = 0.0
+	velocity.z = 0.0
+	if _drop_phase == 1:
+		if is_on_floor():
+			_drop_phase = 2
+			_drop_t = 2.6
+			collision_mask = 1 | 2 | 4 | Door.BARS_LAYER
+			_landed.rpc()
+	else:
+		_drop_t -= delta
+		if _drop_t <= 0.0:
+			_drop_phase = 0
+			wake_from_dead()
+
+@rpc("authority", "reliable", "call_local")
+func _landed() -> void:
+	_drop_phase = maxi(_drop_phase, 2)
+	collision_mask = 1 | 2 | 4 | Door.BARS_LAYER
+	model.land()
+	Sfx.play_at("body_fall", global_position + Vector3.UP * 0.3, "", 8.0, 12.0)
+	Effects.dust_puff(global_position + Vector3.UP * 0.05, 1.0)
+	var d := get_tree().get_first_node_in_group("horror")
+	if d:
+		d.post_fx.spike(0.5)
 
 func _chase(delta: float, speed_mult: float) -> void:
 	var dist := global_position.distance_to(target.global_position)
@@ -555,11 +613,13 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 	var total: float = dmg * EnemyDB.ZONE_MULT.get(zone, 1.0)
 	hp -= total
 	var flat_v := Vector3(velocity.x, 0.0, velocity.z)
-	_last_hit = {"w": weapon_id, "zone": zone, "dir": dir, "dmg": total, "down": state == S.PLAY_DEAD,
+	var lying := state == S.PLAY_DEAD   # lying there, or still falling in limp
+	_last_hit = {"w": weapon_id, "zone": zone, "dir": dir, "dmg": total, "down": lying,
 		"rush": flat_v if state in [S.CHASE, S.CHARGE] and flat_v.length() > 2.3 else Vector3.ZERO}
-	if state == S.PLAY_DEAD and hp > 0.0:
-		wake_from_dead()   # shot where it lay and still alive: it scrambles up
-	if state in [S.IDLE, S.FEED, S.WANDER, S.PLAY_DEAD, S.HIDDEN]:
+	if lying and hp > 0.0 and _drop_phase != 1:
+		_drop_phase = 0
+		wake_from_dead()   # shot where it lay and still alive: it gets up (rise)
+	if state in [S.IDLE, S.FEED, S.WANDER, S.HIDDEN]:
 		state = S.CRAWL if crippled else S.CHASE
 	if state == S.PINNING and total > 25:
 		_release_pin()
@@ -578,7 +638,9 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 	# you stalls for a beat. Then it shrugs off hits for a moment (POISE), so a
 	# knife can buy space but can't pin one in place forever.
 	var flinch := false
-	if (w.get("stagger", 0.0) > 0 or total > 50) and variant not in ["brute", "brood_mother"]:
+	if lying:
+		pass   # no standing flinch for a body getting up off the floor or still falling
+	elif (w.get("stagger", 0.0) > 0 or total > 50) and variant not in ["brute", "brood_mother"]:
 		_set_stagger(0.6 + w.get("stagger", 0.0) * 0.6)
 		velocity = dir * 1.5
 		flinch = true
@@ -620,6 +682,7 @@ func _die() -> void:
 	if _pinned:
 		_release_pin()
 	state = S.DEAD
+	_drop_phase = 0
 	collision_layer = 0
 	for h in _hitboxes:
 		h.collision_layer = 0

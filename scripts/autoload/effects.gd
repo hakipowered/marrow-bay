@@ -925,6 +925,31 @@ func splinters(pos: Vector3, size := 1.0) -> void:
 		"smax": 0.5 * size, "scurve": [[0, 0.5], [1, 2.0]], "amin": 0.0, "amax": 360.0, "additive": false, "sphere": 0.25 * size,
 		"ramp": [[0.0, Color(0.42, 0.37, 0.3, 0.0)], [0.1, Color(0.42, 0.37, 0.3, 0.4)], [1.0, Color(0.4, 0.36, 0.3, 0.0)]]})
 
+## A ceiling caving in at `pos` (the hole): plaster chunks and lath bits
+## raining down and a curtain of dust that settles toward the floor.
+func plaster_fall(pos: Vector3, size := 1.0) -> void:
+	var chunks := _axial_mat(false, 0.028, Color(0.4, 0.38, 0.35), 1.0, null, 0, 1, 0.1)
+	_burst(pos, _quad(1.0, 0.06), chunks, {"amount": int(18 * size), "life": 1.0, "life_rand": 0.3, "dir": Vector3.DOWN,
+		"spread": 25.0, "vmin": 0.5, "vmax": 2.5, "gravity": Vector3(0, -12.0, 0), "align": true, "additive": false,
+		"smin": 0.4, "smax": 1.2, "sphere": 0.4 * size, "explosiveness": 0.7})
+	var bits := _axial_mat(false, 0.025, Color(0.3, 0.21, 0.13), 1.0, null, 0, 1, 0.15)
+	_burst(pos, _quad(1.0, 0.12), bits, {"amount": int(10 * size), "life": 0.9, "life_rand": 0.3, "dir": Vector3.DOWN,
+		"spread": 35.0, "vmin": 0.3, "vmax": 2.0, "gravity": Vector3(0, -11.0, 0), "align": true, "additive": false,
+		"sphere": 0.35 * size})
+	_burst(pos, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.3), {"amount": 10, "life": 2.6, "life_rand": 0.3,
+		"dir": Vector3.DOWN, "spread": 30.0, "vmin": 0.8, "vmax": 2.2, "damp": 1.2, "gravity": Vector3(0, -0.6, 0),
+		"smin": 0.35 * size, "smax": 0.6 * size, "scurve": [[0, 0.5], [1, 2.4]], "amin": 0.0, "amax": 360.0,
+		"additive": false, "sphere": 0.4 * size, "explosiveness": 0.6,
+		"ramp": [[0.0, Color(0.7, 0.67, 0.62, 0.0)], [0.1, Color(0.7, 0.67, 0.62, 0.45)], [1.0, Color(0.65, 0.62, 0.58, 0.0)]]})
+
+## A body or something heavy hitting the floor: a low ring of dust kicked out.
+func dust_puff(pos: Vector3, size := 1.0) -> void:
+	_burst(pos, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.3), {"amount": 8, "life": 1.6, "life_rand": 0.3,
+		"dir": Vector3.UP, "spread": 85.0, "vmin": 0.8, "vmax": 1.8, "damp": 2.4, "gravity": Vector3(0, -0.1, 0),
+		"smin": 0.3 * size, "smax": 0.5 * size, "scurve": [[0, 0.4], [1, 2.2]], "amin": 0.0, "amax": 360.0,
+		"additive": false, "sphere": 0.5 * size,
+		"ramp": [[0.0, Color(0.45, 0.41, 0.36, 0.0)], [0.1, Color(0.45, 0.41, 0.36, 0.35)], [1.0, Color(0.42, 0.39, 0.35, 0.0)]]})
+
 ## A spitter's acid glob bursting: sizzling droplets and a puff of fumes.
 func acid_splash(pos: Vector3, normal: Vector3) -> void:
 	if normal == Vector3.ZERO:
