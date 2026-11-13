@@ -1,8 +1,8 @@
 // First visit and return visit of the browser version with content packs:
-// a fresh browser profile opens the page, taps "Enter the city", downloads
-// every pack (boot screen), restarts in place and must reach the title
-// menu; then the page is reloaded and must reach the menu again without
-// downloading anything. Prints timings and the browser's memory use.
+// a fresh browser profile opens the page, which downloads every pack into
+// the browser's Cache Storage before "Enter the city" shows; the tap must
+// reach the title menu. Then the page is reloaded and must reach the menu
+// again without downloading anything. Prints timings and memory use.
 //   python3 tools/web/serve.py build/web 8060 build/content &
 //   node tools/web/first_visit.js [url=http://localhost:8060/] [outdir=/tmp/webfirst]
 const { chromium } = require('playwright');
@@ -32,8 +32,11 @@ const rss = () => { try { return Math.round(Number(execSync("ps -C chrome-headle
 		requests = 0; bytes = 0;
 		const t = Date.now();
 		await page.goto(url);
-		await page.waitForSelector('#play', { state: 'visible', timeout: 5 * 60 * 1000 });
-		say(`${label}: page ready in ${((Date.now() - t) / 1000).toFixed(1)}s`);
+		await page.waitForSelector('#play:visible, #retry:visible', { timeout: limitSecs * 1000 });
+		const shellMsg = await page.$eval('#msg', (e) => e.textContent).catch(() => '');
+		if (await page.isVisible('#retry')) throw new Error(`${label}: page says "${shellMsg}" ${await page.$eval('#note', (e) => e.textContent).catch(() => '')}`);
+		say(`${label}: page ready in ${((Date.now() - t) / 1000).toFixed(1)}s, ${requests} packs fetched (${(bytes / 1048576).toFixed(0)} MB), browser RSS ${rss()} MB`);
+		await page.screenshot({ path: `${out}/${label}_ready.png` }).catch(() => {});
 		await page.tap('#play');
 		let n = 0;
 		while ((Date.now() - t) / 1000 < limitSecs) {

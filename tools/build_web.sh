@@ -17,8 +17,12 @@ T=~/.local/share/godot/export_templates/4.4.1.stable
 [ -f tools/content/packs.py ] && python3 tools/content/packs.py build-info
 rm -rf build/web
 mkdir -p build/web
+touch build/.gdignore  # keep Godot from importing build output
 ~/tools/godot --headless --path . --export-release "Web" build/web/index.html
 cp web/splash.jpg web/icon-192.png web/icon-512.png web/manifest.webmanifest build/web/
+# The page checks the server's content packs are made for this base before
+# downloading them (web/shell.html).
+cp boot/build_info.json build/web/build_info.json
 du -sh build/web/* | sort -h
 # The browser loads index.pck before the title screen, so it must be the small
 # base; the game content comes from the updater's packs (/packs/).

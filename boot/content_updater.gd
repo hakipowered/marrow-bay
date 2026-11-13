@@ -102,7 +102,7 @@ func check(timeout := 8.0) -> State:
 ## Returns false on failure (see `error`).
 func download(stages: Array = ["boot", "later"]) -> bool:
 	_cancelled = false
-	DirAccess.make_dir_recursive_absolute(PackMount.PACKS_DIR)
+	DirAccess.make_dir_recursive_absolute(PackMount.packs_dir)
 	_remove_parts()
 	var todo := plan.filter(func(p): return stages.has(str(p.get("stage", "boot"))))
 	var total := 0
@@ -135,18 +135,18 @@ func download(stages: Array = ["boot", "later"]) -> bool:
 
 ## Records `remote` as the installed set and deletes packs it doesn't use.
 func install() -> bool:
-	var tmp := PackMount.INSTALLED + ".tmp"
+	var tmp := PackMount.installed_path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		error = "can't write " + tmp
 		return false
 	f.store_string(JSON.stringify(remote, "\t"))
 	f.close()
-	if DirAccess.rename_absolute(tmp, PackMount.INSTALLED) != OK:
-		error = "can't write " + PackMount.INSTALLED
+	if DirAccess.rename_absolute(tmp, PackMount.installed_path) != OK:
+		error = "can't write " + PackMount.installed_path
 		return false
 	var keep := _files(remote)
-	var dir := DirAccess.open(PackMount.PACKS_DIR)
+	var dir := DirAccess.open(PackMount.packs_dir)
 	if dir:
 		for name in dir.get_files():
 			if not keep.has(name):
@@ -164,7 +164,7 @@ func cancel() -> void:
 ## hash checked out, so the size is enough unless `deep` (a pack failed to
 ## mount) asks for the hash again.
 func _have(p: Dictionary, deep: bool) -> bool:
-	var path := PackMount.PACKS_DIR.path_join(str(p.get("file", "")))
+	var path := PackMount.packs_dir.path_join(str(p.get("file", "")))
 	if PackMount.file_size(path) != int(p.get("size", -1)):
 		return false
 	if deep and await _sha256(path) != str(p.get("sha256", "")):
@@ -175,7 +175,7 @@ func _have(p: Dictionary, deep: bool) -> bool:
 
 func _fetch_pack(p: Dictionary, done_before: int, total: int) -> bool:
 	var file := str(p.file)
-	var final_path := PackMount.PACKS_DIR.path_join(file)
+	var final_path := PackMount.packs_dir.path_join(file)
 	var part := final_path + ".part"
 	_http = HTTPRequest.new()
 	_http.use_threads = not OS.has_feature("web")
@@ -251,7 +251,7 @@ func _fetch_text(url: String, timeout: float) -> Dictionary:
 
 
 func _remove_parts() -> void:
-	var dir := DirAccess.open(PackMount.PACKS_DIR)
+	var dir := DirAccess.open(PackMount.packs_dir)
 	if dir:
 		for name in dir.get_files():
 			if name.ends_with(".part"):

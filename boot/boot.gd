@@ -46,7 +46,7 @@ func _ready() -> void:
 	_updater = UpdaterScript.new()
 	add_child(_updater)
 	_updater.progress.connect(_on_progress)
-	_first_install = not PackMount.mounted and PackMount.read_json(PackMount.INSTALLED).is_empty()
+	_first_install = not PackMount.mounted and PackMount.read_json(PackMount.installed_path).is_empty()
 	_check()
 
 
@@ -57,6 +57,23 @@ func _check() -> void:
 	var ver := str(_updater.remote.get("version", "?"))
 	_log("state %s, %d packs (%s) to download, mounted %s %s, error '%s'" % [ContentUpdater.State.keys()[state],
 		_updater.plan.size(), ContentUpdater.mb(_updater.plan_bytes), PackMount.mounted, PackMount.build_id, _updater.error])
+	if state == ContentUpdater.State.UPDATE and PackMount.from_shell:
+		# Browser version: the page downloads and caches the packs, not the
+		# engine. The server moved on since the page loaded, so start again and
+		# let the page fetch the new set (at most twice, then play what's here).
+		var restarts: Variant = JavaScriptBridge.eval("window.ragoonRestarts || 0")
+		if int(restarts) < 2:
+			_show("Update %s is out" % ver, "Loading it", -1.0)
+			await get_tree().create_timer(0.6).timeout
+			PackMount.restart()
+		elif PackMount.mounted:
+			_go_menu()
+		else:
+			# The page's copy of the game files doesn't open: drop it and
+			# download them again.
+			_show("Couldn't open the game files", "Reload to download them again. (%s)" % PackMount.mount_error)
+			_button("Reload", func(): JavaScriptBridge.eval("(window.caches ? caches.delete('ragoon-packs-v1') : Promise.resolve()).finally(function () { location.reload(); })"))
+		return
 	match state:
 		ContentUpdater.State.UP_TO_DATE:
 			_go_menu()

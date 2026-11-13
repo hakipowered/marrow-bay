@@ -49,6 +49,10 @@ body {
 	box-shadow: 0 6px 30px #6b0d0899;
 }
 #play:active { background: #b3190f; }
+#retry {
+	display: none; width: 100%; margin-top: 14px; padding: 14px; border-radius: 14px; font: inherit; font-weight: 600;
+	color: #fff; background: #1d1110; border: 1px solid #8e130c; cursor: pointer;
+}
 #note { display: none; margin-top: 14px; color: #d7cbc2; font-size: 15px; text-align: left; }
 #note b { color: #fff; }
 #fs {
@@ -69,6 +73,7 @@ $GODOT_HEAD_INCLUDE
 		<div id="bar" class="busy"><div id="fill"></div></div>
 		<p id="msg">Loading the city…</p>
 		<button id="play" type="button">ENTER THE CITY</button>
+		<button id="retry" type="button">Try again</button>
 		<div id="note"></div>
 	</div>
 </div>
@@ -83,17 +88,35 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 	const fill = document.getElementById('fill');
 	const msg = document.getElementById('msg');
 	const play = document.getElementById('play');
+	const retry = document.getElementById('retry');
 	const note = document.getElementById('note');
 	const fsBtn = document.getElementById('fs');
 	const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+	const hex = (b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join('');
 	let running = false;
 
-	function fail(text, html) {
+	function fail(text, html, canRetry) {
 		bar.style.display = 'none';
 		play.style.display = 'none';
 		msg.textContent = text;
-		if (html) { note.innerHTML = html; note.style.display = 'block'; }
+		note.innerHTML = html || '';
+		note.style.display = html ? 'block' : 'none';
+		retry.style.display = canRetry ? 'block' : 'none';
 	}
+	function progress(frac, text) {
+		bar.style.display = 'block';
+		bar.classList.remove('busy');
+		fill.style.width = (Math.min(1, Math.max(0, frac)) * 100).toFixed(1) + '%';
+		msg.textContent = text;
+	}
+	function busy(text) {
+		bar.style.display = 'block';
+		bar.classList.add('busy');
+		fill.style.width = '0';
+		msg.textContent = text;
+	}
+	function Problem(title, detail) { this.title = title; this.detail = detail; }
+	retry.addEventListener('click', () => location.reload());
 
 	// Keep cached game data from being cleared when the phone runs low on space.
 	try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
@@ -108,42 +131,207 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 
 	const exe = GODOT_CONFIG.executable;
 	const pack = GODOT_CONFIG.mainPack || (exe + '.pck');
+	// The game itself is the same content packs the Android app downloads
+	// (/packs/ on the download worker). They're kept in this browser's Cache
+	// Storage between visits, so only packs that changed download again, and
+	// copied into the engine's in-memory files at /packs before it starts
+	// (boot/pack_mount.gd mounts them from there).
+	const PACKS = new URL('/packs/', location.href).href;
+	const CACHE = 'ragoon-packs-v1';
+	const PARALLEL = 3;
 	let engine = null;
-	let restartPending = false;
+	// Times the game reloaded this page for a newer version in the last two
+	// minutes (boot/boot.gd stops asking after two, so it can't loop).
+	let reloads = { n: 0, t: 0 };
+	try { reloads = JSON.parse(sessionStorage.getItem('ragoonReloads')) || reloads; } catch (e) {}
+	if (Date.now() - reloads.t > 120000) reloads = { n: 0, t: 0 };
+	window.ragoonRestarts = reloads.n;
 
 	function makeEngine() {
 		return new Engine(Object.assign({}, GODOT_CONFIG, {
 			onProgress: function (current, total) {
-				if (current > 0 && total > 0) {
-					bar.classList.remove('busy');
-					fill.style.width = Math.min(100, (current / total) * 100).toFixed(1) + '%';
-					msg.textContent = 'Loading the city… ' + mb(current) + ' / ' + mb(total) + ' MB';
-				}
+				if (current > 0 && total > 0) progress(current / total, 'Starting up… ' + mb(current) + ' / ' + mb(total) + ' MB');
 			},
 			onExit: function (code) {
 				running = false;
-				if (restartPending) {
-					// The game asked to restart (new content was installed): start a
-					// fresh engine in this page, which keeps full screen and sound.
-					restartPending = false;
-					restart();
-					return;
-				}
 				fsBtn.style.display = 'none';
 				boot.style.display = 'flex';
 				boot.style.opacity = '1';
-				fail('The game stopped' + (code ? ' (code ' + code + ')' : '') + '.', 'Reload the page to play again. Your saves are kept.');
+				fail('The game stopped' + (code ? ' (code ' + code + ')' : '') + '.', 'Reload the page to play again. Your saves are kept.', true);
 			},
 		}));
 	}
 
-	// Called by the game (PackMount.restart) right before it quits.
-	window.ragoonRestart = function () { restartPending = true; return true; };
+	// Called by the game (PackMount.restart) when a newer version came out
+	// while the page was open: loading the page again fetches it.
+	window.ragoonReload = function () {
+		try { sessionStorage.setItem('ragoonReloads', JSON.stringify({ n: reloads.n + 1, t: Date.now() })); } catch (e) {}
+		location.reload();
+	};
 
-	function load() {
-		engine = makeEngine();
-		window.ragoonEngine = engine;
-		return Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]);
+	async function getJson(url) {
+		const r = await fetch(url, { cache: 'no-store' });
+		if (!r.ok) throw new Error(url + ' answered ' + r.status);
+		return r.json();
+	}
+
+	async function openCache() {
+		try { return window.caches ? await caches.open(CACHE) : null; } catch (e) { return null; }
+	}
+
+	// Downloads one pack and checks its SHA-256. onBytes(n) reports progress
+	// (negative when a failed try is taken back).
+	async function download(p, onBytes) {
+		let lastError = null;
+		for (let attempt = 0; attempt < 4; attempt++) {
+			let got = 0;
+			const stop = new AbortController();
+			let timer = 0;
+			const kick = () => { clearTimeout(timer); timer = setTimeout(() => stop.abort(), 30000); };
+			try {
+				kick();
+				const r = await fetch(PACKS + encodeURIComponent(p.file), { cache: 'no-store', signal: stop.signal });
+				if (!r.ok) throw new Error('the server answered ' + r.status);
+				const reader = r.body.getReader();
+				const parts = [];
+				for (;;) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					kick();
+					parts.push(value);
+					got += value.length;
+					onBytes(value.length);
+				}
+				const buf = await new Blob(parts).arrayBuffer();
+				if (buf.byteLength !== p.size) throw new Error('a download came through incomplete');
+				if (crypto.subtle && hex(await crypto.subtle.digest('SHA-256', buf)) !== p.sha256) throw new Error('a download came through damaged');
+				return buf;
+			} catch (e) {
+				lastError = stop.signal.aborted ? new Error('the download stalled') : e;
+				onBytes(-got);
+				await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+			} finally {
+				clearTimeout(timer);
+			}
+		}
+		throw lastError;
+	}
+
+	// Gets every pack of the newest content set into the engine, downloading
+	// only the ones this browser doesn't have yet.
+	async function loadPacks() {
+		const cache = await openCache();
+		const saved = cache ? await cache.match('installed.json').then((r) => r && r.json()).catch(() => null) : null;
+		let info = null;
+		let set = null;
+		try { info = await getJson('build_info.json'); } catch (e) {}
+		try { set = await getJson(PACKS + 'manifest.json'); } catch (e) {}
+		if (set && info && set.base !== info.base) {
+			// The content on the server is for another version of this page
+			// (an upload is under way): play the copy here if it fits.
+			if (saved && saved.base === info.base) set = saved;
+			else throw new Problem('The game is being updated.', 'Try again in a few minutes.');
+		}
+		const online = !!set;
+		if (!set) set = saved;
+		if (!set) throw new Problem('Couldn\'t reach the server.', 'Check your connection and try again.');
+
+		const have = {};
+		if (cache) for (const p of set.packs) have[p.file] = !!(await cache.match(PACKS + p.file));
+		const todo = set.packs.filter((p) => !have[p.file]);
+		const total = todo.reduce((n, p) => n + p.size, 0);
+		if (todo.length && !online) throw new Problem('Couldn\'t reach the server.', 'Check your connection and try again.');
+		let keep = !!cache;
+		if (total && keep && navigator.storage && navigator.storage.estimate) {
+			try {
+				const est = await navigator.storage.estimate();
+				if (est.quota && est.quota - est.usage < total + 67108864) keep = false;
+			} catch (e) {}
+		}
+
+		// Packs this browser already has: straight into the engine.
+		const cached = set.packs.filter((p) => have[p.file]);
+		const cachedBytes = cached.reduce((n, p) => n + p.size, 0);
+		let copied = 0;
+		for (const p of cached) {
+			const r = await cache.match(PACKS + p.file);
+			engine.copyToFS('/packs/' + p.file, await r.arrayBuffer());
+			copied += p.size;
+			if (!total) progress(copied / cachedBytes, 'Opening the city…');
+		}
+
+		// The rest: a few at a time, each into the engine as soon as it's here.
+		if (total) {
+			const first = !saved;
+			note.innerHTML = first
+				? 'The first visit downloads the game once (' + mb(total) + ' MB, Wi-Fi recommended). After that it opens straight away and only updates download.'
+				: (keep ? '' : 'Not enough free space to keep the game in this browser, so it will download again next time.');
+			note.style.display = note.innerHTML ? 'block' : 'none';
+			let done = 0;
+			const t0 = Date.now();
+			const show = () => {
+				const secs = (Date.now() - t0) / 1000;
+				const rate = secs > 1 ? '  ·  ' + (done / 1048576 / secs).toFixed(1) + ' MB/s' : '';
+				progress(done / total, (first ? 'Downloading the city… ' : 'Downloading the update… ') + mb(done) + ' / ' + mb(total) + ' MB' + rate);
+			};
+			show();
+			const queue = todo.slice();
+			const worker = async () => {
+				for (let p = queue.shift(); p; p = queue.shift()) {
+					const buf = await download(p, (n) => { done += n; show(); });
+					engine.copyToFS('/packs/' + p.file, buf);
+					if (keep) {
+						try {
+							await cache.put(PACKS + p.file, new Response(buf, { headers: { 'content-type': 'application/octet-stream' } }));
+						} catch (e) { keep = false; }
+					}
+				}
+			};
+			const workers = [];
+			for (let i = 0; i < PARALLEL; i++) workers.push(worker());
+			try {
+				await Promise.all(workers);
+			} catch (e) {
+				queue.length = 0;
+				throw new Problem('The download stopped.', 'Check your connection and try again (' + (e.message || e) + '). What came through is kept.');
+			}
+			note.style.display = 'none';
+		}
+
+		// PackMount reads this to know which packs make up the game.
+		engine.copyToFS('/packs/installed.json', new TextEncoder().encode(JSON.stringify(set)).buffer);
+		if (cache && keep) {
+			try {
+				await cache.put('installed.json', new Response(JSON.stringify(set), { headers: { 'content-type': 'application/json' } }));
+				// Drop packs no longer in the game.
+				const files = new Set(set.packs.map((p) => PACKS + p.file));
+				for (const req of await cache.keys()) {
+					if (req.url.startsWith(PACKS) && !files.has(req.url)) await cache.delete(req);
+				}
+			} catch (e) {}
+		}
+	}
+
+	async function load() {
+		play.style.display = 'none';
+		retry.style.display = 'none';
+		note.style.display = 'none';
+		boot.style.display = 'flex';
+		boot.style.opacity = '1';
+		busy(reloads.n ? 'Loading the new version…' : 'Loading the city…');
+		try {
+			engine = makeEngine();
+			window.ragoonEngine = engine;
+			await Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]);
+			await loadPacks();
+		} catch (e) {
+			if (e instanceof Problem) fail(e.title, e.detail, true);
+			else fail('Couldn\'t load the game.', 'Check your connection and try again. (' + String(e && e.message || e) + ')', true);
+			return;
+		}
+		bar.style.display = 'none';
+		msg.textContent = reloads.n ? 'The new version is ready.' : 'Ready. Headphones on.';
+		play.style.display = 'block';
 	}
 
 	function start() {
@@ -155,29 +343,11 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 			setTimeout(() => { boot.style.display = 'none'; }, 500);
 			syncFsButton();
 		}, function (err) {
-			fail('The game couldn\'t start.', String(err && err.message || err));
+			fail('The game couldn\'t start.', String(err && err.message || err), true);
 		});
 	}
 
-	function restart() {
-		boot.style.display = 'flex';
-		boot.style.opacity = '1';
-		bar.style.display = 'block';
-		bar.classList.add('busy');
-		fill.style.width = '0';
-		play.style.display = 'none';
-		msg.textContent = 'Restarting with the new content…';
-		// Let the old instance finish tearing down before the next one starts.
-		setTimeout(function () { load().then(start, function (err) { fail('Couldn\'t restart the game. Reload the page.', String(err && err.message || err)); }); }, 50);
-	}
-
-	load().then(function () {
-		bar.style.display = 'none';
-		msg.textContent = 'Ready. Headphones on.';
-		play.style.display = 'block';
-	}, function (err) {
-		fail('Couldn\'t load the game. Check your connection and reload.', String(err && err.message || err));
-	});
+	load();
 
 	function goFullscreen() {
 		const el = document.documentElement;
