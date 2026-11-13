@@ -3,12 +3,17 @@
 
   packs.py build-info [--out boot/build_info.json]
       Write the base id and app version into the thin base before exporting it.
-  packs.py split <full.pck> <out_dir> --version 0.12
-      Split one full content export into packs + manifest.json.
-  packs.py upload <out_dir>
+  packs.py split <full.pck> <out_dir> --version 0.12 [--like live|none|<dir>]
+      Split one full content export into packs + manifest.json. Every file
+      stays in the pack it was in on the server (--like live, the default) or
+      in another build (<dir>), so players only download packs whose files
+      changed; new files go into new packs. --like none packs from scratch.
+  packs.py upload <out_dir> [--new-base] [--kv-limit BYTES]
       Put new packs and the manifest on the download server, then delete
-      packs the new manifest doesn't use. Signs with UPLOAD_TOKEN if set,
-      otherwise with the content upload key ($CONTENT_UPLOAD_KEY, default
+      packs the new manifest doesn't use. Refuses when the server's storage
+      would go over --kv-limit (default 1 GB, the free KV plan; 0 = no check).
+      Signs with UPLOAD_TOKEN if set, otherwise with the content upload key
+      ($CONTENT_UPLOAD_KEY, default
       /mnt/project-files/.signing/content_upload_ed25519.pem).
   packs.py live
       Print the manifest the server offers now.
@@ -55,25 +60,52 @@ Entry = collections.namedtuple("Entry", "path offset size md5 flags")
 
 def read_pck(path):
     with open(path, "rb") as f:
-        magic, fmt, major, minor, patch, flags = struct.unpack("<6I", f.read(24))
-        if magic != PACK_MAGIC:
-            sys.exit(f"{path}: not a Godot pack")
-        if fmt != PACK_FORMAT_VERSION:
-            sys.exit(f"{path}: pack format {fmt}, this tool knows {PACK_FORMAT_VERSION}")
-        if flags & 1:
-            sys.exit(f"{path}: encrypted packs aren't supported")
-        (file_base,) = struct.unpack("<Q", f.read(8))
-        f.read(16 * 4)
-        (count,) = struct.unpack("<I", f.read(4))
-        entries = []
-        for _ in range(count):
-            (sl,) = struct.unpack("<I", f.read(4))
-            p = f.read(sl).rstrip(b"\0").decode("utf-8")
-            ofs, size = struct.unpack("<QQ", f.read(16))
-            md5 = f.read(16)
-            (fl,) = struct.unpack("<I", f.read(4))
-            entries.append(Entry(p, file_base + ofs, size, md5, fl))
+        return _parse_pck(f, path)
+
+
+def _parse_pck(f, path):
+    """The version and file list of a pack; `f` only needs read(n)."""
+    magic, fmt, major, minor, patch, flags = struct.unpack("<6I", f.read(24))
+    if magic != PACK_MAGIC:
+        sys.exit(f"{path}: not a Godot pack")
+    if fmt != PACK_FORMAT_VERSION:
+        sys.exit(f"{path}: pack format {fmt}, this tool knows {PACK_FORMAT_VERSION}")
+    if flags & 1:
+        sys.exit(f"{path}: encrypted packs aren't supported")
+    (file_base,) = struct.unpack("<Q", f.read(8))
+    f.read(16 * 4)
+    (count,) = struct.unpack("<I", f.read(4))
+    entries = []
+    for _ in range(count):
+        (sl,) = struct.unpack("<I", f.read(4))
+        p = f.read(sl).rstrip(b"\0").decode("utf-8")
+        ofs, size = struct.unpack("<QQ", f.read(16))
+        md5 = f.read(16)
+        (fl,) = struct.unpack("<I", f.read(4))
+        entries.append(Entry(p, file_base + ofs, size, md5, fl))
     return (major, minor, patch), entries
+
+
+class _RemoteHead:
+    """The start of a pack on the server, fetched with Range requests as
+    read() needs it: enough to read a pack's file list without the data."""
+
+    def __init__(self, url):
+        self.url, self.buf, self.pos = url, b"", 0
+
+    def read(self, n):
+        end = self.pos + n
+        while len(self.buf) < end:
+            want = max(end, 2 * len(self.buf), 1 << 16)
+            code, body, _ = _request("GET", self.url, headers={"Range": f"bytes={len(self.buf)}-{want - 1}"})
+            if code not in (200, 206) or not body:
+                sys.exit(f"reading {self.url}: {code}")
+            self.buf = (self.buf + body) if code == 206 else body
+            if code == 200:
+                break
+        out = self.buf[self.pos:end]
+        self.pos = end
+        return out
 
 
 def write_pck(out_path, version, src_path, entries):
@@ -192,10 +224,28 @@ def assign_sources(entries, read):
     return core, by_source, dropped
 
 
-def group_sources(by_source):
-    """Deterministically group sources into packs: {pack name: [sources]}."""
+def group_sources(by_source, like=None):
+    """Deterministically group sources into packs: {pack name: [sources]}.
+
+    `like` is the layout players already have ({pack name: set of paths}, see
+    reference_layout). A source whose files were in one of those packs stays
+    in it, so a pack only changes when its own files do; sources that are new
+    are grouped into new packs of their own. Without `like`, everything is
+    grouped from scratch.
+    """
     size = {s: sum(e.size for e in es) for s, es in by_source.items()}
     packs = {"core": [s for s in by_source if s.startswith(CORE_PREFIXES)]}
+    rest = [s for s in by_source if not s.startswith(CORE_PREFIXES)]
+    if like:
+        where = {path: name for name, paths in like.items() if name != "core" for path in paths}
+        new = []
+        for s in sorted(rest):
+            names = sorted({where[_norm(e.path)] for e in by_source[s] if _norm(e.path) in where})
+            if names:
+                packs.setdefault(names[0], []).append(s)
+            else:
+                new.append(s)
+        rest = new
 
     def name_of(prefix):
         n = prefix.strip("/")
@@ -209,29 +259,27 @@ def group_sources(by_source):
 
     def chunk(prefix, sources):
         # Loose files of a folder: fill packs in path order; big files alone.
+        # Each pack is named after its first file, not numbered, so a pack
+        # added in front doesn't rename the ones after it.
         out, cur, cur_size = [], [], 0
         for s in sorted(sources):
             if size[s] > MAX_PACK // 2:
-                out.append((name_of(prefix + os.path.splitext(s.rsplit("/", 1)[-1])[0]), [s]))
+                out.append([s])
                 continue
             if cur and cur_size + size[s] > MAX_PACK:
-                out.append((None, cur))
+                out.append(cur)
                 cur, cur_size = [], 0
             cur.append(s)
             cur_size += size[s]
             if cur_size >= MAX_PACK // 2 and cut_after(s):
-                out.append((None, cur))
+                out.append(cur)
                 cur, cur_size = [], 0
         if cur:
-            out.append((None, cur))
-        n = 0
-        named = []
-        for name, group in out:
-            if name is None:
-                n += 1
-                name = name_of(prefix) + ("" if n == 1 else f"-{n}")
-            named.append((name, group))
-        return named
+            out.append(cur)
+        if len(out) == 1:
+            return [(name_of(prefix), out[0])]
+        first = lambda g: os.path.splitext(g[0][len(prefix):].split("/", 1)[0])[0]
+        return [(name_of(prefix + first(g)), g) for g in out]
 
     def split(prefix, sources):
         total = sum(size[s] for s in sources)
@@ -252,12 +300,110 @@ def group_sources(by_source):
             result += chunk(prefix, loose)
         return result
 
-    rest = [s for s in by_source if not s.startswith(CORE_PREFIXES)]
-    for name, group in split("", rest):
-        while name in packs:
-            name += "-x"
-        packs[name] = group
-    return packs
+    if rest:
+        # New files: start from the folder they all share, so their pack is
+        # named after where they are.
+        common = os.path.commonpath(rest) if len(rest) > 1 else os.path.dirname(rest[0])
+        common = "" if not common or common in rest else common + "/"
+        for name, group in split(common, rest):
+            base, n = name, 1
+            while name in packs:
+                n += 1
+                name = f"{base}-{n}"
+            packs[name] = group
+    return {name: group for name, group in packs.items() if group or name == "core"}
+
+
+def reference_layout(like):
+    """The packs players already have, as {name: set of paths in it}, with the
+    manifest they came from. `like` is "live" (the download server), "none",
+    or a build folder (with manifest.json and packs/)."""
+    if like == "none":
+        return None, None
+    if like == "live":
+        manifest = live_manifest()
+        if not manifest:
+            print("no content on the server yet: packing from scratch")
+            return None, None
+        open_pack = lambda p: _RemoteHead(f"{SERVER}/packs/{p['file']}")
+    else:
+        manifest = json.load(open(os.path.join(like, "manifest.json")))
+        open_pack = lambda p: open(os.path.join(like, "packs", p["file"]), "rb")
+    layout = {}
+    for p in manifest["packs"]:
+        f = open_pack(p)
+        _, entries = _parse_pck(f, p["file"])
+        if hasattr(f, "close"):
+            f.close()
+        layout[p["name"]] = {_norm(e.path) for e in entries}
+    return layout, manifest
+
+
+def _preset_salt():
+    """The engine and the content export settings: change either and every
+    pack's inputs change."""
+    text, out = open("export_presets.cfg").read().splitlines(), []
+    sections = {}
+    current = None
+    for line in text:
+        if line.startswith("[preset."):
+            current = line.strip("[]").split(".")[1]
+        if current is not None and not line.startswith("version/"):
+            sections.setdefault(current, []).append(line)
+    for lines in sections.values():
+        if 'name="Android Content"' in lines:
+            out = lines
+    return godot_version() + "\n" + "\n".join(out)
+
+
+def _fingerprint(src):
+    """What a source's exported files are made from: the file, its import
+    settings (without the uid, which differs between machines for files
+    that aren't in git), and for a glTF the buffers and images it points to."""
+    h = hashlib.sha256(src.encode() + b"\0")
+    def add(path):
+        try:
+            with open(path, "rb") as f:
+                h.update(hashlib.sha256(f.read()).digest())
+        except OSError:
+            h.update(b"-")
+    add(src)
+    try:
+        imp = open(src + ".import", encoding="utf-8").read()
+        h.update("\n".join(l for l in imp.splitlines() if not l.startswith("uid=")).encode())
+    except OSError:
+        pass
+    if src.endswith(".gltf"):
+        try:
+            g = json.load(open(src, encoding="utf-8"))
+            for item in g.get("buffers", []) + g.get("images", []):
+                uri = item.get("uri", "")
+                if uri and not uri.startswith("data:"):
+                    add(os.path.join(os.path.dirname(src), urllib.parse.unquote(uri)))
+        except (OSError, ValueError):
+            pass
+    return h.hexdigest()
+
+
+def _fetch_pack(like, p, dest):
+    """Copy pack `p` of the reference build to `dest`, checking its sha256."""
+    h = hashlib.sha256()
+    if like == "live":
+        src = urllib.request.urlopen(urllib.request.Request(
+            f"{SERVER}/packs/{p['file']}", headers={"User-Agent": "ragoon-city-build/1.0"}), timeout=600)
+    else:
+        src = open(os.path.join(like, "packs", p["file"]), "rb")
+    with src, open(dest + ".tmp", "wb") as out:
+        while True:
+            buf = src.read(1 << 22)
+            if not buf:
+                break
+            h.update(buf)
+            out.write(buf)
+    if h.hexdigest() != p["sha256"]:
+        os.remove(dest + ".tmp")
+        sys.exit(f"{p['file']} from {like} doesn't match its sha256")
+    os.replace(dest + ".tmp", dest)
 
 
 def cmd_split(args):
@@ -267,27 +413,51 @@ def cmd_split(args):
             f.seek(e.offset)
             return f.read(e.size)
         core, by_source, dropped = assign_sources(entries, read)
-    groups = group_sources(by_source)
+    like, like_manifest = reference_layout(args.like)
+    groups = group_sources(by_source, like)
     os.makedirs(args.out, exist_ok=True)
     packs_dir = os.path.join(args.out, "packs")
     os.makedirs(packs_dir, exist_ok=True)
     manifest_packs = []
     order = ["core"] + sorted(n for n in groups if n != "core")
     written = set()
+    salt = _preset_salt()
+    before = {p["name"]: p for p in like_manifest["packs"]} if like_manifest else {}
+    kept = []
     for name in order:
         files = list(core) if name == "core" else []
         for s in groups[name]:
             files += by_source[s]
         if not files:
             continue
+        inputs = None
+        if name != "core":
+            h = hashlib.sha256(salt.encode())
+            for s in sorted(groups[name]):
+                h.update(f"{s}\0{_fingerprint(s)}\n".encode())
+            inputs = h.hexdigest()
         tmp = os.path.join(packs_dir, name + ".pck")
         sha, size = write_pck(tmp, version, args.pck, files)
         file = f"{name}-{sha[:12]}.pck"
-        os.replace(tmp, os.path.join(packs_dir, file))
+        old = before.get(name)
+        if old and old["sha256"] != sha and inputs and old.get("inputs") == inputs:
+            # Made from exactly the same files as the pack players have; only
+            # the import wasn't byte-identical (Godot's mesh import differs
+            # from machine to machine). Keep theirs.
+            os.remove(tmp)
+            file, sha, size = old["file"], old["sha256"], old["size"]
+            if not os.path.exists(os.path.join(packs_dir, file)):
+                _fetch_pack(args.like, old, os.path.join(packs_dir, file))
+            kept.append(name)
+        else:
+            os.replace(tmp, os.path.join(packs_dir, file))
         written.add(file)
         later = groups[name] and all(s.startswith(LATER_PREFIXES) for s in groups[name])
-        manifest_packs.append({"name": name, "file": file, "sha256": sha, "size": size,
-                               "stage": "later" if later else "boot", "files": len(files)})
+        entry = {"name": name, "file": file, "sha256": sha, "size": size,
+                 "stage": "later" if later else "boot", "files": len(files)}
+        if inputs:
+            entry["inputs"] = inputs
+        manifest_packs.append(entry)
     for old in os.listdir(packs_dir):
         if old not in written:
             os.remove(os.path.join(packs_dir, old))
@@ -310,6 +480,16 @@ def cmd_split(args):
         print(f"{p['size'] / 1048576:8.1f} MB  {p['stage']:5}  {p['file']}")
     print(f"{total / 1048576:8.1f} MB in {len(manifest_packs)} packs, build {manifest['build']}, base {manifest['base']}"
           f" ({len(dropped)} base-only files left out)")
+    if kept:
+        print(f"kept {len(kept)} packs players have whose files didn't change (this machine's import differs): {', '.join(kept)}")
+    if like_manifest:
+        had = {p["file"] for p in like_manifest["packs"]}
+        old_names = {p["name"] for p in like_manifest["packs"]}
+        fresh = [p for p in manifest_packs if p["file"] not in had]
+        print(f"players on {like_manifest['build']} download {sum(p['size'] for p in fresh) / 1048576:.1f} MB:"
+              f" {sum(p['name'] in old_names for p in fresh)} changed packs, {sum(p['name'] not in old_names for p in fresh)} new")
+        for p in fresh:
+            print(f"  {'changed' if p['name'] in old_names else 'new':7}  {p['size'] / 1048576:6.1f} MB  {p['name']}")
 
 
 def cmd_build_info(args):
@@ -448,12 +628,24 @@ def cmd_upload(args):
     if live and live.get("base") != manifest["base"] and not args.new_base:
         sys.exit(f"The live content is for app base {live.get('base')} and this is {manifest['base']}: "
                  "upload the new APK first (tools/upload_build.sh), then run this again with --new-base.")
+    live_files = {q.get("file") for q in (live or {}).get("packs", [])}
+    want = {p["file"] for p in manifest["packs"]}
+    # Packs neither players nor this set use (left by a stopped run) go first.
+    _delete_packs(lambda f: f not in live_files and f not in want, "left over")
+    have, to_send = set(), []
+    for p in manifest["packs"]:
+        code, _, headers = _request("HEAD", f"{SERVER}/packs/{p['file']}")
+        if code == 200 and headers.get("x-sha256") == p["sha256"]:
+            have.add(p["file"])
+        else:
+            to_send.append(p)
+    if args.kv_limit:
+        _check_room(live, manifest, to_send, args.kv_limit)
     sent = 0
     sent_files = set()
     for p in manifest["packs"]:
         file = p["file"]
-        code, _, headers = _request("HEAD", f"{SERVER}/packs/{file}")
-        if code == 200 and headers.get("x-sha256") == p["sha256"]:
+        if file in have:
             print(f"  have  {file}")
             continue
         _send_pack(p, args.out)
@@ -463,7 +655,6 @@ def cmd_upload(args):
     # Before switching players over, every pack they don't already get must
     # stream back byte for byte: the ones sent now, and any an earlier run sent
     # but stopped before checking (those count as "have" above).
-    live_files = {q.get("file") for q in (live or {}).get("packs", [])}
     for p in manifest["packs"]:
         if p["file"] not in sent_files and p["file"] in live_files:
             continue
@@ -483,19 +674,58 @@ def cmd_upload(args):
         sys.exit(f"upload manifest: {code} {body[:200]!r}")
     print(f"manifest switched to {manifest['build']} ({sent / 1048576:.1f} MB new)")
     # Delete packs nothing points at any more.
-    keep = {p["file"] for p in manifest["packs"]}
-    removed = 0
+    _delete_packs(lambda f: f not in want, "old")
+
+
+def _delete_packs(unused, what):
+    files = collections.defaultdict(list)
     for prefix in ("pack:", "packmeta:"):
         keys = _list_keys(prefix)
         if keys is None:
-            print(f"couldn't list old {prefix} keys; skipping cleanup")
-            continue
+            print(f"couldn't list {prefix} keys; not deleting {what} packs")
+            return
         for key in keys:
             m = re.match(r"^(?:pack|packmeta):([^:]+)", key)
-            if m and m.group(1) not in keep:
-                _request("DELETE", f"{SERVER}/upload/{key}", headers=_auth("DELETE", key))
-                removed += 1
-    print(f"removed {removed} old pack keys")
+            if m and unused(m.group(1)):
+                files[m.group(1)].append(key)
+    for file in sorted(files):
+        # packmeta last, so a half-deleted pack never looks complete
+        for key in sorted(files[file], key=lambda k: k.startswith("packmeta:")):
+            _request("DELETE", f"{SERVER}/upload/{key}", headers=_auth("DELETE", key))
+    if files:
+        print(f"removed {len(files)} {what} packs")
+
+
+def _check_room(live, manifest, to_send, limit):
+    """Stop before the upload would fill the server's KV storage: what is
+    there now (packs, the APK, the browser version) plus the new packs."""
+    def size_of(path, headers=None):
+        code, _, h = _request("HEAD", SERVER + path, headers=headers)
+        return int(h.get("content-length") or 0) if code == 200 else 0
+    stored = {}
+    for key in _list_keys("packmeta:") or []:
+        file = key[len("packmeta:"):]
+        stored[file] = size_of(f"/packs/{file}")
+    packs = sum(stored.values())
+    apk = size_of("/RaGoonCity.apk")
+    web = 0
+    web_builds = collections.defaultdict(set)
+    for key in _list_keys("web:") or []:
+        m = re.match(r"^web:([^/]+)/([\w.-]+):\d+$", key)
+        if m:
+            web_builds[m.group(2)].add(m.group(1))
+    for name, builds in web_builds.items():
+        # what the current build's copy takes; older builds count the same
+        web += size_of(f"/play/{name}", {"Accept-Encoding": "gzip"}) * len(builds)
+    new = sum(p["size"] for p in to_send if p["file"] not in stored)
+    total = packs + apk + web + new
+    mb = lambda b: f"{b / 1e6:.0f} MB"
+    line = f"packs {mb(packs)} + APK {mb(apk)} + browser version {mb(web)} + new packs {mb(new)} = {mb(total)}"
+    if total > limit:
+        sys.exit(f"Not enough room on the download server: {line}, over the {mb(limit)} limit.\n"
+                 "Nothing was uploaded. Old packs are only deleted once the new set is live, so the"
+                 " new set has to fit next to the live one.")
+    print(f"room: {line} of {mb(limit)}")
 
 
 class _PackHandler(http.server.SimpleHTTPRequestHandler):
@@ -529,9 +759,13 @@ def main():
     s.add_argument("pck")
     s.add_argument("out")
     s.add_argument("--version", required=True)
+    s.add_argument("--like", default=os.environ.get("RAGOON_CONTENT_LIKE", "live"),
+                   help='keep files in the packs they had: "live" (default), "none", or a build folder')
     u = sub.add_parser("upload")
     u.add_argument("out")
     u.add_argument("--new-base", action="store_true", help="the APK for a new base is already up")
+    u.add_argument("--kv-limit", type=float, default=1e9,
+                   help="refuse when the server's storage would go over this many bytes (0 = no check)")
     sub.add_parser("live")
     v = sub.add_parser("serve")
     v.add_argument("out")
