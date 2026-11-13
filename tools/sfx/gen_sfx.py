@@ -69,6 +69,14 @@ SOUNDS = {
     "glass_break": (2, 1.2, -15, "a pane of glass shattering, shards falling"),
     "grenade_bounce": (2, 0.6, -18, "a metal grenade bouncing and rolling on concrete"),
     "power_down": (1, 2.0, -18, "electrical power failing, lights buzzing off with a dying hum"),
+    # The vault circuit: the boiler-room breaker and the vault elevator.
+    "breaker_throw": (1, 1.4, -14, "a big old industrial knife switch thrown up by hand: a heavy metal clunk, a short crackle of electric arcing, then a low transformer hum starting"),
+    "breaker_dead": (1, 0.8, -19, "an old electrical breaker handle rattled but stuck, dry metal clack, nothing happens"),
+    "power_up": (1, 3.0, -17, "old fluorescent tube lights flickering on one after another in a basement: ticking starters, buzzing, a rising mains hum"),
+    "lift_dead": (1, 0.9, -19, "pressing a dead elevator call button: a hollow plastic click, then silence"),
+    "card_beep": (1, 0.6, -18, "an old security card reader accepting a key card: a short electronic chirp and a relay click"),
+    "lift_doors": (1, 2.2, -15, "heavy steel freight elevator doors sliding open on worn runners: a motor whine, metal rumble and a final clank"),
+    "lift_ride": (1, 6.0, -16, "an old freight elevator starting its descent: a jolt and a clank, cables groaning, a deep motor drone and rattling metal walls going down a shaft"),
     "roll_whoosh": (2, 0.9, -19, "a person diving into a quick forward roll on a hard floor: fast cloth rustle and whoosh, then a soft body thump and gear rattle"),
     "game_over_sting": (1, 5.0, -15, "a dark orchestral horror sting: one deep low brass and timpani hit, dissonant strings swelling, a distant mournful choir, then fading slowly to silence"),
     # Weapons. The pump shotgun (weapon_m12_*) isn't here: generations come
