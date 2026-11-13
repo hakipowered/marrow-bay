@@ -444,6 +444,27 @@ func pick_up(pid: String) -> bool:
 		return GS.has_flag("taken:" + pid)
 	return await pick_up_node(node)
 
+## Where she stands to take an item: 0.7 m out from it on her side if that's
+## free, else the nearest free spot turning round the item and stepping
+## further out (up to 1.3 m). Walking at a spot inside the desk the item lies
+## on had her pushing against the desk, which read as "stuck".
+func _stand_spot(stand: Vector3, dir: Vector3) -> Vector3:
+	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	var shape := CapsuleShape3D.new()
+	shape.radius = 0.36
+	shape.height = 1.6
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.collision_mask = 1
+	q.exclude = [p.get_rid()]
+	for r in [0.7, 0.9, 1.1, 1.3]:
+		for k in [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8]:
+			var c: Vector3 = stand + dir.rotated(Vector3.UP, k * TAU / 16.0) * r
+			q.transform = Transform3D(Basis(), c + Vector3.UP * 0.83)
+			if space.intersect_shape(q, 1).is_empty():
+				return c
+	return stand + dir * 0.7
+
 func pick_up_node(node: Node) -> bool:
 	var tag: String = node.pickup_id if node.pickup_id != "" else str(node.name)
 	for attempt in 3:
@@ -455,7 +476,7 @@ func pick_up_node(node: Node) -> bool:
 		var from: Vector3 = (p.global_position - stand) * Vector3(1, 0, 1)
 		if from.length() < 0.1:
 			from = Vector3.BACK
-		var spot := stand + from.normalized() * 0.7
+		var spot := _stand_spot(stand, from.normalized())
 		if not await go_to(spot, 40.0, true, "item " + tag + " ") and attempt == 1:
 			await _warp(spot, "to item " + tag)
 		await face(pos)
