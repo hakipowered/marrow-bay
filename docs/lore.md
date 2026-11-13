@@ -179,8 +179,13 @@ security desk. Built like a door. Kept the shelter alive for three days, counted
 reading room. Hides it with a rag around the wrist so the others won't panic.
 - **Tonight:** stays behind in the office "to keep the count", gives them the
   vault elevator key card. He knows exactly what is happening to him.
-- **Ch. 2:** he turns in front of them and picks up the riot baton he drilled
-  with for twenty years. Boss: *The Last Warden*.
+- **Ch. 2:** he is already down in the Undercroft, barred into the shelter
+  staff's muster room with the generator's starting handle on his belt. Over
+  the tannoy he tells them where it is and unbars the door. When they get
+  there he counts the shelter one last time ("Not one of them went out.") and
+  turns in front of them, in his riot gear, with the steel truncheon and the
+  riot shield he drilled with for twenty years. The bite on his back has
+  swollen into a glowing growth. Boss: *The Last Warden*.
 - **Voice:** hoarse, commanding, exhausted (Eleven v4, voice "Clyde").
 
 ### Zaga Sagheera
@@ -248,7 +253,7 @@ The story's one motif. Use it, don't explain it.
 | 1 | **Shelter** | `gates`: the gates and banner, faces at the windows, chapter card | done |
 | 1 | | `warden`: Hardass in the office, gives the vault elevator key card (`vault_card`) | done |
 | 1 | | `glass`: the Tallyman behind the frosted pane | done |
-| 2 | **The Count** | Hardass turns (boss 1); the Tallyman starts hunting | to do |
+| 2 | **The Count** | `scripts/story/chapter2_story.gd` (the Undercroft, see `docs/chapter2.md`): `c2_arrival` the lift opens on the service level; `c2_hall` the flood door and the dead generator; `c2_hunt` the master clock strikes and the Tallyman starts hunting; `c2_intercom` Hardass on the tannoy; `c2_warden` Hardass has turned (boss 1, `WardenBoss`); `c2_end` Nasri's staff card and his chalk in the deep stacks | done |
 | 3 | **Paper Trail** | Nasri's office in the vault, the recording; the Bookbinder (boss 2) | to do |
 | 4 | **Night Market** | Naghal's broadcast; the Sweepers arrive | to do |
 | 5 | **Zaga** | the grate and the slingshot; Taken | to do |
@@ -258,7 +263,9 @@ The story's one motif. Use it, don't explain it.
 
 Story flags (in `GameState.world_flags`, saved with the game): `story_intro`,
 `story_gates`, `story_warden`, `story_glass`, plus `objective` (the text on the
-objective banner).
+objective banner). Chapter 2 adds `story_c2_arrival`, `story_c2_hall`,
+`story_c2_hunt`, `story_c2_intercom`, `story_c2_warden`, `story_c2_end` and its
+world flags (`docs/chapter2.md`).
 
 ---
 
@@ -285,7 +292,8 @@ objective banner).
 | Zegan | Eleven v4 | See `tools/voice/cast.json`. |
 | Obcera | Eleven v4 | Screams also on v4. |
 | Tallyman | masked with a filter | Breathing and speech never overlap. |
-| Hardass | Eleven v4 "Clyde" (`2EiwWnXFnvU5JabPnv8n`) | hoarse, commanding, exhausted |
+| Hardass | Eleven v4 "Clyde" (`2EiwWnXFnvU5JabPnv8n`) | hoarse, commanding, exhausted; `[weak, rasping]` as he turns |
+| Hardass on the tannoy | same voice, `hardass_pa` in `cast.json` | through a speaker filter (chapter 2 intercom) |
 
 Generate new lines with `tools/voice/say.py`. The fal content filter rejects
 violent wording ("shoot you"): rephrase rather than fight it.

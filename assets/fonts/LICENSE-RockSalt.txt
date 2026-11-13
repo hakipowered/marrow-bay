@@ -1,0 +1,5 @@
+Rock Salt (assets/fonts/RockSalt.ttf), by Font Diner / Sideshow.
+From Google Fonts: https://fonts.google.com/specimen/Rock+Salt
+Licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+Used for hand-scrawled writing on walls (chalk) in the Undercroft.

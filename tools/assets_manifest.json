@@ -54,7 +54,7 @@
   "lodge_wall": "wall_bricks_plaster",
   "yard_ground": "gravel_concrete",
   "yard_wall": "slumped_mortar_brick",
-  "coal": "dry_ground_rocks",
+  "coal": "rocks_ground_09",
   "corrugated_rust": "rusty_corrugated_iron",
   "flood_steel": "rusty_painted_metal"
  },

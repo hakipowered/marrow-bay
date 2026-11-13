@@ -410,18 +410,41 @@ func _send_wave(i: int) -> void:
 	if level == null or entries.is_empty():
 		return
 	Music.force_action(45.0)
+	get_tree().call_group("story", "generator_wave", i)
 	var mix: Array = WAVE_MIX[i]
+	for k in mix.size():
+		_spawned += 1
+		_spawn_later(level, "Z_crank_%d" % _spawned, mix[k], 0.6 + k * 1.4)
+
+## An entry nobody can see right now (the chute's inside counts: it is
+## boxed in), a different one each time where there's a choice.
+func _hidden_entry() -> Dictionary:
 	var spots := entries.duplicate()
 	spots.shuffle()
-	spots.sort_custom(func(a, b): return int(UndercroftKit.out_of_sight(get_tree(), a["pos"])) > int(UndercroftKit.out_of_sight(get_tree(), b["pos"])))
-	for k in mix.size():
-		var e: Dictionary = spots[k % spots.size()]
-		var jitter := Vector3(randf_range(-0.6, 0.6), 0, randf_range(-0.6, 0.6)) if e.get("mode", "") != "drop" else Vector3.ZERO
-		_spawned += 1
-		_spawn_later(level, "Z_crank_%d" % _spawned, e["pos"] + jitter, mix[k], e.get("mode", ""), 0.6 + k * 1.4)
+	for e in spots:
+		if UndercroftKit.out_of_sight(get_tree(), e["pos"]):
+			return e
+	for e in spots:
+		if e.get("mode", "") == "drop":
+			return e
+	return {}
 
-func _spawn_later(level: Node, id: String, pos: Vector3, variant: String, mode: String, delay: float) -> void:
+## Each one is placed when its turn comes, from wherever is out of sight
+## then (the survivors move about while a wave comes in).
+func _spawn_later(level: Node, id: String, variant: String, delay: float) -> void:
 	await get_tree().create_timer(delay).timeout
+	var e := _hidden_entry()
+	if e.is_empty():
+		await get_tree().create_timer(1.0).timeout
+		e = _hidden_entry()
+		if e.is_empty():
+			return
+	var mode: String = e.get("mode", "")
+	var pos: Vector3 = e["pos"]
+	if mode != "drop":
+		var j: Vector3 = pos + Vector3(randf_range(-0.6, 0.6), 0, randf_range(-0.6, 0.6))
+		if UndercroftKit.out_of_sight(get_tree(), j):
+			pos = j
 	if mode == "drop":
 		_rpc_chute.rpc(pos)
 		await get_tree().create_timer(0.5).timeout
@@ -449,6 +472,8 @@ func _rpc_started() -> void:
 		_cranker.model.hands_off()
 	_cranker = null
 	_set_running(true)
+	# The lights down the tunnels and the flood door's motor.
+	get_tree().call_group("undercroft_power", "set_powered", true, true)
 	get_tree().call_group("story", "generator_changed", "running")
 
 func _set_running(animate: bool) -> void:

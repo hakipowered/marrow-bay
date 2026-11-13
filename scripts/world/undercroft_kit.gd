@@ -119,8 +119,12 @@ static func out_of_sight(tree: SceneTree, pos: Vector3) -> bool:
 	for p in tree.get_nodes_in_group("players"):
 		excl.append(p.get_rid())
 	for p in tree.get_nodes_in_group("players"):
-		for h in [1.6, 2.2]:
-			var eye: Vector3 = p.global_position + Vector3.UP * h
+		# Her eyes, and the camera over her shoulder (what the phone shows).
+		var eyes: Array = [p.global_position + Vector3.UP * 1.6, p.global_position + Vector3.UP * 2.2]
+		var cam = p.get("camera")
+		if cam is Camera3D and cam.is_inside_tree():
+			eyes.append(cam.global_position)
+		for eye in eyes:
 			for up in [0.3, 1.2]:
 				var pt: Vector3 = pos + Vector3.UP * up
 				if eye.distance_to(pt) > 45.0:

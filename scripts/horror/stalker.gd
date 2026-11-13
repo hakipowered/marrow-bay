@@ -139,6 +139,17 @@ func activate(at: Vector3) -> void:
 	if _breath.stream:
 		_breath.play()
 
+## Gone for now (chapter 2 after the Warden scene): every phone runs this
+## itself from the story, so it needs no RPC.
+func deactivate() -> void:
+	active = false
+	visible = false
+	velocity = Vector3.ZERO
+	if _breath:
+		_breath.stop()
+	if _voice:
+		_voice.stop()
+
 ## Host picks a line; every peer plays it with the breath loop muted.
 @rpc("authority", "reliable", "call_local")
 func say(index: int) -> void:
@@ -225,10 +236,17 @@ func _nearest() -> Node3D:
 	var bd := INF
 	for p in get_tree().get_nodes_in_group("players"):
 		var dd := global_position.distance_to(p.global_position)
-		if not p.downed and dd < bd:
+		if not p.downed and dd < bd and not _in_safe_room(p):
 			bd = dd
 			best = p
 	return best
+
+## Safe rooms stop him (docs/lore.md): whoever is inside one isn't hunted.
+func _in_safe_room(p: Node) -> bool:
+	for c in get_tree().get_nodes_in_group("checkpoints"):
+		if c.is_safe_room and c.holds(p):
+			return true
+	return false
 
 @rpc("authority", "reliable", "call_local")
 func _swing(path: NodePath) -> void:

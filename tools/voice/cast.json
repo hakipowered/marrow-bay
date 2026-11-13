@@ -53,5 +53,33 @@
     "notes": "Style B (wet, labored respirator). Run speech through mask_filter. Never put breathing under speech: stalker.gd fades the breath loop (assets/audio/sfx/stalker_breath.ogg, from ElevenLabs SFX v2) out while he talks.",
     "mask_filter": "highpass=f=180,lowpass=f=2400,equalizer=f=900:t=q:w=1.2:g=7,equalizer=f=3500:t=q:w=1:g=-10,acompressor=threshold=-24dB:ratio=6:attack=5:release=120,aecho=0.8:0.5:7:0.35,volume=1.6",
     "loudness_lufs": -18
+  },
+  "hardass": {
+    "endpoint": "elevenlabs/tts/eleven-v4",
+    "voice": "2EiwWnXFnvU5JabPnv8n",
+    "stability": {
+      "normal": 0.4,
+      "scream": 0.0
+    },
+    "default_direction": {
+      "normal": "[hoarse, exhausted, commanding]",
+      "scream": "[roaring, furious]"
+    },
+    "notes": "Warden Jackson Hardass (Clyde). Chapter 2: he is turning; use [weak, rasping] for the muster room lines."
+  },
+  "hardass_pa": {
+    "endpoint": "elevenlabs/tts/eleven-v4",
+    "voice": "2EiwWnXFnvU5JabPnv8n",
+    "stability": {
+      "normal": 0.4,
+      "scream": 0.0
+    },
+    "default_direction": {
+      "normal": "[hoarse, exhausted, commanding]",
+      "scream": "[roaring, furious]"
+    },
+    "notes": "Hardass over the Undercroft's tannoy horn (chapter 2 intercom): the same voice through a speaker filter.",
+    "mask_filter": "highpass=f=320,lowpass=f=3200,equalizer=f=1500:t=q:w=1:g=6,acrusher=bits=10:mix=0.25,aecho=0.8:0.6:90|170:0.35|0.22,volume=1.4",
+    "loudness_lufs": -19
   }
 }

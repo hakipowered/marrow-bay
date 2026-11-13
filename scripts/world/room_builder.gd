@@ -3,7 +3,8 @@ class_name RoomBuilder
 ##
 ## room = {
 ##   id, pos: Vector3 (floor corner), size: Vector3 (w, h, d),
-##   floor, wall, ceiling: texture slots, wainscot: slot or "",
+##   floor, wall, ceiling: texture slots, wainscot: slot or "" (wainscot_look:
+##   shader options for it, over the room's look),
 ##   look: {tint, grime_amount, stain_amount, wetness, ...} (surface shader params),
 ##   openings: {"n": [[offset, width, height, {frame}]], "s": [...], "e": [...], "w": [...]},
 ##   outdoor: bool (no ceiling), trim: Color,
@@ -450,7 +451,7 @@ static func _wall_run(root: Node3D, r: Dictionary, origin: Vector3, axis: Vector
 	if wains != "" and r.get("wainscot_height", 1.1) < y1 - 0.05:
 		var wh: float = r.get("wainscot_height", 1.1)
 		_box(root, center + inward * (WALL_T / 2 + 0.02) + Vector3(0, wh / 2 - center.y, 0), thin.call(wh, 0.04),
-			Mats.surface(wains, _merge(base, {"tile_size": 1.2, "grime_amount": 0.35})), false)
+			Mats.surface(wains, _merge(_merge(base, {"tile_size": 1.2, "grime_amount": 0.35}), r.get("wainscot_look", {}))), false)
 		_box(root, center + inward * (WALL_T / 2 + 0.05) + Vector3(0, wh - center.y, 0), thin.call(0.07, 0.07), Mats.trim(trim_col, 0.35), false)
 	_box(root, center + inward * (WALL_T / 2 + 0.03) + Vector3(0, 0.07 - center.y, 0), thin.call(0.14, 0.05), Mats.trim(trim_col, 0.5), false)
 

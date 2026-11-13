@@ -29,6 +29,9 @@ def texture(slot, asset, res):
     files = json.loads(get(API + asset))
     d = os.path.join(OUT, "textures", slot)
     for key, name in (("Diffuse", "albedo"), ("nor_gl", "normal"), ("arm", "arm")):
+        # A few sets ship their AO/roughness/metal pack as "me_arm".
+        if key not in files and "me_" + key in files:
+            key = "me_" + key
         r = files[key].get(res) or files[key]["1k"]
         save(r["jpg"]["url"], os.path.join(d, name + ".jpg"))
     with open(os.path.join(d, "SOURCE.txt"), "w") as f:

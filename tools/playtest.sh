@@ -2,15 +2,16 @@
 # Playtest gate: run this before every build, and don't ship while it fails.
 #
 #   tools/playtest.sh          quick pass, about 6 minutes on 4 cores
-#   tools/playtest.sh full     plus the bot playing the whole first area solo
-#                              (about 2 more minutes)
+#   tools/playtest.sh full     plus the bot playing chapters 1 and 2 solo,
+#                              down the elevator and on through the Undercroft
 #
 # Quick pass: the level probe (holes out of the level, infected placed inside
 # props or falling through the floor, items no one can pick up), the scares
 # that bring infected in (no one popping up in view, no body in the floor), the
 # existing rule tests (walls, doors, crowd, death flow, infected deaths, story,
 # the vault power and elevator, weapons, music, barrels: every gun on every
-# drum), the
+# drum), chapter 2 (its walls and level probe, the whole story through its
+# prompts, the Warden fight's rules), the
 # bot's weapon / bag / save / death sections, and the co-op tests with two
 # copies of the game through a local relay (needs node and the ws package:
 # `npm i ws` anywhere and point NODE_PATH at its node_modules, or install it
@@ -65,6 +66,13 @@ run bot_weapons      600 --fixed-fps 60 --script tests/playtest.gd -- only weapo
 run bot_bag          300 --fixed-fps 60 --script tests/playtest.gd -- only bag
 run bot_save         300 --fixed-fps 60 --script tests/playtest.gd -- only save
 run bot_death        300 --fixed-fps 60 --script tests/playtest.gd -- only death
+# Chapter 2, the Undercroft: walls, the level probe, the whole story through
+# its prompts, the Warden's rules, and the bot fighting him its own way.
+run wall_overlap_ch2 120 --script tests/wall_overlap.gd -- res://scenes/levels/undercroft.tscn
+run level_probe_ch2  180 --fixed-fps 60 --script tests/playtest.gd -- only probe2
+run chapter2_flow    600 --fixed-fps 60 --script tests/chapter2_flow.gd
+run warden_fight     300 --fixed-fps 60 --script tests/warden_fight.gd
+run bot_warden       300 --fixed-fps 60 --script tests/playtest.gd -- only warden2
 
 # Co-op: two copies of the game through a local relay.
 coop() {
@@ -98,7 +106,7 @@ else
 fi
 
 if [ "$MODE" = "full" ]; then
-	run bot_route 1500 --fixed-fps 60 --script tests/playtest.gd -- only route
+	run bot_route 3000 --fixed-fps 60 --script tests/playtest.gd -- only route
 fi
 
 echo

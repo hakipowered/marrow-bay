@@ -240,6 +240,19 @@ func _rpc_retry(snapshot: Dictionary = {}) -> void:
 		SaveSystem.apply_snapshot(data)
 	get_tree().reload_current_scene()
 
+## On to the next chapter's level, together, each survivor carrying their
+## bag. Called on every phone (a scene's on_cutscene_end), so both load it;
+## the new level's checkpoint is where they come out.
+func change_level(path: String, checkpoint: String) -> void:
+	for p in get_tree().get_nodes_in_group("players"):
+		GameState.inventories[p.character] = p.inventory.to_dict()
+	GameState.level_path = path
+	GameState.shared_checkpoint = checkpoint
+	Engine.time_scale = 1.0
+	Music.override_track = ""
+	Cutscenes.cover(true)
+	get_tree().change_scene_to_file.call_deferred(path)
+
 func _on_partner_left(_id: int) -> void:
 	for p in get_tree().get_nodes_in_group("players"):
 		if not GameState.character_by_peer.has(p.peer_id):

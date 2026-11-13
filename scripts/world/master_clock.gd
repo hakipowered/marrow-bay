@@ -1,15 +1,14 @@
 class_name MasterClock
 extends Node3D
 ## The Undercroft's master clock (chapter 2), in the clock gallery: a tall
-## regulator in a locked mahogany case that once drove every slave clock in
+## longcase regulator with a locked drawer in its plinth, that once drove every slave clock in
 ## the tunnels. The wall of slave dials beside it, one for each room, all
 ## stopped at ten past eleven, the night the keeper pulled the field fuse
 ## and hid it in the case.
 ##
-## The brass winding key (found in the map room) opens the case: the
-## pendulum swings again, every slave dial on the wall jolts forward minute
-## by minute in step and stops at 11:44, the clock strikes, and the fuse is
-## there on the shelf inside. The chime carries through the tunnels, and
+## The brass winding key (found in the map room) winds it: it ticks again,
+## every dial jolts forward minute by minute in step and stops at 11:44, the
+## clock strikes, and the drawer in the plinth springs open on the fuse. The chime carries through the tunnels, and
 ## something down here that counts hears it (the story's "hunt" scene starts
 ## when the fuse is taken).
 ##
@@ -22,14 +21,17 @@ const FUSE_ID := "c2_fuse"
 const SLAVES := ["LIFT SHAFT", "SERVICE TUNNEL", "KEEPER'S LODGE", "SURVEY ROOM", "CLOCK GALLERY", "MUSTER ROOM",
 	"ENGINE HALL", "COAL YARD", "DEEP STACKS", "NORTH STAIR", "PUMP ROOM", "THE COUNTING HOUSE"]
 const STOP_MIN := 10
+## The scanned case is 2.19 m; the master regulator stands taller.
+const CASE_S := 1.15
+const DRAWER_OUT := 0.3
+## Where the fuse lies in the open drawer, local.
+const FUSE_AT := Vector3(0, 0.17 * CASE_S + 0.03, 0.435 * CASE_S + 0.3 - 0.17)
 const END_MIN := 44
 
 var _door: Node3D
-var _pendulum: Node3D
 var _hands: Array = []      # [hour hand, minute hand] per dial (master first)
 var _minute := float(STOP_MIN)
 var _running := false
-var _swing_t := 0.0
 var _tick_t := 0.0
 
 static func is_open() -> bool:
@@ -39,7 +41,7 @@ func _ready() -> void:
 	add_to_group("master_clock")
 	_build()
 	if is_open():
-		_door.rotation_degrees.y = -100
+		_door.position.z += DRAWER_OUT
 		_minute = END_MIN
 		_running = true
 		_place_fuse.call_deferred()
@@ -48,55 +50,31 @@ func _ready() -> void:
 func _place_fuse() -> void:
 	var level := get_tree().get_first_node_in_group("level")
 	if level and not GameState.has_flag("taken:" + FUSE_ID) and not level.has_node("Pickup_" + FUSE_ID):
-		level.place_pickup("key:fuse", global_transform * Vector3(0, 0.53, 0.42), FUSE_ID)
+		level.place_pickup("key:fuse", global_transform * FUSE_AT, FUSE_ID)
 
 # ------------------------------------------------------------------ the case
 
 func _build() -> void:
-	var wood := Mats.trim(Color(0.24, 0.1, 0.06), 0.42, 0.0)
-	var wood_dark := Mats.trim(Color(0.13, 0.055, 0.035), 0.5, 0.0)
-	var brass := Mats.trim(Color(0.66, 0.5, 0.22), 0.3, 0.9)
-	var glass := StandardMaterial3D.new()
-	glass.albedo_color = Color(0.7, 0.75, 0.8, 0.14)
-	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.roughness = 0.05
-	glass.metallic = 0.3
-	# Plinth, trunk, hood with its pediment.
-	RoomBuilder._box(self, Vector3(0, 0.15, 0.3), Vector3(0.9, 0.3, 0.55), wood_dark, true)
-	RoomBuilder._box(self, Vector3(0, 1.2, 0.27), Vector3(0.72, 1.8, 0.46), wood, true)
-	RoomBuilder._box(self, Vector3(0, 2.45, 0.3), Vector3(0.86, 0.7, 0.55), wood, true)
-	RoomBuilder._box(self, Vector3(0, 2.86, 0.3), Vector3(0.96, 0.12, 0.6), wood_dark, false)
-	RoomBuilder._box(self, Vector3(0, 2.98, 0.3), Vector3(0.5, 0.12, 0.45), wood_dark, false)
-	# The trunk's dark interior, seen through the door when it opens.
-	RoomBuilder._box(self, Vector3(0, 1.2, 0.505), Vector3(0.58, 1.6, 0.01), Mats.trim(Color(0.03, 0.02, 0.015), 0.9), false)
-	# Shelf at the foot of the trunk, where the fuse waits.
-	RoomBuilder._box(self, Vector3(0, 0.5, 0.42), Vector3(0.56, 0.03, 0.2), wood_dark, false)
-	# The dial in the hood.
-	var dial := _dial(self, Vector3(0, 2.45, 0.58), 0.3, "THE UNDERCROFT\nMASTER  CLOCK", true)
+	# The case: a tall scanned longcase clock, scaled up to a regulator's
+	# height. Its hood is empty behind the glass, so the dial is ours.
+	var case := RoomBuilder.prop(self, "vintage_grandfather_clock_01", Vector3(0, 0, 0.19 * CASE_S), 0.0, CASE_S, true)
+	case.name = "Case"
+	var dial := _dial(self, Vector3(0, 1.77 * CASE_S, 0.36 * CASE_S), 0.15 * CASE_S, "", true)
 	_hands.append(dial)
-	# Pendulum: brass rod and a heavy bob, hanging from under the dial.
-	_pendulum = Node3D.new()
-	_pendulum.position = Vector3(0, 2.05, 0.44)
-	add_child(_pendulum)
-	UndercroftKit.bar(_pendulum, Vector3(0, -0.6, 0), 0.008, 1.2, brass)
-	var bob := UndercroftKit.bar(_pendulum, Vector3(0, -1.22, 0), 0.11, 0.035, brass, "z", 24)
-	bob.name = "Bob"
-	# The trunk door: a glazed panel on a left-hand hinge, locked.
+	# The drawer in the plinth: shut flush with its front, the keyhole above.
+	var wood := Mats.trim(Color(0.3, 0.14, 0.07), 0.45, 0.0)
+	var brass := Mats.trim(Color(0.66, 0.5, 0.22), 0.3, 0.9)
 	_door = Node3D.new()
-	_door.position = Vector3(-0.32, 1.2, 0.52)
+	_door.name = "Drawer"
+	_door.position = Vector3(0, 0.24 * CASE_S, 0.435 * CASE_S)
 	add_child(_door)
-	RoomBuilder._box(_door, Vector3(0.32, 0, 0), Vector3(0.64, 1.62, 0.035), wood, false)
-	var pane := MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(0.44, 1.3)
-	pane.mesh = q
-	pane.material_override = glass
-	pane.position = Vector3(0.32, 0.03, 0.02)
-	_door.add_child(pane)
-	# The glass is set into the door: cut the panel to a frame round it.
-	RoomBuilder._box(_door, Vector3(0.32, 0, 0.012), Vector3(0.44, 1.3, 0.012), Mats.trim(Color(0.02, 0.015, 0.01), 0.9), false)
-	RoomBuilder._box(_door, Vector3(0.6, 0, 0.03), Vector3(0.03, 0.06, 0.02), brass, false)   # keyhole escutcheon
-	UndercroftKit.reach(self, self, Vector3(0, 1.3, 0.8), Vector3(1.0, 2.2, 0.6))
+	RoomBuilder._box(_door, Vector3(0, 0, 0), Vector3(0.42 * CASE_S, 0.16 * CASE_S, 0.02), wood, false)
+	RoomBuilder._box(_door, Vector3(0, -0.07 * CASE_S, -0.17), Vector3(0.4 * CASE_S, 0.015, 0.34), wood, false)
+	for x in [-0.2 * CASE_S, 0.2 * CASE_S]:
+		RoomBuilder._box(_door, Vector3(x, -0.02 * CASE_S, -0.17), Vector3(0.015, 0.1 * CASE_S, 0.34), wood, false)
+	UndercroftKit.bar(_door, Vector3(0, 0, 0.02), 0.012, 0.02, brass, "z")
+	RoomBuilder._box(self, Vector3(0, 0.36 * CASE_S, 0.437 * CASE_S), Vector3(0.025, 0.04, 0.01), brass, false)   # keyhole escutcheon
+	UndercroftKit.reach(self, self, Vector3(0, 1.1, 0.95), Vector3(1.0, 2.2, 0.6))
 	_build_slaves()
 
 ## A clock face: a dark bezel, an ivory face with its twelve marks, and two
@@ -170,7 +148,7 @@ func _set_hands(minutes: float) -> void:
 func interact_text(player: Node, _handle := -1) -> String:
 	if is_open():
 		return ""
-	return "Open the clock case" if _has_key(player) else "Check the master clock"
+	return "Wind the master clock" if _has_key(player) else "Check the master clock"
 
 func interact(player: Node, _handle := -1) -> void:
 	if is_open():
@@ -180,7 +158,7 @@ func interact(player: Node, _handle := -1) -> void:
 	else:
 		var hud := get_tree().get_first_node_in_group("hud")
 		if hud:
-			hud.toast("The case is locked. A small brass winding key would fit it.")
+			hud.toast("Stopped at ten past eleven. The winding hole needs a small brass key.")
 
 func _has_key(player: Node) -> bool:
 	return Cheats.on("unlock_doors") or player.inventory.key_items.has(KEY)
@@ -197,11 +175,7 @@ func _rpc_open(by_peer: int) -> void:
 	for p in get_tree().get_nodes_in_group("players"):
 		if p.peer_id == by_peer and p.is_multiplayer_authority():
 			p.inventory.remove_key(KEY)
-	Sfx.play_at("clock_unlock", global_transform * Vector3(0.3, 1.2, 0.6), "breaker_throw", -2.0, 5.0)
-	var t := create_tween()
-	t.tween_property(_door, "rotation_degrees:y", -100.0, 1.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	# The fuse on the shelf inside.
-	_place_fuse()
+	Sfx.play_at("clock_unlock", global_transform * Vector3(0, 0.6, 0.6), "breaker_throw", -2.0, 5.0)
 	_running = true
 	_advance()
 	get_tree().call_group("story", "clock_opened")
@@ -216,15 +190,19 @@ func _advance() -> void:
 		Sfx.play_at("clock_clack", global_transform * Vector3(2.5, 2.0, 0.3), "breaker_throw", -10.0, 6.0)
 		await get_tree().create_timer(0.11).timeout
 	await get_tree().create_timer(0.8).timeout
-	for i in 3:
-		Sfx.play_at("clock_chime", global_transform * Vector3(0, 2.5, 0.4), "", 4.0, 30.0)
+	# As it strikes, the drawer in the plinth springs open: the fuse.
+	Sfx.play_at("clock_chime", global_transform * Vector3(0, 2.5, 0.4), "", 4.0, 30.0)
+	var t := create_tween()
+	t.tween_property(_door, "position:z", _door.position.z + DRAWER_OUT, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	Sfx.play_at("drawer_open", global_transform * FUSE_AT, "breaker_throw", -4.0, 5.0)
+	_place_fuse()
+	for i in 2:
 		await get_tree().create_timer(2.2).timeout
+		Sfx.play_at("clock_chime", global_transform * Vector3(0, 2.5, 0.4), "", 4.0, 30.0)
 
 func _process(delta: float) -> void:
 	if not _running:
 		return
-	_swing_t += delta
-	_pendulum.rotation.z = sin(_swing_t * PI) * 0.14
 	_tick_t += delta
 	if _tick_t >= 1.0:
 		_tick_t -= 1.0

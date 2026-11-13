@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Enemy health against the ammo you can find, area by area (archive hub).
+"""Enemy health against the ammo you can find, area by area: chapter 1 (the
+archive hub), then chapter 2 (the Undercroft) with what's left over.
 
     python3 tools/balance_report.py
 
@@ -9,6 +10,11 @@ the starting 45 rounds, every ammo pickup and weapon found so far (as P9-shot
 equivalents, by damage), plus the expected drops from kills (zombie drop
 table). "Spare" is what's left over if every shot is a body shot; head shots
 (x3) only make it easier. Exits 1 if any area runs short.
+
+Chapter 2 counts the generator's crank waves (GeneratorSet.WAVE_MIX) and the
+Warden (WardenBoss.HP, every shot a body shot; the growth on his back counts
+triple, so this is the worst case). Its pickups in the muster room come after
+his fight, so they count from the crank waves on.
 """
 import re
 import sys
@@ -35,17 +41,48 @@ WEAPON_MAG = {"m12": ("shells", 5), "longshot": ("rifle", 5), "gl": ("grenades",
 # Expected 9mm per kill from the zombie table (30 of 100 weight, 15 rounds) and shells (10 of 100, 6 shells).
 DROP_SHOTS = {"zombie": 0.30 * 15 + 0.10 * 6 * PER_ROUND["shells"], "brute": 0.30 * 6 * PER_ROUND["50cal"] + 0.30 * 2 * PER_ROUND["grenades"], "none": 0.0}
 
-hub = read("scripts/levels/archive_hub.gd")
-areas = re.split(r"\nfunc (_\w+)\(\) -> void:", hub)
-order = ["_street", "_courtyard", "_great_hall", "_west_corridor", "_reading_room", "_office_safe_room", "_records_vault", "_boiler_room"]
-bodies = {areas[i]: areas[i + 1] for i in range(1, len(areas) - 1, 2)}
+def funcs(path):
+    src = read(path)
+    parts = re.split(r"\nfunc (_\w+)\(\) -> void:", src)
+    return {parts[i]: parts[i + 1] for i in range(1, len(parts) - 1, 2)}
+
+def gd_const(path, name):
+    return re.search(r"const %s := ([\d.]+)" % name, read(path)).group(1)
+
+hub = funcs("scripts/levels/archive_hub.gd")
+ch1 = [(a[1:], [], hub.get(a, "")) for a in ["_street", "_courtyard", "_great_hall", "_west_corridor", "_reading_room", "_office_safe_room", "_records_vault", "_boiler_room"]]
+
+uc = funcs("scripts/levels/undercroft.gd")
+gen = read("scripts/world/generator_set.gd")
+mix = re.search(r"const WAVE_MIX := \[(.*?)\n\]", gen, re.S).group(1)
+waves = re.findall(r'"(\w+)"', mix)
+warden_hp = float(gd_const("scripts/enemies/warden_boss.gd", "HP"))
+muster = uc.get("_muster_room", "")
+# In the order they're played: the engine hall is walked through first.
+ch2 = [
+    ("c2 lift pit", [], uc.get("_lift_pit", "")),
+    ("c2 corridor", [], uc.get("_service_corridor", "")),
+    ("c2 engine hall", [], uc.get("_engine_hall", "")),
+    ("c2 lodge", [], uc.get("_keepers_lodge", "")),
+    ("c2 survey room", [], uc.get("_survey_room", "")),
+    ("c2 clock gallery", [], uc.get("_clock_gallery", "")),
+    ("c2 coal yard", [], uc.get("_coal_yard", "") + uc.get("_fuel_shed", "")),
+    ("c2 the Warden", [("warden", warden_hp)], re.sub(r"place_pickup\(", "#", muster)),
+    ("c2 crank waves", waves, "".join(re.findall(r"place_pickup\([^\n]*", muster))),
+    ("c2 deep stacks", [], uc.get("_deep_stacks", "")),
+]
 
 have = 45.0  # P9: 15 in the gun, 30 spare
 short = False
 print("%-18s %6s %6s %8s %8s %7s" % ("area", "foes", "health", "needs", "has", "spare"))
-for a in order:
-    body = bodies.get(a, "")
+for name, extra, body in ch1 + ch2:
     foes = re.findall(r'place_zombie\("[^"]+", Vector3\([^)]*\), [-\d.]+, "(\w+)"', body)
+    boss_hp = 0.0
+    for f in extra:
+        if isinstance(f, tuple):
+            boss_hp += f[1]
+        else:
+            foes.append(f)
     for item in re.findall(r'place_pickup\("([^"]+)"', body):
         kind, _, what = item.partition(":")
         if kind == "ammo":
@@ -53,10 +90,10 @@ for a in order:
         elif kind == "weapon" and what in WEAPON_MAG:
             t, n = WEAPON_MAG[what]
             have += n * PER_ROUND[t]
-    health = sum(hp[f] * AVG_HP + shield.get(f, 0) for f in foes)
+    health = sum(hp[f] * AVG_HP + shield.get(f, 0) for f in foes) + boss_hp
     need = health / P9 * MISS
     spare = have - need
-    print("%-18s %6d %6d %8.0f %8.0f %7.0f" % (a[1:], len(foes), health, need, have, spare))
+    print("%-18s %6d %6d %8.0f %8.0f %7.0f" % (name, len(foes) + len([f for f in extra if isinstance(f, tuple)]), health, need, have, spare))
     if spare < 0:
         short = True
     have = spare + sum(DROP_SHOTS.get(drops.get(f, "none"), 0) for f in foes)
