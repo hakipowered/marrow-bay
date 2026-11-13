@@ -147,6 +147,7 @@ func _process(d: float) -> bool:
 				rounds.pop_front()
 				if rounds.is_empty():
 					quit(0)
+					return false
 				round_i = rounds[0]
 				stage = 2
 				frames = 0

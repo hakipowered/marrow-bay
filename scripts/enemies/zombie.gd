@@ -634,27 +634,30 @@ func _death_plan() -> Dictionary:
 	if crippled or data.get("crawl"):
 		return {"c": "knees_face", "from": maxf(model.death_land("knees_face") - 0.35, 0.0), "k": 0.0,
 			"y": _rng.randf_range(-0.25, 0.25), "s": 0.9}
+	# (fall_back is not in any of these: its arms fly out level with the
+	# shoulders as it topples, which reads as a T-pose. It is kept only as a
+	# pose for infected lying in wait.)
 	var pool := {}
 	if blast:
 		pool = {"flip": 3.0, "blown_back": 3.0, "sweep": 1.0}
 	elif burning:
 		pool = {"convulse": 4.0, "knees_face": 1.0, "gut": 1.0}
 	elif kind == "pellets" and near < 6.0 and not from_back:
-		pool = {"blown_back": 3.0, "flip": 1.0, "fall_back": 1.0, "sweep": 1.0}
+		pool = {"blown_back": 3.0, "flip": 1.0, "sit_back": 1.0, "sweep": 1.0}
 	elif from_back:
 		pool = {"back_shot": 3.0, "knees_face": 2.0, "headshot": 1.5 if zone == "head" else 0.0}
 	elif rushing:
 		# Shot dead mid-lunge: its own momentum carries it down onto its face.
 		pool = {"knees_face": 3.0, "headshot": 2.0 if zone == "head" else 0.0, "sweep": 1.0}
 	elif zone == "head":
-		pool = {"headshot": 4.0, "fall_back": 1.0, "sit_back": 1.0, "knees_face": 1.0}
+		pool = {"headshot": 4.0, "slow_back": 1.0, "sit_back": 1.0, "knees_face": 1.0}
 	elif zone == "leg":
 		pool = {"sweep": 3.0, "knees_face": 2.0, "gut": 1.0}
 	elif kind == "melee":
 		# A knife opens the throat or the gut; a hatchet chops it down.
 		pool = {"gut": 2.0, "knees_face": 2.0, "choke": 1.0 if wid == "knife" else 0.0, "sit_back": 1.0, "sweep": 1.0 if wid == "hatchet" else 0.0}
 	else:
-		pool = {"fall_back": 2.0, "slow_back": 2.0, "sit_back": 2.0, "gut": 2.0, "knees_face": 2.0, "choke": 1.0}
+		pool = {"slow_back": 2.0, "sit_back": 2.0, "gut": 2.0, "knees_face": 2.0, "headshot": 1.0, "choke": 0.6}
 	# The big ones don't somersault; a screamer grabs at its throat; a
 	# spitter folds over its swollen gut.
 	if heavy and not (blast and float(h.get("dmg", 0.0)) >= 300.0):
