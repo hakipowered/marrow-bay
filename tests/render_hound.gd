@@ -1,6 +1,6 @@
 extends SceneTree
 ## The infected hound in each of its clips, side by side, rendered to PNG.
-## xvfb-run godot --path . --rendering-driver vulkan --rendering-method mobile --script tests/render_hound.gd -- <out_dir> [lineup|head|boxes|turn]
+## xvfb-run godot --path . --rendering-driver opengl3 --resolution 1600x900 --script tests/render_hound.gd -- <out_dir> [lineup|head|boxes|turn]
 ##   lineup: idle, feed, trot, gallop, lunge (mid-leap), bite (snap), hit, dead
 ##   head:   close-up of the head (eyes, jaws, blood)
 ##   boxes:  its hitboxes drawn over it in idle and mid-leap

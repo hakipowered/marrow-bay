@@ -17,6 +17,7 @@ var hp0 := 0.0
 var zone_hits := {}
 var fail := ""
 var skipped := {}
+var _logged_stage := -1
 
 func _initialize() -> void:
 	var a := OS.get_cmdline_user_args()
@@ -31,6 +32,12 @@ func _shot(name: String) -> void:
 	var path := "%s/hound_%s.png" % [out, name]
 	root.get_texture().get_image().save_png(path)
 	print("saved ", path)
+
+## Software rendering is slow, so the frames between the shots aren't drawn
+## (only once the level is up: switched off while it loads, the view stays black).
+func _render(on: bool) -> void:
+	if DisplayServer.get_name() != "headless" and RenderingServer.render_loop_enabled != on:
+		RenderingServer.render_loop_enabled = on
 
 func _aim_at(pt: Vector3) -> void:
 	var d: Vector3 = (pt - p.camera.global_position).normalized()
@@ -53,8 +60,12 @@ func _process(delta: float) -> bool:
 			quit(1)
 			return true
 		print("hound at ", h.global_position, " state ", h.state, " hitboxes ", h._hitboxes.size())
+		# Only the hound: no other infected walking into the fight or the shots.
+		for z in get_nodes_in_group("zombies"):
+			if z != h:
+				z.queue_free()
 		# Stand her up the street from it, looking at it.
-		p.global_position = h.global_position + Vector3(6.5, 0, 2.0)
+		p.global_position = h.global_position + Vector3(4.8, 0, 1.4)
 		hp0 = p.hp
 	var cuts = root.get_node("Cutscenes")
 	if cuts.active:
@@ -66,6 +77,9 @@ func _process(delta: float) -> bool:
 	t += delta
 	if h == null or not is_instance_valid(h):
 		return false
+	if stage != _logged_stage:
+		_logged_stage = stage
+		print("%.2f stage %d player hp %.0f" % [t, stage, p.hp])
 	if states.is_empty() or states[-1] != h.state:
 		states.append(h.state)
 		print("%.2f hound state %d pace %.1f" % [t, h.state, h.velocity.length()])
@@ -76,6 +90,7 @@ func _process(delta: float) -> bool:
 				_shot("feeding")
 				stage = 1
 		1:   # step closer until it notices
+			_render(false)
 			_aim_at(h.global_position + Vector3.UP * 0.4)
 			if t > 1.7 and t < 1.8:
 				p.global_position = h.global_position + Vector3(3.9, 0, 1.2)
@@ -84,10 +99,11 @@ func _process(delta: float) -> bool:
 				stage = 9
 			if h.state == 2:   # CHASE
 				p.move_input = Vector2.ZERO
-				p.global_position = h.global_position + (p.global_position - h.global_position).normalized() * 8.0
+				p.global_position = h.global_position + (p.global_position - h.global_position).normalized() * 6.5
 				stage = 2
 				t = 0.0
 		2:   # it comes at her
+			_render(true)
 			_aim_at(h.global_position + Vector3.UP * 0.5)
 			if frames % 15 == 0:
 				print("  %.2f dist %.2f pace %.1f state %d at %s" % [t, h.global_position.distance_to(p.global_position), h.velocity.length(), h.state, h.global_position])
@@ -103,6 +119,7 @@ func _process(delta: float) -> bool:
 				fail = "never attacked"
 				stage = 9
 		3:   # shoot it
+			_render(false)
 			var boxes: Array = h._hitboxes
 			var aim: Vector3 = boxes[0].global_position if boxes.size() > 0 else h.global_position + Vector3.UP * 0.5
 			_aim_at(aim)
@@ -118,6 +135,7 @@ func _process(delta: float) -> bool:
 				stage = 9
 		4:
 			_aim_at(h.global_position + Vector3.UP * 0.2)
+			_render(t > 1.5)
 			if t > 2.0:
 				_shot("dead")
 				stage = 9
