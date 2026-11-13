@@ -207,7 +207,9 @@ func _physics_process(delta: float) -> void:
 	# Only the host voices groans; the RPC plays them on every phone. Each
 	# one is followed by a pause, and only one of the horde starts at a time.
 	if _groan_t <= 0 and is_multiplayer_authority() and state not in [S.DEAD, S.PLAY_DEAD, S.HIDDEN, S.ATTACK]:
-		var now := Time.get_ticks_msec()
+		# Game time, not the wall clock: the gaps hold when a slow phone (or
+		# a test) runs behind real time.
+		var now := Engine.get_physics_frames() * 1000 / Engine.physics_ticks_per_second
 		var p := _nearest_player()
 		var near := p != null and global_position.distance_to(p.global_position) < 22.0
 		if not near or now - _last_groan_ms < (1600 if state == S.CHASE else 2800):

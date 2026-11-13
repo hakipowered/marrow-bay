@@ -1007,7 +1007,8 @@ func _audio_report() -> void:
 		if v[3] > -20.0:
 			audible += 1
 			var id: String = str(v[1]).get_file()
-			if not (id.contains("attack") or id.contains("alert") or id.contains("death") or id.contains("shriek") or id.contains("slam") or id.contains("roar")):
+			# "swipe" is the whoosh of a swinging arm, not a voice.
+			if not (id.contains("attack") or id.contains("swipe") or id.contains("alert") or id.contains("death") or id.contains("shriek") or id.contains("slam") or id.contains("roar")):
 				groans += 1
 	var per_min := audible / span * 60.0
 	var groans_min := groans / span * 60.0
