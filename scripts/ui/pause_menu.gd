@@ -45,8 +45,19 @@ func _ready() -> void:
 		c.add_theme_font_size_override("font_size", 28)
 		c.button_pressed = Cheats.on(k)
 		c.toggled.connect(func(on): Cheats.set_cheat(k, on))
-		Cheats.changed.connect(func(n, v): if n == k: c.set_pressed_no_signal(v))
+		_cheat_buttons[k] = c
 		_cheats.add_child(c)
+	# A method, not a lambda: Godot drops the connection when this menu is
+	# freed (a lambda stayed connected after a Continue reloaded the level,
+	# and the next cheat toggle hit the old, freed buttons: SCRIPT ERROR).
+	Cheats.changed.connect(_on_cheat_changed)
+
+var _cheat_buttons := {}
+
+func _on_cheat_changed(n: String, v: bool) -> void:
+	var c: CheckButton = _cheat_buttons.get(n)
+	if c:
+		c.set_pressed_no_signal(v)
 
 func refresh() -> void:
 	var goal: String = GameState.world_flags.get("objective", "")

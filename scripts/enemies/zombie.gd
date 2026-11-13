@@ -442,12 +442,12 @@ func _vent_above() -> Node3D:
 func _drop_from_ceiling() -> void:
 	state = S.CHASE
 	_set_solid(true)
-	# Out of the vent above it: the grille bursts out and falls, and it comes
-	# down head first out of the duct and twists onto its feet.
+	# Out of the vent above it: the grille bursts out and falls, and it drops
+	# feet first out of the duct.
 	var g := _vent_above()
 	var from_y := 3.0
 	if g:
-		from_y = g.global_position.y - global_position.y + 1.6 * float(data.get("height", 1.0))
+		from_y = g.global_position.y - global_position.y + 0.05
 		_knock_out_grille(g)
 	model.drop_from_ceiling(from_y)
 	Sfx.play_at("vent_burst", global_position + Vector3.UP * 3.0, "metal_bang", 6.0, 12.0)

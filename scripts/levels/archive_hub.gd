@@ -514,7 +514,7 @@ func _west_corridor() -> void:
 		# Frosted pane into the reading room (Chapter1Story fills it).
 		"windows": {"n": [[4.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0, "frame": false}]]},
 		# The air vent the ventling waits in (Z_corr_vent, right under it).
-		"ceiling_holes": [[5.15, 0.95, 0.9, 0.9, {"vent": true}]],
+		"ceiling_holes": [[5.05, 0.85, 1.1, 1.1, {"vent": true}]],
 	})
 	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(11.6, 0, 0.4), 0)
 	var tube := RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(4, 3.35, 1.5), 90, 1.0, false)
