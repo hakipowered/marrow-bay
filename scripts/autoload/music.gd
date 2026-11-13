@@ -3,7 +3,7 @@ extends Node
 ## Each track loops by fading into its own start a few seconds before the end,
 ## so there is never a gap. In game the track is chosen by priority:
 ## boss fight > FIGHT_TRACK (a big fight: a brute, a crowd, the Tallyman on
-## you; none for now) > safe room > none.
+## you) > safe room > none.
 ## Ordinary infected get no music, only the ambience and a low string bed
 ## (HorrorDirector): a couple of shamblers aren't a battle.
 ## With no track, only the HorrorDirector's ambience plays.
@@ -13,9 +13,10 @@ const FADE := 2.5
 const LOOP_OVERLAP := 4.0
 ## The track for a big fight (a brute and more, a horde breaking in, the
 ## awake Tallyman on her). Empty: fights play no music, only the ambience and
-## the infected themselves. Bulmaim hated "action" (0.10 playtest), so it's
-## out until there's a fight track he picks.
-const FIGHT_TRACK := ""
+## the infected themselves. "fight" is the battle theme Bulmaim picked after
+## the 0.10 playtest (violin and cello over metal guitars, orchestra and
+## choir), cut to start on its build-up so a fight starts strong.
+const FIGHT_TRACK := "fight"
 ## Which theme each boss uses. Bosses not listed use boss_2.
 const BOSS_THEMES := {"brood_mother": "boss_1"}
 ## Action music starts at this threat score and stops after it has stayed

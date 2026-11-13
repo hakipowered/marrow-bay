@@ -814,12 +814,12 @@ func _finish() -> void:
 		var tense := 0.0
 		var calm := 0.0
 		for k in _music_log:
-			if str(k).begins_with("action"):
+			if str(k).begins_with(MUSIC.FIGHT_TRACK) and MUSIC.FIGHT_TRACK != "":
 				tense += _music_log[k]
 			else:
 				calm += _music_log[k]
 		if tense > 10.0:
-			_bug("music", "the tense action track played %.0f s of %.0f s of fights with only ordinary infected (%s)" % [tense, tense + calm, ", ".join(parts)], "music_action")
+			_bug("music", "the fight track played %.0f s of %.0f s of fights with only ordinary infected (%s)" % [tense, tense + calm, ", ".join(parts)], "music_action")
 	_note("kills: %s; damage taken %.0f; strikes %d (through walls %d)" % [JSON.stringify(_kills), _damage_taken, _strikes, _wall_strikes])
 	print("PLAYTEST DONE %d bugs" % bugs.size())
 	for k in bugs:
@@ -1039,6 +1039,7 @@ func _run_route() -> void:
 	await clear_area("boiler", 90.0)
 	await pick_up("boiler_fuel")
 	await pick_up("boiler_powder")
+	await _power_and_lift()
 	# Anyone left standing in the area?
 	var left := []
 	for z in _zombies():
@@ -1047,6 +1048,56 @@ func _run_route() -> void:
 	if not left.is_empty():
 		_note("infected still standing after the route: " + ", ".join(left))
 	_note("route finished at %.0fs, hp %.0f, died %d times, bag %s" % [sim_t, p.hp, _deaths, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+
+## The end of the first area: throw the vault breaker in the boiler room,
+## back through the vault to the elevator, the key card, into the car and
+## down. All through the real prompts (the 0.10 breaker had none).
+func _power_and_lift() -> void:
+	var breaker: Node = current_scene.find_child("BreakerPanel", true, false)
+	var lift: Node = current_scene.find_child("VaultElevator", true, false)
+	if breaker == null or lift == null:
+		_bug("power", "breaker panel or vault elevator missing from the level")
+		return
+	var n: Vector3 = breaker.global_transform.basis.z
+	var panel: Vector3 = breaker.global_position + breaker.global_transform.basis * Vector3(0.25, 1.3, 0.0)
+	var stand := Vector3(panel.x, 0.0, panel.z) + n * 1.0
+	if not await go_to(stand, 40.0, true, "breaker "):
+		await _warp(stand, "to the breaker")
+	await face(panel)
+	if not await use_thing("Turn on the power", "the breaker panel"):
+		return
+	await _wait(3.0)
+	if not GS.has_flag("power:vault"):
+		_bug("power", "threw the breaker and the vault power didn't come on")
+		return
+	_shot("power_on")
+	await cross(Vector3(5.6, 0, 20.6), Vector3(2.6, 0, 20.6), "the boiler room door (back)")
+	var ln: Vector3 = lift.global_transform.basis.z
+	var front: Vector3 = lift.global_position + ln * 1.2
+	if not await go_to(front, 40.0, true, "elevator "):
+		await _warp(front, "to the elevator")
+	await face(lift.doors_point())
+	if not await use_thing("key card", "the vault elevator"):
+		return
+	await _wait(3.0)
+	if not lift.is_open:
+		_bug("power", "used the key card and the elevator doors stayed shut")
+		return
+	await cross(front, lift.ride_spot(0), "the elevator doors")
+	if not lift.in_car(p.global_position):
+		_bug("power", "couldn't walk into the elevator car (stopped at %s)" % _v(p.global_position))
+		return
+	await face(lift.doors_point())
+	if not await use_thing("Go down", "inside the elevator"):
+		return
+	await _wait(0.5)
+	if not CUTS.active or CUTS.current != "elevator":
+		_bug("power", "'Go down' didn't start the ride")
+		return
+	await _wait_cutscene_end(3.0)
+	if not GS.has_flag("story_elevator"):
+		_bug("power", "the ride ended without the story_elevator flag")
+	_note("rode the vault elevator: chapter 1 done at %.0fs" % sim_t)
 
 # ---------------------------------------------------------------- weapons
 

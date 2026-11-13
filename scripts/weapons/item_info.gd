@@ -44,9 +44,11 @@ const DESC := {
 
 const KEY_NAMES := {
 	"brass_quill_key": ["Brass Quill Key", "A heavy brass key with a quill engraved on its bow. One of the archive's old locks will take it."],
+	"vault_card": ["Vault Elevator Key Card", "Warden Hardass's staff card for the lift in the records vault, worn white at the edges. The lift runs on the vault's own circuit: no power, no ride. The breaker for it is in the boiler room."],
 }
 
 const FILES := {
+	"lift_note": ["Note on the Lift Doors", "LIFT DEAD AGAIN.\n\nVault breaker tripped when the city went dark. The lift runs off the vault circuit, not the generator, so nothing moves down here until somebody resets it.\n\nBreaker panel is in the BOILER ROOM: through the vault, east door. Big red handle on the right of the box. Push it all the way up.\n\nDon't send anyone down alone.\n\n- O.V."],
 	"shelter_log": ["Shelter Log", "Night two. We sealed the hall doors with forty-one people inside.\n\nThe wardens said the buses would come at dawn. Dawn came. No buses.\n\nA woman by the reading room has a bite on her wrist she keeps hidden under her sleeve. Nobody wants to be the one to say it.\n\nIf you're reading this, don't open the vault stairs alone. Whatever we put down there was still knocking this morning."],
 }
 
