@@ -2,8 +2,10 @@ class_name Chapter1Story
 extends Node3D
 ## Story for the Archive hub: the prologue "Last Call" (the intro film, then the
 ## burning ambulance on Ashgrove Street) and chapter 1 "Shelter": the gates and
-## the shelter banner, Warden Hardass in the archivist's office, and the first
-## sighting of the Tallyman through the reading room's frosted glass.
+## the shelter banner, Warden Hardass in the archivist's office, the first
+## sighting of the Tallyman through the reading room's frosted glass, and the
+## ride down in the vault elevator once the power is back (BreakerPanel,
+## VaultElevator), where this build's chapter 1 ends.
 ##
 ## ArchiveHub adds one of these. Cutscenes asks cutscene(id) for a scene's steps
 ## and calls on_cutscene_end(id) on every phone when it ends or is skipped;
@@ -20,6 +22,13 @@ const GATE := Vector3(0.0, 0.0, -14.0)
 const PANE := Vector3(-19.4, 1.65, 5.0)
 const HARDASS_SPOT := Vector3(17.0, 0.0, 2.7)
 const HARDASS_REST := Vector3(18.9, 0.0, 6.0)
+
+## Objectives after Hardass hands over the card. The first replaced "Find a
+## way down to the records vault", which never said where the power was.
+const OBJ_POWER := "Get the power on: the breaker is in the boiler room, through the vault"
+const OBJ_LIFT := "Take the vault elevator down"
+const OBJ_END := "End of chapter 1 in this build. Chapter 2 starts from the elevator"
+const OBJ_OLD_WARDEN := "Find a way down to the records vault"
 
 ## Story triggers, checked by the host. A scene starts when a player walks
 ## into its box, the scene before it has played, and no infected is on them.
@@ -56,6 +65,9 @@ func _ready() -> void:
 	_restore_objective.call_deferred()
 
 func _restore_objective() -> void:
+	# Saves from before the breaker worked still carry the old, vague goal.
+	if GameState.has_flag("story_warden") and GameState.world_flags.get("objective", "") == OBJ_OLD_WARDEN:
+		GameState.world_flags["objective"] = OBJ_LIFT if VaultCircuit.is_on() else OBJ_POWER
 	if GameState.has_flag("story_intro"):
 		Cutscenes.show_objective()
 
@@ -113,6 +125,7 @@ func cutscene(id: String) -> Array:
 		"gates": return _gates()
 		"glass": return _glass()
 		"warden": return _warden()
+		"elevator": return _elevator()
 	return []
 
 func on_cutscene_end(id: String) -> void:
@@ -136,7 +149,12 @@ func on_cutscene_end(id: String) -> void:
 			var hud := get_tree().get_first_node_in_group("hud")
 			if hud:
 				hud.toast("Got: Vault elevator key card")
-			Cutscenes.set_objective("Find a way down to the records vault")
+			Cutscenes.set_objective(OBJ_LIFT if VaultCircuit.is_on() else OBJ_POWER)
+		"elevator":
+			var lift := _lift()
+			if lift:
+				lift.reopen_after_ride()
+			Cutscenes.set_objective(OBJ_END)
 
 ## Prologue: the narrated film, the crash film, then the street in the engine.
 func _intro() -> Array:
@@ -275,6 +293,64 @@ func _warden() -> Array:
 		{"do": "wait", "t": 2.0},
 		{"do": "fade", "to": 1.0, "t": 0.6},
 	]
+
+## The vault elevator: the doors shut on the vault, the car drops, the light
+## dies. The end of chapter 1 for now (chapter 2 isn't built yet), so the
+## scene ends with the two of them back at the open doors.
+func _elevator() -> Array:
+	var lift := _lift()
+	if lift == null:
+		return []
+	var L := func(x: float, y: float, z: float) -> Vector3: return lift.car_point(Vector3(x, y, z))
+	return [
+		{"do": "call", "fn": "_lift_stage"},
+		{"do": "bars", "on": true, "t": 0.5, "wait": false},
+		# From the back corner of the car, past the two of them, out at the vault.
+		{"do": "cam", "pos": L.call(-1.45, 1.7, -2.55), "look": L.call(0.25, 1.25, 0.6), "fov": 52.0},
+		{"do": "call", "fn": "_lift_close"},
+		{"do": "cam", "pos": L.call(-1.3, 1.62, -2.5), "look": L.call(0.2, 1.3, 0.4), "t": 2.6, "block": false},
+		{"do": "wait", "t": 2.2},
+		{"do": "sfx", "file": "res://assets/audio/sfx/lift_ride_1.ogg", "vol": 0.0},
+		{"do": "shake", "amount": 0.02, "t": 0.6},
+		{"do": "wait", "t": 0.7},
+		# The two of them from the front corner, in the car light, the floor
+		# going away under them.
+		{"do": "cam", "pos": L.call(1.5, 1.6, -0.42), "look": L.call(-0.25, 1.42, -1.5), "fov": 54.0},
+		{"do": "cam", "pos": L.call(1.4, 1.55, -0.5), "look": L.call(-0.2, 1.45, -1.45), "fov": 50.0, "t": 6.0, "block": false},
+		{"do": "shake", "amount": 0.004, "t": 7.0},
+		{"do": "say", "who": "obcera", "line": "o_lift_down", "text": "Nasri's down there. Somewhere."},
+		{"do": "say", "who": "zegan", "line": "z_lift_down", "text": "Then that's where we're going.", "gap": 0.5},
+		{"do": "call", "fn": "_lift_flicker"},
+		{"do": "wait", "t": 1.9},
+		{"do": "sfx", "file": "res://assets/audio/sfx/metal_bang_1.ogg", "vol": -2.0},
+		{"do": "shake", "amount": 0.03, "t": 0.5},
+		{"do": "wait", "t": 0.7},
+		{"do": "fade", "to": 1.0, "t": 0.5},
+		{"do": "sfx", "file": SFX % "title_hit", "vol": -8.0},
+		{"do": "chapter", "num": "END OF CHAPTER 1", "name": "TO BE CONTINUED", "t": 4.6},
+		{"do": "wait", "t": 0.4},
+	]
+
+func _lift() -> Node:
+	return get_tree().get_first_node_in_group("vault_elevator")
+
+func _lift_stage() -> void:
+	var lift := _lift()
+	if lift == null:
+		return
+	var out: Vector3 = lift.car_point(Vector3(0, 0, 2.0))
+	_place("zegan", lift.ride_spot(0), out)
+	_place("obcera", lift.ride_spot(1), out)
+
+func _lift_close() -> void:
+	var lift := _lift()
+	if lift:
+		lift.close_for_ride()
+
+func _lift_flicker() -> void:
+	var lift := _lift()
+	if lift:
+		lift.flicker_car()
 
 # ================================================================== staging
 

@@ -543,7 +543,9 @@ func _records_vault() -> void:
 		"floor_look": {"tile_size": 2.5, "wetness": 0.4},
 		"wall_look": {"tile_size": 2.0, "stain_amount": 0.8},
 		"look": {"grime_amount": 0.8, "grime_height": 1.0},
-		"openings": {"e": [[4.0, 1.2, 2.3]]},
+		# East: the boiler room door. West: the vault elevator (VaultElevator
+		# builds its own steel frame and the car behind the wall).
+		"openings": {"e": [[4.0, 1.2, 2.3]], "w": [[6.4, VaultElevator.DOOR_W, VaultElevator.DOOR_H, {"frame": false}]]},
 		"skip_walls": ["n"],
 		"decals": {"blood": 3, "stain": 5, "wall_blood": 2},
 		"papers": 18,
@@ -570,6 +572,16 @@ func _records_vault() -> void:
 	place_zombie("Z_boiler_burn", Vector3(11, 0, 19), 180, "burner")
 	place_pickup("weapon:gl", Vector3(2.3, 0.37, 24.4), "vault_gl")
 	place_pickup("ammo:grenades", Vector3(2.9, 0.37, 24.6), "vault_gl_ammo")
+	# The vault's own circuit (dead until the boiler-room breaker is thrown)
+	# and the elevator Hardass sends them to, in the west wall.
+	var circuit := VaultCircuit.new()
+	circuit.name = "VaultCircuit"
+	add_child(circuit)
+	var lift := VaultElevator.new()
+	lift.name = "VaultElevator"
+	lift.position = Vector3(-10.0, 0.0, 23.2)
+	lift.rotation_degrees.y = 90.0
+	add_child(lift)
 
 # ---------------- Boiler room ----------------
 func _boiler_room() -> void:
@@ -583,7 +595,12 @@ func _boiler_room() -> void:
 		"wall_inset": {"n": RoomBuilder.WALL_T},   # back to back with the Great Hall's south wall
 	})
 	RoomBuilder.prop(r, "portable_generator", Vector3(5, 0, 5), 30)
-	RoomBuilder.prop(r, "power_box_01", Vector3(9.8, 1.4, 3), -90, 1.0, false)
+	# The vault breaker on the east wall: blinking fault lamp, big handle.
+	var breaker := BreakerPanel.new()
+	breaker.name = "BreakerPanel"
+	breaker.position = Vector3(13.875, 0.0, 19.0)
+	breaker.rotation_degrees.y = -90.0
+	add_child(breaker)
 	Breakable.make(r, "jerrycan", Vector3(6, 0, 6.2), 80.0, "boiler_jerrycan")
 	# Two drums side by side: one goes, the other follows.
 	Breakable.make(r, "fuel_drum", Vector3(8.7, 0, 8.6), 0.0, "boiler_drum_1")
@@ -591,7 +608,7 @@ func _boiler_room() -> void:
 	RoomBuilder.light(r, Vector3(5, 3.4, 5), Color(1.0, 0.35, 0.2), 1.4, 9.0, true, true)
 	place_door(Vector3(4, 0, 20.6), 90, Door.Kind.MANUAL, "steel", 1.2, 2.3, "boiler_door")
 	place_pickup("ammo:fuel", Vector3(10.6, 0.1, 22.2), "boiler_fuel")   # beside the jerrycan (it was inside it: no prompt)
-	place_pickup("gunpowder", Vector3(12.5, 0.1, 18), "boiler_powder")
+	place_pickup("gunpowder", Vector3(12.5, 0.1, 17.0), "boiler_powder")   # off to the side: right by the breaker its prompt took over
 
 ## A slim upright collider for a post-like prop (lamp posts) placed without
 ## its fitted box, so nothing bumps into the empty space under its arm.
