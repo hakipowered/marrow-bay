@@ -111,7 +111,12 @@ func restart() -> void:
 		get_tree().quit()
 		return
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.location.reload()")
+		# The browser page can start a fresh engine in place (keeps full screen
+		# and sound); user:// is saved to IndexedDB when this one quits.
+		if JavaScriptBridge.eval("window.ragoonRestart ? window.ragoonRestart() : false") == true:
+			get_tree().quit()
+		else:
+			JavaScriptBridge.eval("window.location.reload()")
 		return
 	var args := PackedStringArray() if OS.has_feature("android") else OS.get_cmdline_args()
 	var pid := OS.create_instance(args)

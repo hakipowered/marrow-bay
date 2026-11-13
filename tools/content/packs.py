@@ -5,9 +5,11 @@
       Write the base id and app version into the thin base before exporting it.
   packs.py split <full.pck> <out_dir> --version 0.12
       Split one full content export into packs + manifest.json.
-  packs.py upload <out_dir>            (needs UPLOAD_TOKEN)
+  packs.py upload <out_dir>
       Put new packs and the manifest on the download server, then delete
-      packs the new manifest doesn't use.
+      packs the new manifest doesn't use. Signs with UPLOAD_TOKEN if set,
+      otherwise with the content upload key ($CONTENT_UPLOAD_KEY, default
+      /mnt/project-files/.signing/content_upload_ed25519.pem).
   packs.py live
       Print the manifest the server offers now.
   packs.py serve <out_dir> [--port 8790]
@@ -15,10 +17,11 @@
 
 Run from the project root.
 """
-import argparse, collections, hashlib, http.server, json, os, re, struct, subprocess, sys, time
-import urllib.error, urllib.request
+import argparse, base64, collections, hashlib, http.server, json, os, re, struct, subprocess, sys, time
+import urllib.error, urllib.parse, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CONTENT_KEY = os.environ.get("CONTENT_UPLOAD_KEY", "/mnt/project-files/.signing/content_upload_ed25519.pem")
 SERVER = os.environ.get("RAGOON_DOWNLOAD_URL", "https://ragoon-city-download.hakipowered.workers.dev").rstrip("/")
 MANIFEST_FORMAT = 1
 KV_CHUNK = 20 * 1024 * 1024  # the worker stores packs as 20 MiB KV values
@@ -349,15 +352,42 @@ def cmd_live(args):
     print(json.dumps(m, indent=1) if m else "no content on the server yet")
 
 
+def _auth(method, key, length=0):
+    """Upload headers: the worker's UPLOAD_TOKEN, or an Ed25519 signature of
+    "METHOD\nkey\nts\nlength" (accepted for pack and web keys only)."""
+    if os.environ.get("UPLOAD_TOKEN"):
+        return {"x-upload-token": os.environ["UPLOAD_TOKEN"]}
+    from cryptography.hazmat.primitives import serialization
+    if not os.path.exists(CONTENT_KEY):
+        sys.exit(f"set UPLOAD_TOKEN, or put the content upload key at {CONTENT_KEY}")
+    priv = serialization.load_pem_private_key(open(CONTENT_KEY, "rb").read(), None)
+    ts = str(int(time.time()))
+    sig = priv.sign(f"{method}\n{key}\n{ts}\n{int(length)}".encode())
+    return {"x-upload-ts": ts, "x-upload-sig": base64.b64encode(sig).decode()}
+
+
+def _list_keys(prefix):
+    keys, cursor = [], None
+    while True:
+        q = f"{SERVER}/upload-list?prefix={prefix}" + (f"&cursor={urllib.parse.quote(cursor)}" if cursor else "")
+        code, body, _ = _request("GET", q, headers=_auth("GET", prefix))
+        if code != 200:
+            return None
+        page = json.loads(body)
+        keys += page["keys"]
+        cursor = page.get("cursor")
+        if not cursor:
+            return keys
+
+
 def cmd_upload(args):
-    token = os.environ.get("UPLOAD_TOKEN") or sys.exit("set UPLOAD_TOKEN")
-    auth = {"x-upload-token": token}
     manifest = json.load(open(os.path.join(args.out, "manifest.json")))
     live = live_manifest()
     if live and live.get("base") != manifest["base"] and not args.new_base:
         sys.exit(f"The live content is for app base {live.get('base')} and this is {manifest['base']}: "
                  "upload the new APK first (tools/upload_build.sh), then run this again with --new-base.")
     sent = 0
+    sent_files = set()
     for p in manifest["packs"]:
         file = p["file"]
         code, _, headers = _request("HEAD", f"{SERVER}/packs/{file}")
@@ -371,20 +401,23 @@ def cmd_upload(args):
                 buf = f.read(KV_CHUNK)
                 if not buf and chunks:
                     break
-                code, body, _ = _request("PUT", f"{SERVER}/upload/pack:{file}:{chunks}", buf, auth)
+                key = f"pack:{file}:{chunks}"
+                code, body, _ = _request("PUT", f"{SERVER}/upload/{key}", buf, _auth("PUT", key, len(buf)))
                 if code != 200:
                     sys.exit(f"upload {file} chunk {chunks}: {code} {body[:200]!r}")
                 chunks += 1
                 if len(buf) < KV_CHUNK:
                     break
         meta = json.dumps({"size": p["size"], "chunks": chunks, "chunk": KV_CHUNK, "sha256": p["sha256"]}).encode()
-        code, body, _ = _request("PUT", f"{SERVER}/upload/packmeta:{file}", meta, dict(auth, **{"content-type": "application/json"}))
+        code, body, _ = _request("PUT", f"{SERVER}/upload/packmeta:{file}", meta,
+                                 dict(_auth("PUT", "packmeta:" + file, len(meta)), **{"content-type": "application/json"}))
         if code != 200:
             sys.exit(f"upload meta {file}: {code} {body[:200]!r}")
         sent += p["size"]
+        sent_files.add(file)
         print(f"  sent  {file} ({p['size'] / 1048576:.1f} MB)")
-    # Check every pack streams back byte for byte before switching players over.
-    for p in manifest["packs"]:
+    # Check the new packs stream back byte for byte before switching players over.
+    for p in [p for p in manifest["packs"] if p["file"] in sent_files]:
         h = hashlib.sha256()
         req = urllib.request.Request(f"{SERVER}/packs/{p['file']}", headers={"User-Agent": "ragoon-city-build/1.0"})
         with urllib.request.urlopen(req, timeout=600) as r:
@@ -395,23 +428,25 @@ def cmd_upload(args):
                 h.update(buf)
         if h.hexdigest() != p["sha256"]:
             sys.exit(f"{p['file']} came back different from what was uploaded; manifest NOT switched")
-    code, body, _ = _request("PUT", f"{SERVER}/upload/packs:manifest", json.dumps(manifest).encode(),
-                          dict(auth, **{"content-type": "application/json"}))
+    body = json.dumps(manifest).encode()
+    code, body, _ = _request("PUT", f"{SERVER}/upload/packs:manifest", body,
+                             dict(_auth("PUT", "packs:manifest", len(body)), **{"content-type": "application/json"}))
     if code != 200:
         sys.exit(f"upload manifest: {code} {body[:200]!r}")
     print(f"manifest switched to {manifest['build']} ({sent / 1048576:.1f} MB new)")
     # Delete packs nothing points at any more.
     keep = {p["file"] for p in manifest["packs"]}
-    code, body, _ = _request("GET", f"{SERVER}/upload-list?prefix=pack", headers=auth)
-    if code != 200:
-        print(f"couldn't list old packs ({code}); skipping cleanup")
-        return
     removed = 0
-    for key in json.loads(body):
-        m = re.match(r"^(?:pack|packmeta):([^:]+)", key)
-        if m and m.group(1) not in keep:
-            _request("DELETE", f"{SERVER}/upload/{key}", headers=auth)
-            removed += 1
+    for prefix in ("pack:", "packmeta:"):
+        keys = _list_keys(prefix)
+        if keys is None:
+            print(f"couldn't list old {prefix} keys; skipping cleanup")
+            continue
+        for key in keys:
+            m = re.match(r"^(?:pack|packmeta):([^:]+)", key)
+            if m and m.group(1) not in keep:
+                _request("DELETE", f"{SERVER}/upload/{key}", headers=_auth("DELETE", key))
+                removed += 1
     print(f"removed {removed} old pack keys")
 
 

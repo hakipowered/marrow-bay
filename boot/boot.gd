@@ -64,14 +64,14 @@ func _check() -> void:
 			_offer(ver)
 		ContentUpdater.State.NEEDS_APP:
 			_show("Update %s needs the new app" % ver,
-				"Download it from the RaGoon City page and install it over this one. Your saves stay.", 0.0)
+				"Download it from the RaGoon City page and install it over this one. Your saves stay.")
 			if OS.has_feature("web"):
 				_button("Reload", PackMount.restart)
 			else:
 				_button("Get the new app", func(): OS.shell_open(ContentUpdater.DOWNLOAD_PAGE))
 			_play_or_retry()
 		ContentUpdater.State.SERVER_BEHIND:
-			_show("The update server is still being updated", "Try again in a few minutes.", 0.0)
+			_show("The update server is still being updated", "Try again in a few minutes.")
 			_button("Try again", _check)
 			_play_button()
 		_:
@@ -79,7 +79,7 @@ func _check() -> void:
 				_go_menu()  # offline: play what's installed
 				return
 			_show("Can't reach the update server",
-				"Connect to the internet to download RaGoon City (%s)." % _updater.error, 0.0)
+				"Connect to the internet to download RaGoon City (%s)." % _updater.error)
 			_button("Try again", _check)
 
 
@@ -89,7 +89,7 @@ func _offer(ver: String) -> void:
 		_install()
 		return
 	if PackMount.mounted and size > ASK_ABOVE:
-		_show("Update %s is ready" % ver, "%s to download. Wi-Fi recommended." % ContentUpdater.mb(size), 0.0)
+		_show("Update %s is ready" % ver, "%s to download. Wi-Fi recommended." % ContentUpdater.mb(size))
 		_button("Download now", _download)
 		_play_button()
 		return
@@ -297,10 +297,13 @@ func _label(text: String, size: int, color: Color) -> Label:
 	return l
 
 
-func _show(status: String, detail: String, fraction: float) -> void:
+## `fraction`: progress 0..1, below 0 for "working on it", NAN for no bar.
+func _show(status: String, detail: String, fraction := NAN) -> void:
 	_status.text = status
 	_detail.text = detail
-	_bar.value = fraction
+	_bar.visible = not is_nan(fraction)
+	if _bar.visible:
+		_bar.value = fraction
 
 
 ## `waits`: the screen now waits for the player (smoke runs stop there).

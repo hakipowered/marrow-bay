@@ -87,6 +87,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	RELAY=$!
 	sleep 1
 	coop coop_peer tests/coop_peer.gd
+	coop coop_version tests/coop_version.gd
 	coop coop_story tests/coop_story.gd
 	coop coop_death tests/coop_death.gd
 	coop coop_playtest tests/playtest_coop.gd
