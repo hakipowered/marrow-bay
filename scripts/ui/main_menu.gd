@@ -79,6 +79,7 @@ func _ready() -> void:
 		_thunder.volume_db = -6.0
 		add_child(_thunder)
 	Music.play_menu()
+	_version_tag()
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
@@ -91,7 +92,26 @@ func _ready() -> void:
 	Net.partner_joined.connect(_on_partner_joined)
 	Net.session_failed.connect(func(r): _set_status("Connection problem: " + r))
 	_home()
+	WebPlatform.note("menu", true)
 	_check_invite_link()
+
+## Which game version is running, small in the corner, so it's easy to see
+## that an update arrived (and to match versions for co-op).
+func _version_tag() -> void:
+	if PackMount.version_name == "dev":
+		return
+	var l := Label.new()
+	l.text = "v" + PackMount.version_name
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	l.add_theme_font_size_override("font_size", 24)
+	l.add_theme_color_override("font_color", Color(0.6, 0.55, 0.5, 0.8))
+	l.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	l.offset_left = -400
+	l.offset_top = -60
+	l.offset_right = -32
+	l.offset_bottom = -20
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(l)
 
 func _build_theme() -> void:
 	var sb := StyleBoxFlat.new()
@@ -201,7 +221,9 @@ func _home() -> void:
 	_btn("Play Solo", func(): _character_select("solo"))
 	_btn("Co-op: Invite a Friend", func(): _character_select("host"))
 	_btn("Co-op: Join with Code", func(): _character_select("join"))
-	_btn("Co-op: Same Wi-Fi", _lan_menu)
+	# Browsers can't open the direct phone-to-phone connection Same Wi-Fi uses.
+	if not WebPlatform.is_web():
+		_btn("Co-op: Same Wi-Fi", _lan_menu)
 
 func _continue_menu() -> void:
 	_clear()
@@ -275,6 +297,7 @@ func _go(next: String) -> void:
 			_join_menu()
 
 func _lobby_host(code: String) -> void:
+	WebPlatform.note("room", code)
 	_clear()
 	_title("ROOM %s" % code, 72)
 	_status = Label.new()
@@ -287,6 +310,8 @@ func _lobby_host(code: String) -> void:
 		DisplayServer.clipboard_set(msg)
 		if OS.has_feature("android"):
 			OS.shell_open("https://wa.me/?text=" + msg.uri_encode())
+		elif WebPlatform.share(msg):
+			pass
 		_set_status("Invite copied. Waiting for your friend..."))
 	_btn("Cancel", func(): Net.close(); _home())
 
@@ -299,7 +324,7 @@ func _join_menu(prefill := "") -> void:
 	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_code_edit.custom_minimum_size = Vector2(0, 120)
 	_panel.add_child(_code_edit)
-	_btn("Paste Invite", func(): _code_edit.text = Net.parse_code(DisplayServer.clipboard_get()))
+	_btn("Paste Invite", func(): _code_edit.text = Net.parse_code(await WebPlatform.read_clipboard(self)))
 	_btn("Join", func():
 		Net.join_online(_code_edit.text, _char)
 		_set_status("Connecting..."))
@@ -327,17 +352,26 @@ func _check_invite_link() -> void:
 		if a.to_lower().begins_with("ragooncity://"):
 			_char = "obcera"
 			_join_menu(Net.parse_code(a))
+	# Browser version: an invite link opens /play/?join=CODE.
+	var web_code := Net.parse_code(WebPlatform.url_param("join"))
+	if web_code.length() == 6:
+		WebPlatform.clear_url_params()
+		_char = "obcera"
+		_custom = GameState.look(_char)
+		_join_menu(web_code)
 
 func _on_session_ready() -> void:
 	if GameState.mode == GameState.Mode.SOLO:
 		get_tree().change_scene_to_file(GameState.level_path)
 	elif not multiplayer.is_server():
+		WebPlatform.note("connected", true)
 		_set_status("Connected. Waiting for host to start...")
 
 func _on_partner_joined(_id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	_set_status("Your partner is here!")
+	WebPlatform.note("partner", true)
 	if _panel.get_child_count() > 0:
 		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags, GameState.inventories))
 
@@ -351,4 +385,5 @@ func _start_coop(level: String, checkpoint: String, flags: Dictionary, bags: Dic
 	GameState.shared_checkpoint = checkpoint
 	GameState.world_flags = flags
 	GameState.inventories = bags.duplicate(true)
+	WebPlatform.note("started", level)
 	get_tree().change_scene_to_file(level)

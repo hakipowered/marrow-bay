@@ -9,7 +9,16 @@ enum S { IDLE, WANDER, CHASE, ATTACK, STAGGER, CRAWL, DEAD, FEED, PLAY_DEAD, HID
 @export var variant := "shambler"
 @export var look := ""
 @export var start_asleep := false
-@export var state: S = S.IDLE
+@export var state: S = S.IDLE:
+	set(v):
+		var was := state
+		state = v
+		# Up in its vent there's nothing on the floor to bump into or shoot;
+		# out of it (whatever woke it, on every phone) it's solid again.
+		if v == S.HIDDEN:
+			_set_solid(false)
+		elif was == S.HIDDEN and v != S.DEAD:
+			_set_solid(true)
 @export var crippled := false
 @export var head_gone := false
 
@@ -427,14 +436,46 @@ func _rise() -> void:
 	if d:
 		d.post_fx.spike(0.7)
 
+## Solid and hittable, or not there at all (waiting up in a vent).
+func _set_solid(on: bool) -> void:
+	collision_layer = 4 if on else 0
+	for h in _hitboxes:
+		if is_instance_valid(h):
+			h.collision_layer = 8 if on else 0
+
+## The vent grille right above it (RoomBuilder ceiling_holes with "vent").
+func _vent_above() -> Node3D:
+	for g in get_tree().get_nodes_in_group("vent_grilles"):
+		var d := Vector2(g.global_position.x - global_position.x, g.global_position.z - global_position.z)
+		if d.length() < 1.2 and g.global_position.y > global_position.y:
+			return g
+	return null
+
 @rpc("authority", "reliable", "call_local")
 func _drop_from_ceiling() -> void:
 	state = S.CHASE
-	model.drop_from_ceiling()
+	_set_solid(true)
+	# Out of the vent above it: the grille bursts out and falls, and it drops
+	# feet first out of the duct.
+	var g := _vent_above()
+	var from_y := 3.0
+	if g:
+		from_y = g.global_position.y - global_position.y + 0.05
+		_knock_out_grille(g)
+	model.drop_from_ceiling(from_y)
 	Sfx.play_at("vent_burst", global_position + Vector3.UP * 3.0, "metal_bang", 6.0, 12.0)
 	var d := get_tree().get_first_node_in_group("horror")
 	if d:
 		d.post_fx.spike(0.9)
+
+func _knock_out_grille(g: Node3D) -> void:
+	g.remove_from_group("vent_grilles")
+	var floor_y := global_position.y + 0.03
+	var side := Vector3(randf_range(-0.6, 0.6), 0, randf_range(-0.6, 0.6))
+	var t := g.create_tween()
+	t.tween_property(g, "global_position", Vector3(g.global_position.x, floor_y, g.global_position.z) + side, 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.parallel().tween_property(g, "rotation", Vector3(randf_range(-0.4, 0.4), randf_range(-1.5, 1.5), randf_range(-0.3, 0.3)), 0.55)
+	t.tween_callback(func(): Sfx.play_at("shutter_bang", g.global_position, "metal_bang", 2.0, 10.0))
 
 func _scream() -> void:
 	_flinch_t = 1.6   # no swinging mid-shriek
@@ -596,6 +637,9 @@ func _slow_player(path: NodePath, secs: float) -> void:
 ## Host only.
 func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void:
 	if state == S.DEAD:
+		return
+	if state == S.HIDDEN:
+		_drop_from_ceiling.rpc()   # a blast by its vent: it comes out
 		return
 	var w: Dictionary = WeaponDB.WEAPONS.get(weapon_id, {})
 	if data.get("fire_immune") and w.get("kind") == "flame":

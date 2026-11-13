@@ -513,6 +513,8 @@ func _west_corridor() -> void:
 		"skip_walls": ["e"],
 		# Frosted pane into the reading room (Chapter1Story fills it).
 		"windows": {"n": [[4.0, 1.2, 0.9, 2.4, {"glass": false, "moon": 0.0, "frame": false}]]},
+		# The air vent the ventling waits in (Z_corr_vent, right under it).
+		"ceiling_holes": [[5.05, 0.85, 1.1, 1.1, {"vent": true}]],
 	})
 	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(11.6, 0, 0.4), 0)
 	var tube := RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(4, 3.35, 1.5), 90, 1.0, false)
@@ -520,7 +522,11 @@ func _west_corridor() -> void:
 	RoomBuilder.light(r, Vector3(10, 3.1, 1.5), SICK, 0.6, 5.0)
 	place_door(Vector3(-15.4, 0, 5), 0, Door.Kind.LOCKED, "wood_panel", 1.2, 2.3, "reading_door", "brass_quill_key")
 	place_zombie("Z_corr_1", Vector3(-22, 0, 6.5), 90, "bloater")
-	place_zombie("Z_corr_vent", Vector3(-19, 0, 6.4), 90, "ventling")
+	place_zombie("Z_corr_vent", Vector3(-18.4, 0, 6.4), 90, "ventling")
+	if GameState.has_flag("dead:Z_corr_vent"):
+		# It came through earlier in this run: the grille is already out.
+		for g in r.find_children("VentGrille", "", true, false):
+			g.queue_free()
 
 # ---------------- Reading room ----------------
 func _reading_room() -> void:

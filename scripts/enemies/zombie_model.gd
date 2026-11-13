@@ -586,15 +586,17 @@ func rise() -> void:
 	t.tween_property(self, "rotation:x", 0.0, 0.9).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	t.parallel().tween_property(self, "position:y", 0.0, 0.9)
 
-func drop_from_ceiling() -> void:
+## Out of a vent: drops feet first from `from_y` (its feet at the opening,
+## the rest of it still up in the duct), flailing, straight down through
+## the hole onto the floor.
+func drop_from_ceiling(from_y := 3.0) -> void:
 	visible = true
 	if _rigged:
 		play_once("hit", 0.0)
-	position.y = 3.0
-	rotation.z = PI
+	position.y = from_y
+	var dur := clampf(sqrt(2.0 * from_y / 16.0), 0.35, 0.8)
 	var t := create_tween()
-	t.tween_property(self, "position:y", 0.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	t.parallel().tween_property(self, "rotation:z", 0.0, 0.35)
+	t.tween_property(self, "position:y", 0.0, dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 # ---------------------------------------------------------------- deaths
 #

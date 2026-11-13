@@ -45,11 +45,13 @@ func _ready() -> void:
 		c.add_theme_font_size_override("font_size", 28)
 		c.button_pressed = Cheats.on(k)
 		c.toggled.connect(func(on): Cheats.set_cheat(k, on))
-		_cheat_boxes[k] = c
+		_cheat_buttons[k] = c
 		_cheats.add_child(c)
-	# A method, not a lambda: it lets go of the autoload's signal when this
-	# menu goes with its level (a lambda kept firing at freed buttons).
+	# A method, not a lambda: Godot drops the connection when this menu is
+	# freed (a lambda stayed connected after a Continue reloaded the level,
+	# and the next cheat toggle hit the old, freed buttons: SCRIPT ERROR).
 	Cheats.changed.connect(_on_cheat_changed)
+	# Jump to a chapter (both phones go).
 	for i in Cheats.CHAPTERS.size():
 		var b := Button.new()
 		b.text = Cheats.CHAPTERS[i][0]
@@ -58,10 +60,10 @@ func _ready() -> void:
 		b.pressed.connect(func(): Cheats.jump_to_chapter(i))
 		_cheats.add_child(b)
 
-var _cheat_boxes := {}
+var _cheat_buttons := {}
 
 func _on_cheat_changed(n: String, v: bool) -> void:
-	var c: CheckButton = _cheat_boxes.get(n)
+	var c: CheckButton = _cheat_buttons.get(n)
 	if c and is_instance_valid(c):
 		c.set_pressed_no_signal(v)
 
