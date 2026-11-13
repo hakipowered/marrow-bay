@@ -26,6 +26,9 @@ func _ready() -> void:
 		relay_url = cfg.get_value("net", "relay_url", RELAY_URL)
 	if OS.get_environment("RAGOON_RELAY") != "":
 		relay_url = OS.get_environment("RAGOON_RELAY")
+	# Browser version: /play/?relay=ws://... points a test build at a local relay.
+	if WebPlatform.url_param("relay") != "":
+		relay_url = WebPlatform.url_param("relay")
 
 func start_solo(character: String) -> void:
 	close()

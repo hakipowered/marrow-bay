@@ -49,3 +49,9 @@ static func read_clipboard(node: Node) -> String:
 		if v != null:
 			return str(v)
 	return ""
+
+## Leaves a value on the page (window.ragoon.<key>) for the browser tests in
+## tools/web/ to read, e.g. the room code a host is showing.
+static func note(key: String, value: Variant) -> void:
+	if is_web():
+		JavaScriptBridge.eval("(window.ragoon = window.ragoon || {})[%s] = %s" % [JSON.stringify(key), JSON.stringify(value)])

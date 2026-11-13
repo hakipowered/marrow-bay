@@ -277,6 +277,7 @@ func _go(next: String) -> void:
 			_join_menu()
 
 func _lobby_host(code: String) -> void:
+	WebPlatform.note("room", code)
 	_clear()
 	_title("ROOM %s" % code, 72)
 	_status = Label.new()
@@ -343,12 +344,14 @@ func _on_session_ready() -> void:
 	if GameState.mode == GameState.Mode.SOLO:
 		get_tree().change_scene_to_file(GameState.level_path)
 	elif not multiplayer.is_server():
+		WebPlatform.note("connected", true)
 		_set_status("Connected. Waiting for host to start...")
 
 func _on_partner_joined(_id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	_set_status("Your partner is here!")
+	WebPlatform.note("partner", true)
 	if _panel.get_child_count() > 0:
 		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags, GameState.inventories))
 
@@ -362,4 +365,5 @@ func _start_coop(level: String, checkpoint: String, flags: Dictionary, bags: Dic
 	GameState.shared_checkpoint = checkpoint
 	GameState.world_flags = flags
 	GameState.inventories = bags.duplicate(true)
+	WebPlatform.note("started", level)
 	get_tree().change_scene_to_file(level)
