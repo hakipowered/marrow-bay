@@ -92,6 +92,7 @@ func _ready() -> void:
 	Net.partner_joined.connect(_on_partner_joined)
 	Net.session_failed.connect(func(r): _set_status("Connection problem: " + r))
 	_home()
+	WebPlatform.note("menu", true)
 	_check_invite_link()
 
 ## Which game version is running, small in the corner, so it's easy to see
