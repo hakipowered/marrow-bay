@@ -342,7 +342,7 @@ var move_speed := 0.0
 var _natural := {}
 ## Aiming with a knife, hatchet or grenade: the combat stance when standing.
 const GUARD_ANIMS := {"idle": "combat/guard"}
-const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit", "roll": "combat/roll"}
+const STATE_CLIPS := {"downed": "knockdown", "reload": "reload", "hit": "hit", "roll": "combat/roll", "crank": "combat/crank"}
 ## The dodge roll plays a little faster than the rig's clip (Player.roll).
 const ROLL_PLAYBACK := 1.15
 const STATE_SPEED := {"reload": 2.0, "combat/roll": ROLL_PLAYBACK}
@@ -361,7 +361,7 @@ func play(state: String, aiming: bool) -> void:
 	anim = STATE_CLIPS.get(state, anim)
 	if anim == "idle" and _anim and _anim.has_animation(OWN_IDLE):
 		anim = OWN_IDLE
-	if _anim and anim in STATE_CLIPS.values():
+	if _anim and anim in STATE_CLIPS.values() and _anim.has_animation(anim):
 		if _current != anim and _held != anim:
 			_anim.speed_scale = 1.0
 			_anim.play(anim, 0.08 if anim == "combat/roll" else 0.15, STATE_SPEED.get(anim, 1.0))
@@ -528,6 +528,38 @@ func play_combat(clip: String, speed := 1.0, cancel_after := -1.0) -> void:
 		return
 	play_once("combat/" + clip, 0.08, speed)
 	_cancel_at = cancel_after
+
+## Hands on a handle while a work clip plays (cranking the generator): each
+## arm bends so its hand lands on its target node, which can move. Fades in.
+var _grip: HandsOnGrip
+
+func hands_on(left: Node3D, right: Node3D) -> void:
+	if _skel == null:
+		return
+	if _grip == null or not is_instance_valid(_grip):
+		_grip = HandsOnGrip.new()
+		_grip.name = "HandsOnGrip"
+		_grip.influence = 0.0
+		_skel.add_child(_grip)
+	_grip.left_target = left
+	_grip.right_target = right
+	_grip.active = true
+	create_tween().tween_property(_grip, "influence", 1.0, 0.25)
+
+func hands_off() -> void:
+	if _grip == null or not is_instance_valid(_grip):
+		return
+	var g := _grip
+	var t := create_tween()
+	t.tween_property(g, "influence", 0.0, 0.2)
+	t.tween_callback(func(): g.active = false)
+
+## Where the current clip is, in seconds (for a machine that moves with it).
+func clip_time() -> float:
+	return _anim.current_animation_position if _anim and _anim.is_playing() else 0.0
+
+func current_clip() -> String:
+	return _current
 
 ## Cutscenes: jump to the last frame of a clip and hold it (lying in the road
 ## after the crash, before standing up).

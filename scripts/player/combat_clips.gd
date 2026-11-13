@@ -16,9 +16,10 @@ const LIB := "combat"
 static var _cache: Dictionary = {}
 
 ## Source files merged into the "combat" library, each from its own Meshy
-## rig: the melee and throw clips, and the dodge roll
-## (tools/import_move_clips.gd, <id>_roll.res).
-const SOURCES := ["combat", "roll"]
+## rig: the melee and throw clips, the dodge roll and the work loops such as
+## cranking the generator (tools/import_move_clips.gd, <id>_roll.res and
+## <id>_work.res).
+const SOURCES := ["combat", "roll", "work"]
 
 ## lib names both the library ("combat", "moves") and the file it comes
 ## from: res://assets/characters/<character>/<character>_<lib>.res. The

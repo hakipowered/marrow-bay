@@ -387,6 +387,65 @@ func _on_callout(_peer: int, character: String, _id: String, text: String, screa
 	t.tween_interval(2.5)
 	t.tween_property(_subtitle, "modulate:a", 0.0, 0.6)
 
+# ---------- Meters (a boss's health, the generator's crank) ----------
+
+var _meters := {}
+var _meter_box: VBoxContainer
+
+## A labelled bar at the top of the screen, made on first use and updated
+## after: `frac` 0..1. Bosses show their health this way; the generator its
+## progress while it is cranked.
+func show_meter(id: String, label: String, frac: float, color := Color(0.75, 0.12, 0.08)) -> void:
+	if _meter_box == null:
+		_meter_box = VBoxContainer.new()
+		_meter_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		_meter_box.anchor_left = 0.3
+		_meter_box.anchor_right = 0.7
+		_meter_box.offset_top = 96
+		_meter_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_meter_box.theme = _theme
+		_meter_box.add_theme_constant_override("separation", 6)
+		add_child(_meter_box)
+	var m: Dictionary = _meters.get(id, {})
+	if m.is_empty():
+		var name := Label.new()
+		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name.add_theme_font_size_override("font_size", 26)
+		name.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		name.add_theme_constant_override("outline_size", 6)
+		name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var bar := ProgressBar.new()
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(0, 18)
+		bar.max_value = 1.0
+		bar.step = 0.0
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = color
+		fill.set_corner_radius_all(3)
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = Color(0.05, 0.04, 0.04, 0.75)
+		bg.border_color = Color(0.0, 0.0, 0.0, 0.9)
+		bg.set_border_width_all(2)
+		bg.set_corner_radius_all(3)
+		bar.add_theme_stylebox_override("fill", fill)
+		bar.add_theme_stylebox_override("background", bg)
+		_meter_box.add_child(name)
+		_meter_box.add_child(bar)
+		m = {"label": name, "bar": bar}
+		_meters[id] = m
+	m["label"].text = label
+	var t := create_tween()
+	t.tween_property(m["bar"], "value", clampf(frac, 0.0, 1.0), 0.2)
+
+func hide_meter(id: String) -> void:
+	var m: Dictionary = _meters.get(id, {})
+	if m.is_empty():
+		return
+	_meters.erase(id)
+	m["label"].queue_free()
+	m["bar"].queue_free()
+
 func show_subtitle(speaker: String, text: String, duration: float) -> void:
 	_subtitle.text = ("%s: %s" % [speaker, text]) if speaker != "" else text
 	_subtitle.remove_theme_color_override("font_color")

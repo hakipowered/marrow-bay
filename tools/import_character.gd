@@ -20,9 +20,23 @@ const ZOMBIE_CLIPS := {
 	"a5": "scream", "a6": "hit", "a7": "death", "a8": "rise", "a9": "crawl",
 }
 const LOOPING := ["walk", "run", "idle", "aim", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl", "attack", "feed", "trot",
-		"stalk", "casual_walk", "injured_walk", "look_around"]
+		"stalk", "casual_walk", "injured_walk", "look_around",
+		"advance", "run_fast", "stagger_walk", "sit", "sit_slump", "convulse", "charge", "head_hold"]
 const IN_PLACE := ["walk", "run", "shoot_walk", "run_shoot", "shamble", "sprint", "crawl",
-		"stalk", "casual_walk", "injured_walk", "hit"]
+		"stalk", "casual_walk", "injured_walk", "hit", "advance", "run_fast", "stagger_walk", "charge"]
+
+## Per-character fixes to where a clip carries the hips: "pin" holds them
+## right over the model's origin (attacks that lunge would otherwise leave
+## the body a metre from its collider, then snap back, and a fighting stance
+## can stand a third of a metre to one side), "zero" starts the clip on the
+## spot and keeps the travel (a fall that ends lying behind).
+const ROOT_FIX := {
+	"hardass_boss": {
+		"pin": ["combo", "combo2", "slam", "swing", "slash", "shield_push", "ground_slam", "stomp", "block",
+			"hit", "hit_back", "roar", "convulse", "head_hold", "kneel", "idle"],
+		"zero": ["death"],
+	},
+}
 
 func _initialize() -> void:
 	for id in OS.get_cmdline_user_args():
@@ -56,13 +70,13 @@ func _build(id: String) -> void:
 		var clips_in: Array = Array(ap.get_animation_list()).filter(func(n): return n != "RESET")
 		for n in clips_in:
 			var clip_name: String = n if clips_in.size() > 1 else files[f]
-			_add_clip(lib, scene, ap, ap.get_animation(n), clip_name)
+			_add_clip(lib, scene, ap, ap.get_animation(n), clip_name, ROOT_FIX.get(id, {}))
 		scene.free()
 	ResourceSaver.save(lib, "res://assets/characters/%s/%s_anims.res" % [id, leaf])
 	print("saved ", id, " anims: ", lib.get_animation_list())
 	base.queue_free()
 
-func _add_clip(lib: AnimationLibrary, scene: Node, ap: AnimationPlayer, src: Animation, clip: String) -> void:
+func _add_clip(lib: AnimationLibrary, scene: Node, ap: AnimationPlayer, src: Animation, clip: String, fix := {}) -> void:
 	var anim: Animation = src.duplicate(true)
 	anim.loop_mode = Animation.LOOP_LINEAR if clip in LOOPING else Animation.LOOP_NONE
 	# Retarget track paths so they resolve from the base model's AnimationPlayer root.
@@ -74,12 +88,15 @@ func _add_clip(lib: AnimationLibrary, scene: Node, ap: AnimationPlayer, src: Ani
 			continue
 		var rel := scene.get_path_to(target)
 		anim.track_set_path(t, NodePath("%s:%s" % [rel, tp.get_concatenated_subnames()]))
-		if clip in IN_PLACE and anim.track_get_type(t) == Animation.TYPE_POSITION_3D:
+		var centre: bool = clip in fix.get("pin", [])
+		var pin: bool = clip in IN_PLACE or centre
+		var zero: bool = clip in fix.get("zero", [])
+		if (pin or zero) and anim.track_get_type(t) == Animation.TYPE_POSITION_3D:
 			var bone := tp.get_concatenated_subnames()
 			if bone.to_lower().contains("hip") or bone.to_lower().contains("root") or bone.to_lower().contains("pelvis"):
-				var first: Vector3 = anim.track_get_key_value(t, 0)
+				var first: Vector3 = Vector3.ZERO if centre else anim.track_get_key_value(t, 0)
 				for k in anim.track_get_key_count(t):
 					var v: Vector3 = anim.track_get_key_value(t, k)
-					anim.track_set_key_value(t, k, Vector3(first.x, v.y, first.z))
+					anim.track_set_key_value(t, k, Vector3(first.x, v.y, first.z) if pin else Vector3(v.x - first.x, v.y, v.z - first.z))
 	lib.add_animation(clip, anim)
 	print("  ", clip, " len=", snappedf(anim.length, 0.01), " tracks=", anim.get_track_count())
