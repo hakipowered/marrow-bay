@@ -10,6 +10,8 @@ var _tension: AudioStreamPlayer
 var _distant_t := 12.0
 var _rng := RandomNumberGenerator.new()
 var tension := 0.0
+var _boss := ""
+var _boss_t := 0.0
 
 const DISTANT := ["distant_scream", "distant_siren", "distant_gunfire", "metal_bang", "glass_far", "dog_howl", "building_creak"]
 
@@ -47,12 +49,19 @@ func _process(delta: float) -> void:
 	var threat := 0.0
 	var boss := ""
 	for z in get_tree().get_nodes_in_group("zombies"):
-		if z.state in [Zombie.S.DEAD, Zombie.S.HIDDEN, Zombie.S.PLAY_DEAD]:
+		if z.state in [Zombie.S.DEAD, Zombie.S.HIDDEN, Zombie.S.PLAY_DEAD, Zombie.S.IDLE]:
 			continue
 		var d := me.global_position.distance_to(z.global_position)
-		if z.data.get("boss", false) and z.state != Zombie.S.IDLE and d < 35.0:
+		if d > 35.0:
+			continue
+		# Music only for danger she can meet: in sight, or right on her. An
+		# infected clawing at the other side of a shut gate or a wall isn't a
+		# fight yet, and playing one made her look for a threat that wasn't
+		# there.
+		var near := d < 4.0 or _in_sight(me, z)
+		if z.data.get("boss", false) and near:
 			boss = z.variant
-		if z.state in [Zombie.S.CHASE, Zombie.S.ATTACK, Zombie.S.CHARGE, Zombie.S.PINNING]:
+		if z.state in [Zombie.S.CHASE, Zombie.S.ATTACK, Zombie.S.CHARGE, Zombie.S.PINNING] and near:
 			# Ordinary infected only stir the strings a little; the big ones
 			# bring them up fully.
 			var cap := 1.0 if _threat_weight(z) >= 2.0 else 0.45
@@ -60,12 +69,24 @@ func _process(delta: float) -> void:
 			if d < 18.0:
 				threat += _threat_weight(z)
 	for s in get_tree().get_nodes_in_group("stalker"):
+		# The Tallyman waits, unseen and asleep, behind the reading-room glass
+		# until the story wakes him: only the hunting Tallyman counts.
+		if not s.get("active"):
+			continue
 		var d := me.global_position.distance_to(s.global_position)
 		target = max(target, 1.2 - d / 20.0)
 		if d < 12.0:
 			threat += 6.0   # the Tallyman on you is always a fight
 	Music.threat = threat
-	Music.boss = boss
+	# A boss ducking behind a pillar keeps its theme for a few seconds.
+	if boss != "":
+		_boss = boss
+		_boss_t = 6.0
+	else:
+		_boss_t -= delta
+		if _boss_t <= 0.0:
+			_boss = ""
+	Music.boss = _boss
 	tension = move_toward(tension, clamp(target, 0.0, 1.0), delta * 0.4)
 	if _tension:
 		# The strings step aside once the action or boss music takes over.
@@ -77,6 +98,13 @@ func _process(delta: float) -> void:
 		_distant_t = _rng.randf_range(14.0, 35.0)
 		var dir := Vector3(_rng.randf_range(-1, 1), 0.2, _rng.randf_range(-1, 1)).normalized()
 		Sfx.play_at(DISTANT[_rng.randi() % DISTANT.size()], me.global_position + dir * 25.0, "", -6.0, 30.0)
+
+## A clear line from her chest to the infected's (world geometry and the
+## gate's bars block it; other bodies don't).
+func _in_sight(me: Node3D, z: Node3D) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(me.global_position + Vector3.UP * 1.4, z.global_position + Vector3.UP * 1.3, 1 | Door.BARS_LAYER)
+	q.exclude = [me.get_rid(), z.get_rid()]
+	return get_viewport().get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 ## How much one chasing infected counts toward the action music
 ## (Music.ACTION_ON = 6: a brute and two more, or six ordinary ones).

@@ -52,6 +52,7 @@ run death_flow       300 --script tests/death_flow.gd
 run story            300 --script tests/story_test.gd
 run weapon_sweep     300 --script tests/weapon_sweep.gd
 run music            180 --script tests/music_test.gd
+run music_quiet      300 --script tests/music_quiet.gd
 run bot_weapons      600 --fixed-fps 60 --script tests/playtest.gd -- only weapons
 run bot_bag          300 --fixed-fps 60 --script tests/playtest.gd -- only bag
 run bot_save         300 --fixed-fps 60 --script tests/playtest.gd -- only save
