@@ -5,6 +5,10 @@
 # boot/ and the root files) as one pack, then splits it into packs under
 # build/content/packs/ plus build/content/manifest.json. Upload them with
 #   UPLOAD_TOKEN=... python3 tools/content/packs.py upload build/content
+# Files stay in the packs players already have (the live layout on the
+# download server), so only changed and new files make new downloads; it
+# prints how much players will download. RAGOON_CONTENT_LIKE=none packs from
+# scratch, RAGOON_CONTENT_LIKE=<dir> keeps the layout of another local build.
 # See tools/content/README.md. Run tools/fetch_assets.py and an import first,
 # like for the APK.
 set -e

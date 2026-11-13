@@ -79,7 +79,15 @@ just written stale for a minute, so a mismatch is read again after 15, 45 and
 90 s, and a pack that still doesn't match is uploaded once more. Only then does
 it switch the manifest (players never see a half-uploaded set), and then it
 deletes packs nothing uses any more. If it stops, run it again: it picks up
-where it left off and checks what the stopped run sent. It signs with `UPLOAD_TOKEN` if set,
+where it left off and checks what the stopped run sent.
+
+Before sending anything, `upload` deletes packs that neither the live set nor
+the new one uses (left by a stopped run) and checks the room on the server:
+the packs there, the APK, the browser version and the new packs together must
+stay under 1 GB, the free Workers KV storage. Old packs are only deleted once
+the new set is live, so for a moment both sets are stored. If it says there
+isn't enough room, nothing was uploaded. `--kv-limit 0` turns the check off
+(for a paid KV plan). It signs with `UPLOAD_TOKEN` if set,
 otherwise with the content upload key
 (`/mnt/project-files/.signing/content_upload_ed25519.pem`).
 
@@ -112,8 +120,26 @@ version uses too) as one pack, and `packs.py split` cuts it up:
   them while the player is on the menu. The phone downloads everything up
   front.
 
-The same input gives byte-identical packs, so a pack only changes when its
-files do.
+**Players keep their packs.** `split` first reads which pack every file is in
+on the download server (`--like live`, the default; it reads only the start
+of each pack). A file that was in a pack stays in it, so a pack only changes
+when one of its own files changes. Files that are new go into new packs, named
+after their folder. It prints what players on the live build will download.
+Without this, one new model in the middle of a folder would shift every pack
+after it.
+
+Godot doesn't import some models byte for byte the same on two machines, so a
+build made in a fresh container would otherwise look like every model
+changed. Each pack in the manifest carries `inputs`, a hash of the files it is
+made from (source, import settings without the uid, a glTF's buffers and
+images) plus the engine and the content export preset. When a rebuilt pack
+differs from the live one but its `inputs` match, `split` keeps the live pack
+(and downloads it into `build/content/packs/`).
+
+Over many releases new files make many small packs. To start over with a
+clean layout, `RAGOON_CONTENT_LIKE=none tools/build_content.sh <version>`
+(players then download everything once). `RAGOON_CONTENT_LIKE=<dir>` keeps
+the layout of another local build instead of the live one.
 
 Manifest (`build/content/manifest.json`, served at `/packs/manifest.json`):
 
@@ -121,7 +147,9 @@ Manifest (`build/content/manifest.json`, served at `/packs/manifest.json`):
 {"format": 1, "version": "0.12", "build": "0.12-1a2b3c4d", "engine": "4.4.1.stable",
  "base": "fbd7a035327d", "app": {"version": "0.12", "code": 12},
  "packs": [{"name": "core", "file": "core-237d72f9ffdd.pck", "sha256": "…",
-            "size": 912345, "stage": "boot", "files": 1119}]}
+            "size": 912345, "stage": "boot", "files": 1119},
+           {"name": "ui", "file": "ui-8686b8eab5de.pck", "sha256": "…",
+            "size": 12477210, "stage": "boot", "files": 61, "inputs": "…"}]}
 ```
 
 `build` is the version plus a hash of all the packs: two phones with the same
