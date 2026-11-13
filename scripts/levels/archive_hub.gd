@@ -10,6 +10,7 @@ const SICK := Color(0.75, 0.95, 0.7)
 func build() -> void:
 	_environment()
 	_street()
+	_diner()
 	_courtyard()
 	_great_hall()
 	_west_corridor()
@@ -63,15 +64,19 @@ func _environment() -> void:
 
 # ---------------- Ashgrove Street (open area) ----------------
 func _street() -> void:
+	# The 24H diner's doorway, behind its shutter (local x 25.2 .. 28.8): no
+	# upper-floor window column comes down through it.
+	var windows := _facade_windows(40.0, "ashgrove")
+	windows["n"] = windows["n"].filter(func(wn): return wn[0] + wn[1] < 25.0 or wn[0] > 29.0)
 	var r := RoomBuilder.build(self, {
 		"id": "AshgroveStreet", "pos": Vector3(-20, 0, -30), "size": Vector3(40, 9, 16),
 		"floor": "street_road", "wall": "facade_brick", "outdoor": true,
 		"floor_look": {"tile_size": 4.0, "wetness": 0.8, "puddles": 1.0, "rain": 1.0},
 		"wall_look": {"tile_size": 3.0, "grime_amount": 0.7, "grime_height": 1.4, "wall_wet": 1.0},
 		"look": {"variation": 0.3},
-		"openings": {"s": [[18.0, 4.0, 9.0]]},
+		"openings": {"s": [[18.0, 4.0, 9.0]], "n": [[25.2, 3.6, 2.6]]},
 		"skip_walls": ["e", "w"],
-		"windows": _facade_windows(40.0, "ashgrove"),
+		"windows": windows,
 		"decals": {"blood": 4, "stain": 8, "scorch": 2},
 		"papers": 30,
 		"probe": true,
@@ -104,15 +109,25 @@ func _street() -> void:
 		sb.add_child(cs)
 		sb.position = mi.position
 		r.add_child(sb)
-	# Shopfronts with shutters along the north facade.
+	# Shopfronts with shutters along the north facade. The diner's (x 27) is
+	# a real roller shutter over a doorway: the infected inside force it up
+	# (the "diner_shutter" scare).
 	for x in [5.0, 13.0, 27.0, 35.0]:
-		var sh := MeshInstance3D.new()
-		var b2 := BoxMesh.new()
-		b2.size = Vector3(4.0, 2.8, 0.1)
-		sh.mesh = b2
-		sh.material_override = Mats.surface("shutter", {"tile_size": 1.6, "grime_amount": 0.6})
-		sh.position = Vector3(x, 1.4, 0.2)
-		r.add_child(sh)
+		if x == 27.0:
+			var rs := RollShutter.new()
+			rs.name = "DinerShutter"
+			rs.position = Vector3(x, 0.0, 0.2)
+			r.add_child(rs)
+			if GameState.has_flag("scare:diner_shutter"):
+				rs.open_now()
+		else:
+			var sh := MeshInstance3D.new()
+			var b2 := BoxMesh.new()
+			b2.size = Vector3(4.0, 2.8, 0.1)
+			sh.mesh = b2
+			sh.material_override = Mats.surface("shutter", {"tile_size": 1.6, "grime_amount": 0.6})
+			sh.position = Vector3(x, 1.4, 0.2)
+			r.add_child(sh)
 		RoomBuilder.light(r, Vector3(x, 3.4, 0.8), Color(1.0, 0.45, 0.25) if x == 13.0 else WARM, 0.9, 6.0, false, x == 27.0)
 	RoomBuilder.prop(r, "covered_car", Vector3(9, 0, 8), 12)
 	RoomBuilder.prop(r, "covered_car", Vector3(30, 0, 6.5), 170)
@@ -154,6 +169,48 @@ func _street() -> void:
 	place_zombie("Z_street_3", Vector3(14, 0, -18), 200, "shambler", true, "jogger")
 	place_pickup("ammo:9mm", Vector3(-15, 0.2, -16.2), "street_ammo_1")
 	place_pickup("herb_green", Vector3(17, 0.2, -28.5), "street_herb_1")
+
+## The 24H diner behind its shutter on Ashgrove Street: a dark, trashed
+## dining room with one dying tube light. Its south side is the street's
+## facade (the doorway is cut there). The infected in the "diner_shutter"
+## scare are spawned in here, out of sight, and come out through the door.
+const DINER_SPOTS := [Vector3(6.4, 0.2, -31.8), Vector3(8.0, 0.2, -33.0), Vector3(6.4, 0.2, -34.1)]
+
+func _diner() -> void:
+	var r := RoomBuilder.build(self, {
+		"id": "Diner", "pos": Vector3(3.4, 0.18, -35.0), "size": Vector3(7.2, 3.0, 5.0),
+		"floor": "clinic_floor", "wall": "plaster_damaged", "wainscot": "facade_tiles", "wainscot_height": 1.0,
+		"trim": Color(0.45, 0.07, 0.06),
+		"floor_look": {"tile_size": 1.2, "grime_amount": 0.8, "stain_amount": 0.7},
+		"wall_look": {"tile_size": 2.0, "grime_amount": 0.7, "stain_amount": 0.6, "tint": Color(0.62, 0.58, 0.5)},
+		"skip_walls": ["s"],
+		"decals": {"blood": 3, "stain": 4, "wall_blood": 2},
+		"papers": 14,
+	})
+	# Counter down the east side (red front, formica top) with the old TV on
+	# it, a booth seat and table in the far corner, the specials board.
+	RoomBuilder._box(r, Vector3(6.2, 0.53, 2.3), Vector3(0.6, 1.05, 2.8), Mats.surface("plank_painted", {"tile_size": 1.0, "grime_amount": 0.5, "tint": Color(0.55, 0.12, 0.1)}), true)
+	RoomBuilder._box(r, Vector3(6.15, 1.08, 2.3), Vector3(0.74, 0.05, 2.9), Mats.trim(Color(0.75, 0.72, 0.66), 0.35), false)
+	RoomBuilder.prop(r, "Television_01", Vector3(6.25, 1.105, 1.3), -100, 1.0, false)
+	RoomBuilder.prop(r, "Sofa_01", Vector3(1.45, 0, 0.55), 0)
+	RoomBuilder.prop(r, "dining_table", Vector3(1.5, 0, 2.6), 90)
+	RoomBuilder.prop(r, "standing_chalkboard_01", Vector3(5.0, 0, 4.4), 200)
+	RoomBuilder.prop(r, "cardboard_box_01", Vector3(0.5, 0, 4.4), 25)
+	RoomBuilder.prop(r, "plastic_crate_01", Vector3(4.3, 0, 0.45), -10)
+	RoomBuilder.prop(r, "metal_trash_can/metal_trash_can_rust", Vector3(6.75, 0, 4.4), 0)
+	RoomBuilder.prop(r, "trashbag", Vector3(2.6, 0, 4.4), 120, 1.0, false)
+	RoomBuilder.prop(r, "trashbag", Vector3(5.2, 0, 0.5), 30, 1.0, false)
+	RoomBuilder.prop(r, "wall_clock", Vector3(3.6, 2.3, 0.14), 0, 1.0, false)
+	RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(3.6, 2.97, 2.4), 90, 1.0, false)
+	RoomBuilder.light(r, Vector3(3.6, 2.6, 2.4), Color(0.7, 0.92, 0.8), 0.35, 4.0, false, true)
+	# Dark inside: the street's lights (no shadows, so they'd shine through
+	# the facade) don't reach in; only its own dying tube does.
+	for vi in r.find_children("*", "VisualInstance3D", true, false):
+		if vi is GeometryInstance3D:
+			vi.layers = 2
+	for l in get_node("AshgroveStreet").find_children("*", "Light3D", true, false):
+		if not l.shadow_enabled:
+			l.light_cull_mask &= ~2
 
 ## Rows of upper-floor windows for a street facade: some lit, some dark,
 ## some boarded. The ground floor is left for shopfronts and doors.
@@ -429,6 +486,12 @@ func _great_hall() -> void:
 	place_zombie("Z_hall_1", Vector3(6, 0, 12), 200, "shambler", true, "suit")
 	place_zombie("Z_hall_possum1", Vector3(-9, 0, 13), 30, "possum")
 	place_zombie("Z_hall_possum2", Vector3(-7.8, 0, 13.6), 160, "possum")
+	# Lying among the dead on the way to the vault: stepping between them
+	# (the hall_wake scare) gets both up at once.
+	for zn in ["Z_hall_possum1", "Z_hall_possum2"]:
+		var hz := get_node_or_null(zn)
+		if hz:
+			hz.add_to_group("hall_dead")
 	place_zombie("Z_hall_scream", Vector3(9, 0, 4), 180, "screamer")
 	place_zombie("Z_hall_2", Vector3(-8, 0, 8), 120, "shambler", false, "office")
 	place_pickup("ammo:9mm", Vector3(-1, 1.05, 8), "hall_desk_ammo")
@@ -478,6 +541,9 @@ func _reading_room() -> void:
 		"beams": {"axis": "z", "spacing": 3.0, "slot": "archive_wainscot", "depth": 0.3},
 		"decals": {"blood": 2, "stain": 4, "wall_blood": 1},
 		"papers": 26,
+		# Caved in between two beams: the "reading_drop" infected comes
+		# through here (world x -19.6 .. -18.4, z -4.4 .. -3.2).
+		"ceiling_holes": [[6.4, 2.6, 1.2, 1.2]],
 	})
 	for i in 5:
 		_bookshelf(r, Vector3(1.0 + i * 2.6, 0, 0.5), 0)
@@ -684,8 +750,11 @@ func _horror_beats() -> void:
 	place_scare("hall_whisper", "whisper", Vector3(-8, 0, 12), Vector3(4, 3, 4), {"target": Vector3(-11, 1.5, 14), "text": "...forty-one... forty-two..."})
 	place_scare("corridor_lights", "lights_out", Vector3(-20, 0, 5.2), Vector3(2, 3, 2.6), {"room": "WestCorridor", "duration": 7.0})
 	place_scare("office_bang", "door_bang", Vector3(15, 0, 5), Vector3(3, 3, 3), {"target": Vector3(19.8, 1.2, 7.6)})
-	place_scare("reading_drop", "body_drop", Vector3(-20, 0, -2), Vector3(3, 3, 3), {"target": Vector3(-19, 0, -3)})
-	place_scare("street_window", "window_break", Vector3(4, 0, -26), Vector3(4, 3, 4), {"target": Vector3(7, 0, -29.4), "spawn_count": 3})
+	# Walking up to the rifle on the table, the ceiling ahead caves in and an
+	# infected drops through the hole, crumples, then gets up.
+	place_scare("reading_drop", "body_drop", Vector3(-17.5, 0, 0.4), Vector3(7, 3, 2.4), {"target": Vector3(-19.0, 4.75, -3.8)})
+	# Passing the 24H diner, the ones inside pound on its shutter and force it up.
+	place_scare("diner_shutter", "shutter_burst", Vector3(7, 0, -25.5), Vector3(7, 3, 4.4), {"room": "DinerShutter", "spots": DINER_SPOTS})
 	place_scare("hall_wake", "wake_dead", Vector3(-8, 0, 15), Vector3(3, 3, 2), {"group": "hall_dead"})
 	place_scare("vault_lights", "lights_out", Vector3(-6, 0, 17), Vector3(3, 3, 2), {"room": "RecordsVault", "duration": 5.0})
 	# The Tallyman: first seen behind the reading-room glass, then hunting from chapter 2.

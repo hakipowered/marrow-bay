@@ -69,6 +69,10 @@ SOUNDS = {
     "door_bang": (2, 1.2, -14, "something heavy banging against a wooden door from the other side"),
     "glass_break": (2, 1.2, -15, "a pane of glass shattering, shards falling"),
     "grenade_bounce": (2, 0.6, -18, "a metal grenade bouncing and rolling on concrete"),
+    "shutter_bang": (3, 1.0, -14, "a fist pounding hard on a metal roller shutter from the inside, a booming corrugated steel rattle"),
+    "shutter_rattle": (1, 1.0, -15, "a metal roller shutter jerked upward a few inches and dropping back, loud clattering steel slats"),
+    "shutter_roll": (1, 1.4, -13, "a metal roller shutter forced violently all the way up, fast loud rolling clatter of steel slats ending in a bang"),
+    "ceiling_break": (1, 1.6, -14, "an old plaster ceiling cracking and caving in, splintering wood laths, plaster chunks and dust pouring down"),
     "power_down": (1, 2.0, -18, "electrical power failing, lights buzzing off with a dying hum"),
     # The vault circuit: the boiler-room breaker and the vault elevator.
     "breaker_throw": (1, 1.4, -14, "a big old industrial knife switch thrown up by hand: a heavy metal clunk, a short crackle of electric arcing, then a low transformer hum starting"),
