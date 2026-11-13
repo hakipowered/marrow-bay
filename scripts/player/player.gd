@@ -1010,7 +1010,7 @@ func _feel_hit(amount: float, from: Node, blow: bool) -> void:
 		_shake = max(_shake, 0.9 if heavy else 0.55)
 		Sfx.play_at("player_hit", global_position + Vector3.UP * 1.3, "flesh_hit", 3.0, 6.0)
 		_grunt(heavy)
-		if OS.has_feature("mobile"):
+		if WebPlatform.can_vibrate():
 			Input.vibrate_handheld(170 if heavy else 90, 1.0 if heavy else 0.7)
 	var post := get_tree().get_first_node_in_group("horror")
 	if post and post.get("post_fx"):

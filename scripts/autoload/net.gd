@@ -42,6 +42,9 @@ func _ready() -> void:
 		relay_url = cfg.get_value("net", "relay_url", RELAY_URL)
 	if OS.get_environment("RAGOON_RELAY") != "":
 		relay_url = OS.get_environment("RAGOON_RELAY")
+	# Browser version: /play/?relay=ws://... points a test build at a local relay.
+	if WebPlatform.url_param("relay") != "":
+		relay_url = WebPlatform.url_param("relay")
 
 func start_solo(character: String) -> void:
 	close()
@@ -58,15 +61,20 @@ func new_room_code() -> String:
 		s += CODE_ALPHABET[rng.randi_range(0, CODE_ALPHABET.length() - 1)]
 	return s
 
+## A web link: it opens the browser version straight into the join screen,
+## so a friend without the app can play too (the message also has the code).
 func invite_link() -> String:
-	return INVITE_SCHEME + room_code
+	return WebPlatform.invite_url(room_code)
 
-## Accepts "ABC123", "ragooncity://join/ABC123" or a pasted message containing it.
+## Accepts "ABC123", "ragooncity://join/ABC123", ".../play/?join=ABC123" or a
+## pasted message containing one of them.
 static func parse_code(text: String) -> String:
 	var t := text.strip_edges().to_upper()
-	var idx := t.find("JOIN/")
-	if idx >= 0:
-		t = t.substr(idx + 5)
+	for marker in ["JOIN=", "JOIN/"]:
+		var idx := t.find(marker)
+		if idx >= 0:
+			t = t.substr(idx + marker.length())
+			break
 	var out := ""
 	for ch in t:
 		if CODE_ALPHABET.contains(ch):

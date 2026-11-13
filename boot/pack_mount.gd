@@ -19,6 +19,10 @@ extends Node
 const CONTENT_DIR := "user://content"
 const PACKS_DIR := "user://content/packs"
 const INSTALLED := "user://content/installed.json"
+## The browser page (web/shell.html) downloads the packs itself, keeps them in
+## the browser's Cache Storage and copies them here, into memory, before the
+## engine starts. user:// on the web is IndexedDB, which can't hold 500 MB.
+const SHELL_PACKS_DIR := "/packs"
 const BUILD_INFO := "res://boot/build_info.json"
 ## A file every content set has. If the base can see it, the base is a full build.
 const PROBE := "res://scenes/main_menu.tscn"
@@ -39,6 +43,14 @@ var version_name := "dev"
 var mounted := false
 ## Why installed content was not mounted ("" when it was, or none was there).
 var mount_error := ""
+## Where the content packs and installed.json live: user://content/ on the
+## phone, /packs (filled by the page) in the browser version.
+var packs_dir := PACKS_DIR
+var installed_path := INSTALLED
+## True in the browser version when the page supplied the packs. The engine
+## then never downloads packs itself: a newer set means a restart, and the
+## page fetches it (it keeps them cached between visits).
+var from_shell := false
 
 var _mounted_files := {}
 
@@ -49,6 +61,10 @@ func _init() -> void:
 	app_version = str(info.get("app_version", "dev"))
 	app_code = int(info.get("app_code", 0))
 	is_thin = not ResourceLoader.exists(PROBE)
+	if OS.has_feature("web") and FileAccess.file_exists(SHELL_PACKS_DIR.path_join("installed.json")):
+		packs_dir = SHELL_PACKS_DIR
+		installed_path = SHELL_PACKS_DIR.path_join("installed.json")
+		from_shell = true
 	if not is_thin:
 		# Full build or project folder: the content is built in.
 		build_id = str(info.get("build", "dev"))
@@ -58,7 +74,7 @@ func _init() -> void:
 
 
 func _mount_installed() -> void:
-	var m := read_json(INSTALLED)
+	var m := read_json(installed_path)
 	if m.is_empty():
 		return
 	if str(m.get("base", "")) != base_id:
@@ -72,7 +88,7 @@ func _mount_installed() -> void:
 	# marked "later" (films) may still be on their way in the browser build;
 	# they're mounted when they arrive.
 	for p in m.get("packs", []):
-		var path := PACKS_DIR.path_join(str(p.get("file", "")))
+		var path := packs_dir.path_join(str(p.get("file", "")))
 		if file_size(path) == int(p.get("size", -1)):
 			packs.append(p)
 		elif str(p.get("stage", "boot")) != "later":
@@ -93,7 +109,7 @@ func _mount_installed() -> void:
 func mount(file: String) -> bool:
 	if _mounted_files.has(file):
 		return true
-	var ok := ProjectSettings.load_resource_pack(PACKS_DIR.path_join(file), true)
+	var ok := ProjectSettings.load_resource_pack(packs_dir.path_join(file), true)
 	if ok:
 		_mounted_files[file] = true
 	return ok
@@ -111,12 +127,9 @@ func restart() -> void:
 		get_tree().quit()
 		return
 	if OS.has_feature("web"):
-		# The browser page can start a fresh engine in place (keeps full screen
-		# and sound); user:// is saved to IndexedDB when this one quits.
-		if JavaScriptBridge.eval("window.ragoonRestart ? window.ragoonRestart() : false") == true:
-			get_tree().quit()
-		else:
-			JavaScriptBridge.eval("window.location.reload()")
+		# The page loads again and fetches the new content (web/shell.html).
+		# Not quit(): Godot 4.4's web exit can wait forever on the audio worklet.
+		JavaScriptBridge.eval("window.ragoonReload ? window.ragoonReload() : window.location.reload()")
 		return
 	var args := PackedStringArray() if OS.has_feature("android") else OS.get_cmdline_args()
 	var pid := OS.create_instance(args)
