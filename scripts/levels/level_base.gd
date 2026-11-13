@@ -94,9 +94,10 @@ func _rpc_request_drop(item: String, pos: Vector3, amount: int) -> void:
 	if multiplayer.is_server():
 		spawn_pickup.rpc(item, pos + Vector3(0, 0.05, 0), amount)
 
-## Host-requested spawn of a new enemy on every peer (window break-ins, brood larvae).
+## Host-requested spawn of a new enemy on every peer (break-ins, brood larvae).
+## mode "drop": it falls from `pos` limp, lands, and gets up (Zombie.drop_in).
 @rpc("authority", "reliable", "call_local")
-func spawn_zombie_synced(name_: String, pos: Vector3, variant := "shambler") -> void:
+func spawn_zombie_synced(name_: String, pos: Vector3, variant := "shambler", mode := "") -> void:
 	if has_node(name_) or not EnemyDB.has_model(variant):
 		return
 	var z := Zombie.new()
@@ -104,7 +105,9 @@ func spawn_zombie_synced(name_: String, pos: Vector3, variant := "shambler") -> 
 	z.variant = variant
 	add_child(z)
 	z.global_position = pos
-	if multiplayer.is_server():
+	if mode == "drop":
+		z.drop_in()
+	elif multiplayer.is_server():
 		z.state = Zombie.S.CHASE
 
 ## Lingering area damage (bloater gas, fire pools).

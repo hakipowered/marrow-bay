@@ -127,7 +127,9 @@ func run_scare(t: ScareTrigger) -> void:
 		"lights_out":
 			_lights_out(t.room, t.duration)
 		"body_drop":
-			_body_drop(t.target)
+			_body_drop(t)
+		"shutter_burst":
+			_shutter_burst(t)
 		"window_break":
 			_window_break(t)
 		"door_bang":
@@ -178,16 +180,36 @@ func _lights_out(room: String, duration: float) -> void:
 			l.light_energy = saved[l]
 			l.set_process(true)
 
-func _body_drop(at: Vector3) -> void:
-	var body := ZombieModel.new()
-	body.variant = "civilian"
-	get_parent().add_child(body)
-	body.global_position = at + Vector3(0, 2.6, 0)
-	Sfx.play_at("body_fall", at, "", 4.0, 10.0)
-	var t := body.create_tween()
-	t.tween_property(body, "global_position:y", at.y + 0.1, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	t.parallel().tween_property(body, "rotation:x", -PI / 2, 0.35)
+## The ceiling gives way over the hole at `t.target` (just above the
+## ceiling, inside the crawlspace RoomBuilder puts over a ceiling hole):
+## plaster and dust pour down, then an infected drops through, crumples on
+## the floor, lies still a moment and gets up (Zombie.drop_in).
+func _body_drop(t: ScareTrigger) -> void:
+	var hole := t.target + Vector3.DOWN * 0.3
+	Sfx.play_at("ceiling_break", hole, "wood_break", 6.0, 14.0)
+	Effects.plaster_fall(hole)
+	post_fx.spike(0.4)
+	await get_tree().create_timer(0.45).timeout
+	if multiplayer.is_server():
+		get_parent().spawn_zombie_synced.rpc(t.scare_id + "_body", t.target, "shambler", "drop")
 	_stinger()
+
+## Infected forcing a shop's roller shutter (`t.room` names the RollShutter)
+## from inside: they're spawned behind it at `t.spots`, out of sight, pound
+## on it, then it flies up and they come out. Never in view out of nowhere.
+func _shutter_burst(t: ScareTrigger) -> void:
+	var sh := get_parent().find_child(t.room, true, false)
+	if sh == null:
+		push_warning("shutter_burst: no shutter " + t.room)
+		return
+	if multiplayer.is_server():
+		for i in t.spots.size():
+			get_parent().spawn_zombie_synced.rpc("%s_w%d" % [t.scare_id, i], t.spots[i])
+	post_fx.spike(0.4)
+	await sh.burst()
+	_stinger()
+	if t.spots.size() >= 5:
+		Music.force_action(20.0 + t.spots.size() * 4.0)
 
 func _window_break(t: ScareTrigger) -> void:
 	Sfx.play_at("glass_break", t.target, "", 6.0, 14.0)

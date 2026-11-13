@@ -6,7 +6,8 @@
 #                              (about 2 more minutes)
 #
 # Quick pass: the level probe (holes out of the level, infected placed inside
-# props or falling through the floor, items no one can pick up), the
+# props or falling through the floor, items no one can pick up), the scares
+# that bring infected in (no one popping up in view, no body in the floor), the
 # existing rule tests (walls, doors, crowd, death flow, infected deaths, story,
 # the vault power and elevator, weapons, music, barrels: every gun on every
 # drum), the
@@ -59,6 +60,7 @@ run music            180 --script tests/music_test.gd
 run music_quiet      300 --script tests/music_quiet.gd
 run breakables       300 --script tests/breakables.gd
 run barrels_every_gun 400 --fixed-fps 60 --script tests/barrels_every_gun.gd
+run bot_scares       300 --fixed-fps 60 --script tests/playtest.gd -- only scares
 run bot_weapons      600 --fixed-fps 60 --script tests/playtest.gd -- only weapons
 run bot_bag          300 --fixed-fps 60 --script tests/playtest.gd -- only bag
 run bot_save         300 --fixed-fps 60 --script tests/playtest.gd -- only save

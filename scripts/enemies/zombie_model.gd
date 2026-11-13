@@ -398,13 +398,10 @@ func _animate_rigged(state: int, speed: float, crippled: bool) -> void:
 		Zombie.S.HIDDEN:
 			_play("idle", 0.0)
 		Zombie.S.PLAY_DEAD:
-			# Lies as if it had died (on its back, so the stand-up clip
-			# starts from the same pose), each one sprawled its own way.
-			var lying := "death"
-			if _deaths:
-				_lying = ["fall_back", "slow_back", "sit_back"][int(_loop_offset * 3.0) % 3]
-				lying = "deaths/" + _lying
-			if _clip != lying:
+			# Lies as if it had died, each one sprawled its own way. One
+			# dropping in through the ceiling flails until it lands (land()).
+			var lying := _lying_anim()
+			if not _falling and _clip != lying:
 				_play(lying, 0.0)
 				_anim.seek(_anim.current_animation_length - 0.01, true)
 				_anim.pause()
@@ -664,8 +661,56 @@ func lying_clip() -> String:
 
 var _lying := ""
 
+## The clip a body lying there plays: its own sprawl (on its back, so the
+## stand-up clip starts from the same pose), or the plain death clip.
+func _lying_anim() -> String:
+	if _deaths == null:
+		return "death"
+	if _lying == "":
+		_lying = ["fall_back", "slow_back", "sit_back"][int(_loop_offset * 3.0) % 3]
+	return "deaths/" + _lying
+
+## Dropping in through a hole in the ceiling: flailing as it falls (the hit
+## clip, slowed), then it buckles backward where it lands (the last part of a
+## fall-on-its-back death) and lies still until it gets up (rise).
+var _falling := false
+
+func fall() -> void:
+	visible = true
+	if not _rigged:
+		return
+	_falling = true
+	_oneshot = 0.0
+	# Not fall_back here: its arms fly out level as it topples (reads as a
+	# T-pose). It still lies the way it landed when it's shot or gets up.
+	if _deaths:
+		_lying = ["slow_back", "sit_back"][int(_loop_offset * 2.0) % 2]
+	_clip = "hit"
+	_anim.play("hit", 0.0)
+	_anim.seek(0.15, true)
+	_anim.speed_scale = 0.8
+
+func land() -> void:
+	_falling = false
+	if not _rigged:
+		var t := create_tween()
+		t.tween_property(self, "rotation:x", -PI / 2, 0.5).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+		t.parallel().tween_property(self, "position:y", 0.15, 0.5)
+		return
+	var clip := _lying_anim()
+	_clip = clip
+	_anim.play(clip, 0.15)
+	if _deaths:
+		# Already folding when it hits: on the floor a beat later.
+		_anim.seek(maxf(death_land(_lying) - 0.2, 0.0), true)
+		_anim.speed_scale = 1.2
+	else:
+		_anim.seek(1.7, true)
+		_anim.speed_scale = 1.5
+
 func die(head_gone: bool, plan := {}) -> void:
 	_dead = true
+	_falling = false
 	_oneshot = 0.0
 	if _hound and _anim:
 		# The host picked it (Zombie._death_plan): shot down at full tilt its
@@ -681,8 +726,11 @@ func die(head_gone: bool, plan := {}) -> void:
 		if _deaths and _deaths.has_animation(clip):
 			_start_death(clip, plan)
 		elif _anim.has_animation("death"):
-			_anim.speed_scale = randf_range(0.95, 1.2)
-			_anim.play("death", 0.1)
+			var down := _anim.assigned_animation == "death" and not _anim.is_playing() \
+					and _anim.current_animation_position >= _anim.get_animation("death").length - 0.05
+			if not down:   # (already down: played dead, or dropped in and crumpled)
+				_anim.speed_scale = randf_range(0.95, 1.2)
+				_anim.play("death", 0.1)
 		_carry_flames()
 		return
 	# Stand-ins (hound, larva, brood mother) flop over to one side or the other.
