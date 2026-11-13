@@ -401,10 +401,14 @@ func _show_broken(live: bool) -> void:
 				wreck = (load(WRECK_MODEL) as PackedScene).instantiate()
 				var box := RoomBuilder._aabb(wreck, Transform3D.IDENTITY)
 				# The torn petals splay wider than the drum: size it by height.
-				var s := (DRUM_H * 1.05) / maxf(box.size.y, 0.01)
-				wreck.scale = Vector3.ONE * s
+				# Blown down to a squat, splayed stump, charred black: it must
+				# never pass for a drum that's still whole (under the diner's
+				# neon the rusty wreck read as an intact red barrel).
+				var s := (DRUM_H * 0.86) / maxf(box.size.y, 0.01)
+				wreck.scale = Vector3(s * 1.08, s, s * 1.08)
 				wreck.position = Vector3(0, -box.position.y * s, 0)
-				wreck.rotation.y = randf() * TAU if live else 0.0
+				wreck.rotation = Vector3(deg_to_rad(6.0), _seed_angle(), deg_to_rad(-4.0))
+				_char(wreck)
 			else:
 				wreck = Node3D.new()
 			add_child(wreck)
@@ -414,7 +418,7 @@ func _show_broken(live: bool) -> void:
 				f.position = Vector3(0, DRUM_H * 0.75, 0)
 				add_child(f)
 				var out := f.create_tween()
-				out.tween_interval(14.0)
+				out.tween_interval(24.0)
 				out.tween_callback(Effects.put_out.bind(f))
 		"propane", "jerrycan", "wood":
 			if model:
@@ -556,3 +560,25 @@ static func _first_material(n: Node) -> Material:
 			if mat:
 				return mat
 	return null
+
+## The same turn for a wreck every time it loads (from its id), so a retry
+## shows it lying the way it did.
+func _seed_angle() -> float:
+	return float(hash(breakable_id) % 6283) / 1000.0
+
+## Scorch a wreck: darker, duller, the paint burnt off.
+static func _char(n: Node) -> void:
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var mesh: Mesh = mi.mesh
+		if mesh == null:
+			continue
+		for i in mesh.get_surface_count():
+			var m: Material = mi.get_surface_override_material(i)
+			if m == null:
+				m = mesh.surface_get_material(i)
+			if m is StandardMaterial3D:
+				var c: StandardMaterial3D = m.duplicate()
+				c.albedo_color = Color(c.albedo_color.r * 0.34, c.albedo_color.g * 0.3, c.albedo_color.b * 0.28, c.albedo_color.a)
+				c.roughness = 0.95
+				c.metallic = minf(c.metallic, 0.2)
+				mi.set_surface_override_material(i, c)

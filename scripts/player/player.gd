@@ -715,11 +715,18 @@ func _fire_once(w: Dictionary) -> void:
 	_emit_ammo()
 	var origin := camera.global_position
 	var aim_dir := -camera.global_transform.basis.z
-	if not aiming:
+	# The amber dot is a promise: with it on a drum, the round goes in.
+	var on_drum := _dot_on_explosive(origin, aim_dir)
+	if not aiming and not on_drum:
 		aim_dir = _hip_assist(origin, aim_dir)
 	var shots := []
 	var pellets: int = w.get("pellets", 1)
 	for i in pellets:
+		if i == 0 and (pellets > 1 or on_drum):
+			# The middle of a shotgun's pattern goes right where the dot is,
+			# so a drum (or a head) under the dot is always hit.
+			shots.append(aim_dir)
+			continue
 		var spread := deg_to_rad(w.get("spread", 0.0)) * (1.0 if aiming else 2.0)
 		var d := aim_dir.rotated(camera.global_transform.basis.x, randf_range(-spread, spread) * 0.5)
 		d = d.rotated(camera.global_transform.basis.y, randf_range(-spread, spread) * 0.5)
@@ -732,9 +739,28 @@ func _fire_once(w: Dictionary) -> void:
 ## Hip-fire on a phone: a shot within a few degrees of an infected's body
 ## bends onto it, so firing without aiming still lands. Aimed shots go
 ## exactly where the dot is.
+##
+## Explosives come first: with the dot on a drum the round goes into the
+## drum, not the infected standing next to it (that's the moment to shoot
+## it). A drum within a few degrees of the dot draws the shot too.
 func _hip_assist(origin: Vector3, dir: Vector3) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var dot := _dot_hit(origin, dir)
+	var on_enemy: bool = not dot.is_empty() and dot.collider.has_meta("hit_zone")
 	var best := dir
 	var best_ang := deg_to_rad(7.0)
+	for b in get_tree().get_nodes_in_group("breakables"):
+		if on_enemy or b.broken or not b.explosive():
+			continue
+		var at: Vector3 = b.global_transform * b.center
+		var ang := dir.angle_to(at - origin)
+		if ang > deg_to_rad(4.0) or ang > best_ang or origin.distance_to(at) > 22.0:
+			continue
+		var lq := PhysicsRayQueryParameters3D.create(origin, at, Combat.HITBOX_MASK, [get_rid()])
+		lq.collide_with_areas = true
+		if Breakable.of(space.intersect_ray(lq).get("collider")) == b:
+			best_ang = ang
+			best = (at - origin).normalized()
 	for z in get_tree().get_nodes_in_group("zombies"):
 		if not (z is Node3D) or z.get("state") in [Zombie.S.DEAD, Zombie.S.HIDDEN, Zombie.S.PLAY_DEAD]:
 			continue
@@ -749,6 +775,18 @@ func _hip_assist(origin: Vector3, dir: Vector3) -> Vector3:
 			best_ang = ang
 			best = to.normalized()
 	return best
+
+## The first thing a round fired along the camera line would hit.
+func _dot_hit(origin: Vector3, dir: Vector3) -> Dictionary:
+	var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * 80.0, Combat.HITBOX_MASK, [get_rid()])
+	q.collide_with_areas = true
+	return get_world_3d().direct_space_state.intersect_ray(q)
+
+## The crosshair dot is on a drum, gas bottle or fuel can that's still whole
+## (the crosshair shows it amber).
+func _dot_on_explosive(origin: Vector3, dir: Vector3) -> bool:
+	var b := Breakable.of(_dot_hit(origin, dir).get("collider"))
+	return b != null and not b.broken and b.explosive()
 
 ## The middle of an infected's body: its torso hitbox, which for a crawler or
 ## a hound is down near the floor (aiming at chest height went over them).
