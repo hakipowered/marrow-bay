@@ -72,9 +72,14 @@ tests/updater_e2e.sh                    # optional: the updater end to end, ~2 m
 python3 tools/content/packs.py upload build/content
 ```
 
-`upload` sends only packs the server doesn't have, reads each new one back to
-check it, then switches the manifest (players never see a half-uploaded set),
-then deletes packs nothing uses any more. It signs with `UPLOAD_TOKEN` if set,
+`upload` sends only packs the server doesn't have, then reads back every pack
+players don't already get (the new ones, and any an earlier run sent but
+stopped before checking) and checks its SHA-256. KV can serve a value that was
+just written stale for a minute, so a mismatch is read again after 15, 45 and
+90 s, and a pack that still doesn't match is uploaded once more. Only then does
+it switch the manifest (players never see a half-uploaded set), and then it
+deletes packs nothing uses any more. If it stops, run it again: it picks up
+where it left off and checks what the stopped run sent. It signs with `UPLOAD_TOKEN` if set,
 otherwise with the content upload key
 (`/mnt/project-files/.signing/content_upload_ed25519.pem`).
 

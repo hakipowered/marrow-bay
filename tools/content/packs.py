@@ -380,6 +380,68 @@ def _list_keys(prefix):
             return keys
 
 
+# KV can serve a value that was just written stale or incomplete for a while,
+# so a read-back that doesn't match is tried again after these waits (seconds).
+CHECK_WAITS = (0, 15, 45, 90)
+
+
+def _send_pack(p, out):
+    file = p["file"]
+    chunks = 0
+    with open(os.path.join(out, "packs", file), "rb") as f:
+        while True:
+            buf = f.read(KV_CHUNK)
+            if not buf and chunks:
+                break
+            key = f"pack:{file}:{chunks}"
+            code, body, _ = _request("PUT", f"{SERVER}/upload/{key}", buf, _auth("PUT", key, len(buf)))
+            if code != 200:
+                sys.exit(f"upload {file} chunk {chunks}: {code} {body[:200]!r}")
+            chunks += 1
+            if len(buf) < KV_CHUNK:
+                break
+    meta = json.dumps({"size": p["size"], "chunks": chunks, "chunk": KV_CHUNK, "sha256": p["sha256"]}).encode()
+    code, body, _ = _request("PUT", f"{SERVER}/upload/packmeta:{file}", meta,
+                             dict(_auth("PUT", "packmeta:" + file, len(meta)), **{"content-type": "application/json"}))
+    if code != 200:
+        sys.exit(f"upload meta {file}: {code} {body[:200]!r}")
+
+
+def _read_back(p):
+    """None when the server streams the pack back exactly, otherwise what was wrong."""
+    h = hashlib.sha256()
+    n = 0
+    url = f"{SERVER}/packs/{p['file']}?check={time.time():.0f}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ragoon-city-build/1.0"}),
+                                    timeout=600) as r:
+            while True:
+                buf = r.read(1 << 20)
+                if not buf:
+                    break
+                h.update(buf)
+                n += len(buf)
+    except Exception as e:  # HTTP errors, a stream cut short, timeouts
+        return f"{type(e).__name__}: {e}"
+    if n != p["size"]:
+        return f"{n} bytes instead of {p['size']}"
+    if h.hexdigest() != p["sha256"]:
+        return "different bytes"
+    return None
+
+
+def _check_pack(p):
+    why = None
+    for wait in CHECK_WAITS:
+        if wait:
+            print(f"  wait  {p['file']}: {why}; checking again in {wait} s")
+            time.sleep(wait)
+        why = _read_back(p)
+        if why is None:
+            return None
+    return why
+
+
 def cmd_upload(args):
     manifest = json.load(open(os.path.join(args.out, "manifest.json")))
     live = live_manifest()
@@ -394,40 +456,26 @@ def cmd_upload(args):
         if code == 200 and headers.get("x-sha256") == p["sha256"]:
             print(f"  have  {file}")
             continue
-        path = os.path.join(args.out, "packs", file)
-        chunks = 0
-        with open(path, "rb") as f:
-            while True:
-                buf = f.read(KV_CHUNK)
-                if not buf and chunks:
-                    break
-                key = f"pack:{file}:{chunks}"
-                code, body, _ = _request("PUT", f"{SERVER}/upload/{key}", buf, _auth("PUT", key, len(buf)))
-                if code != 200:
-                    sys.exit(f"upload {file} chunk {chunks}: {code} {body[:200]!r}")
-                chunks += 1
-                if len(buf) < KV_CHUNK:
-                    break
-        meta = json.dumps({"size": p["size"], "chunks": chunks, "chunk": KV_CHUNK, "sha256": p["sha256"]}).encode()
-        code, body, _ = _request("PUT", f"{SERVER}/upload/packmeta:{file}", meta,
-                                 dict(_auth("PUT", "packmeta:" + file, len(meta)), **{"content-type": "application/json"}))
-        if code != 200:
-            sys.exit(f"upload meta {file}: {code} {body[:200]!r}")
+        _send_pack(p, args.out)
         sent += p["size"]
         sent_files.add(file)
         print(f"  sent  {file} ({p['size'] / 1048576:.1f} MB)")
-    # Check the new packs stream back byte for byte before switching players over.
-    for p in [p for p in manifest["packs"] if p["file"] in sent_files]:
-        h = hashlib.sha256()
-        req = urllib.request.Request(f"{SERVER}/packs/{p['file']}", headers={"User-Agent": "ragoon-city-build/1.0"})
-        with urllib.request.urlopen(req, timeout=600) as r:
-            while True:
-                buf = r.read(1 << 20)
-                if not buf:
-                    break
-                h.update(buf)
-        if h.hexdigest() != p["sha256"]:
-            sys.exit(f"{p['file']} came back different from what was uploaded; manifest NOT switched")
+    # Before switching players over, every pack they don't already get must
+    # stream back byte for byte: the ones sent now, and any an earlier run sent
+    # but stopped before checking (those count as "have" above).
+    live_files = {q.get("file") for q in (live or {}).get("packs", [])}
+    for p in manifest["packs"]:
+        if p["file"] not in sent_files and p["file"] in live_files:
+            continue
+        why = _check_pack(p)
+        if why:
+            print(f"  again {p['file']}: {why}; uploading it again")
+            _send_pack(p, args.out)
+            sent += p["size"]
+            why = _check_pack(p)
+        if why:
+            sys.exit(f"{p['file']} doesn't come back as uploaded ({why}); manifest NOT switched")
+        print(f"  ok    {p['file']}")
     body = json.dumps(manifest).encode()
     code, body, _ = _request("PUT", f"{SERVER}/upload/packs:manifest", body,
                              dict(_auth("PUT", "packs:manifest", len(body)), **{"content-type": "application/json"}))
