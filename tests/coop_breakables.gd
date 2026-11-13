@@ -1,7 +1,8 @@
 extends SceneTree
 ## Two-process co-op test of shootable things, through the relay:
-##  - The joiner shoots the courtyard drum: it blows on both phones, an
-##    infected next to it dies, and both phones show the wreck.
+##  - The joiner hip-fires the pump shotgun at the courtyard drum: it blows
+##    on both phones, an infected next to it dies, and both phones show the
+##    wreck.
 ##  - The host shoots a great hall window: both phones see it shattered.
 ##  - The joiner stands by the boiler drums when the host sets them off:
 ##    the joiner's own phone takes the blast damage.
@@ -51,6 +52,16 @@ func _stand(p: Node, at: Vector3, target: Vector3) -> void:
 	p.yaw = atan2(-d.x, -d.z)
 	p.body.rotation.y = p.yaw
 	p.pitch = 0.0
+
+## Turn her and the camera rig until the crosshair sits on the point.
+func _aim_at(p: Node, target: Vector3) -> void:
+	var cam: Camera3D = p.camera
+	for i in 6:
+		var d: Vector3 = (target - cam.global_position).normalized()
+		p.yaw = atan2(-d.x, -d.z)
+		p.pitch = clampf(asin(d.y), -1.2, 0.9)
+		p.body.rotation.y = p.yaw
+		p.pivot.rotation = Vector3(p.pitch, p.yaw, 0)
 
 func _glass() -> Node:
 	for b in get_nodes_in_group("breakables"):
@@ -120,9 +131,23 @@ func _process(d: float) -> bool:
 				stage = 3
 				t = 0.0
 		3:
-			if role == "join" and t > 1.0 and _once("shoot_drum"):
+			if role == "join" and t > 0.5 and t < 1.2:
+				# The partner taps FIRE with the pump shotgun from the hip,
+				# through her own trigger code, dot on the drum.
 				var drum := _b("court_drum_gate")
-				_shoot_at(_mine(), drum.global_transform * drum.center)
+				var me := _mine()
+				if _once("shotgun"):
+					me.inventory.add_weapon("m12")
+					me.inventory.add_ammo("shells", 10)
+					me.equip("m12")
+					me.inventory.mag["m12"] = 5
+					me.aiming = false
+				_aim_at(me, drum.global_transform * drum.center)
+				if t > 1.0 and _once("shoot_drum"):
+					me._cooldown = 0.0
+					me.fire_held = true
+			if role == "join" and t > 1.1 and _once("let_go"):
+				_mine().fire_held = false
 			if role == "host" and t > 1.2 and _once("shoot_glass"):
 				_shoot_at(_mine(), _glass().global_position)
 			if t > 3.2:
