@@ -7,7 +7,7 @@
 #
 # Quick pass: the level probe (holes out of the level, infected placed inside
 # props or falling through the floor, items no one can pick up), the
-# existing rule tests (walls, doors, crowd, death flow, story, weapons, music,
+# existing rule tests (walls, doors, crowd, death flow, infected deaths, story, weapons, music,
 # barrels: every gun on every drum), the
 # bot's weapon / bag / save / death sections, and the co-op tests with two
 # copies of the game through a local relay (needs node and the ws package:
@@ -50,6 +50,7 @@ run door_sweep       180 --script tests/door_sweep.gd
 run door_reach       180 --script tests/door_reach.gd
 run crowd_rules      300 --script tests/crowd_rules.gd
 run death_flow       300 --script tests/death_flow.gd
+run death_variety    180 --fixed-fps 60 --script tests/death_variety.gd
 run story            300 --script tests/story_test.gd
 run weapon_sweep     300 --script tests/weapon_sweep.gd
 run music            180 --script tests/music_test.gd
