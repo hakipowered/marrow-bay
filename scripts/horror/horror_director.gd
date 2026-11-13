@@ -90,7 +90,7 @@ func _process(delta: float) -> void:
 	tension = move_toward(tension, clamp(target, 0.0, 1.0), delta * 0.4)
 	if _tension:
 		# The strings step aside once the action or boss music takes over.
-		var duck := 0.25 if Music.current_track() in ["action", "boss_1", "boss_2"] else 1.0
+		var duck := 0.25 if Music.current_track() in [Music.FIGHT_TRACK, "boss_1", "boss_2"] and Music.current_track() != "" else 1.0
 		_tension.volume_db = linear_to_db(max(tension * duck, 0.001)) - 8.0
 	# Distant city: something terrible is always happening somewhere else.
 	_distant_t -= delta

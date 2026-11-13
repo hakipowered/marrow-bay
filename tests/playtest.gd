@@ -814,12 +814,12 @@ func _finish() -> void:
 		var tense := 0.0
 		var calm := 0.0
 		for k in _music_log:
-			if str(k).begins_with("action"):
+			if str(k).begins_with(MUSIC.FIGHT_TRACK) and MUSIC.FIGHT_TRACK != "":
 				tense += _music_log[k]
 			else:
 				calm += _music_log[k]
 		if tense > 10.0:
-			_bug("music", "the tense action track played %.0f s of %.0f s of fights with only ordinary infected (%s)" % [tense, tense + calm, ", ".join(parts)], "music_action")
+			_bug("music", "the fight track played %.0f s of %.0f s of fights with only ordinary infected (%s)" % [tense, tense + calm, ", ".join(parts)], "music_action")
 	_note("kills: %s; damage taken %.0f; strikes %d (through walls %d)" % [JSON.stringify(_kills), _damage_taken, _strikes, _wall_strikes])
 	print("PLAYTEST DONE %d bugs" % bugs.size())
 	for k in bugs:
