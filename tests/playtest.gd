@@ -91,6 +91,7 @@ var _fresh: Array = []          # enemies (or bare enemy models) that appeared m
 var _orphans: Array = []        # enemy models not on an infected (scripted bodies)
 var _floor_checked := {}        # instance id -> sim_t of the last floor check
 var _mesh_cache := {}
+var _bot_spawning := false
 var _popins := 0
 var _sunk := 0
 
@@ -773,6 +774,8 @@ func _on_node_added(n: Node) -> void:
 		return
 	if bare_model:
 		_orphans.append(n)
+	if _bot_spawning:
+		return
 	# Placed with the level (or in its first seconds) is not popping in.
 	if _level() == null or _level() != _level_ref or sim_t - _level_t < 2.0:
 		return
@@ -1408,7 +1411,9 @@ func _try_weapon(id: String, w: Dictionary) -> void:
 	await physics_frame
 	var zname := "Dummy_" + id
 	var gap := 1.3 if w["kind"] == "melee" else 5.0   # in reach of a blade, or 5 m off
+	_bot_spawning = true   # the bot's own target, not a scare
 	_level().spawn_zombie_synced(zname, spot + Vector3(0, 0, -gap), "shambler")
+	_bot_spawning = false
 	await physics_frame
 	var z: Node = _level().get_node_or_null(zname)
 	z.state = ZS.IDLE
