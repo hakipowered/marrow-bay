@@ -314,8 +314,8 @@ ${web ? `<a class="btn alt" href="/play/">Play in the browser</a><p class="meta"
 <li>If Android asks, allow installs from this app.</li>
 <li>If Samsung blocks it: <b>Settings → Security and privacy → Auto Blocker</b>, turn it off.</li>
 <li>If Play Protect warns: <b>More details → Install anyway</b>.</li>
-<li>Open RaGoon City. The first start downloads the game; after that it updates itself every time you open it. You only need this page again if the game says it needs the new app.</li>
-<li>To play together: one of you taps <b>Co-op: Invite a Friend</b> and shares the room code, the other taps <b>Join with Code</b>.</li>
+${content ? `<li>Open RaGoon City. The first start downloads the game; after that it updates itself every time you open it. You only need this page again if the game says it needs the new app.</li>
+` : ""}<li>To play together: one of you taps <b>Co-op: Invite a Friend</b> and shares the room code, the other taps <b>Join with Code</b>.</li>
 </ol>
 </main></body></html>`;
 }
