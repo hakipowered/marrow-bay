@@ -11,7 +11,12 @@ extends SceneTree
 ##   probe   level holes, infected inside props or falling through the
 ##           floor, items hidden inside props (about 30 s)
 ##   route   the whole first area solo, room by room (about 90 s)
+##   scares  walks into the scares that bring infected in (the diner
+##           shutter, the reading-room ceiling) looking where a player
+##           would, and checks they come through their way in and get up
 ##   weapons, bag, save, death   (under a minute each)
+## Every section also watches for infected appearing in plain view out of
+##   nowhere and for bodies sunk into the floor (see _check_popin, _floor_checks).
 ## Before a build: tools/playtest.sh (quick) or tools/playtest.sh full; it
 ##   also runs the co-op checks (tests/playtest_coop.gd) with two copies of
 ##   the game through a local relay.
@@ -53,6 +58,7 @@ const AREAS := {
 	"hall": Rect2(-12, -2, 24, 18), "corridor": Rect2(-24, 5, 12, 3),
 	"reading": Rect2(-26, -7, 14, 12), "office": Rect2(12, 0, 8, 8),
 	"vault": Rect2(-10, 16, 14, 10), "boiler": Rect2(4, 16, 10, 10),
+	"diner": Rect2(3.4, -35, 7.2, 5),
 }
 var _ammo_used := 0
 var _hits_landed := 0
@@ -78,6 +84,15 @@ var _damage_taken := 0.0
 var _shots_fired := 0
 var _strikes := 0
 var _wall_strikes := 0
+# Pop-in and floor checks (0.10 feedback).
+var _level_ref: Node = null
+var _level_t := 0.0
+var _fresh: Array = []          # enemies (or bare enemy models) that appeared mid-game
+var _orphans: Array = []        # enemy models not on an infected (scripted bodies)
+var _floor_checked := {}        # instance id -> sim_t of the last floor check
+var _mesh_cache := {}
+var _popins := 0
+var _sunk := 0
 
 func _initialize() -> void:
 	var a := OS.get_cmdline_user_args()
@@ -108,6 +123,7 @@ func _initialize() -> void:
 	CUTS = root.get_node("Cutscenes")
 	MUSIC = root.get_node("Music")
 	physics_frame.connect(_monitor)
+	node_added.connect(_on_node_added)
 	_main.call_deferred()
 
 # ================================================================ helpers
@@ -675,6 +691,21 @@ func _monitor() -> void:
 		_struck[key] = now
 		if z.global_position.y < -2.0:
 			_bug("enemies", "%s fell through the floor at %s" % [z.name, _v(z.global_position)], "fall:" + str(z.name))
+	# 2b. Infected never pop into view out of thin air (0.10: by the diner),
+	#     and no body lies sunk into the floor (0.10: the one from the ceiling).
+	var lvl := _level()
+	if lvl != _level_ref:
+		_level_ref = lvl
+		_level_t = sim_t
+		_fresh.clear()
+	if not _fresh.is_empty():
+		var batch := _fresh
+		_fresh = []
+		for n in batch:
+			if is_instance_valid(n) and n.is_inside_tree():
+				_check_popin(n)
+	if int(sim_t * 60.0) % 15 == 0:
+		_floor_checks()
 	# 3. Damage taken and stun lock (0.9 feedback: locked when next to an object).
 	if p.hp < _prev_hp - 0.5:
 		_damage_taken += _prev_hp - p.hp
@@ -730,6 +761,150 @@ func _monitor() -> void:
 			var tr: String = MUSIC.current_track()
 			var key := "%s in the %s" % [tr if tr != "" else "no music", _area_of(p.global_position)]
 			_music_log[key] = _music_log.get(key, 0.0) + dt
+
+func _on_node_added(n: Node) -> void:
+	var sc: Script = n.get_script()
+	if sc == null:
+		return
+	var path := sc.resource_path
+	var enemy := path.ends_with("enemies/zombie.gd")
+	var bare_model := path.ends_with("enemies/zombie_model.gd") and not (n.get_parent() != null and n.get_parent().is_in_group("zombies"))
+	if not enemy and not bare_model:
+		return
+	if bare_model:
+		_orphans.append(n)
+	# Placed with the level (or in its first seconds) is not popping in.
+	if _level() == null or _level() != _level_ref or sim_t - _level_t < 2.0:
+		return
+	_fresh.append(n)
+
+## One that just appeared: can her camera see any of it (feet, chest,
+## head) with nothing in between? Then it came out of thin air in view.
+## Ones spawned behind a shut door, in a crawlspace or round a corner pass.
+func _check_popin(n: Node3D) -> void:
+	var cam := root.get_viewport().get_camera_3d()
+	if cam == null or CUTS.active or not n.is_visible_in_tree():
+		return
+	if n.is_in_group("zombies") and n.state == ZS.HIDDEN:
+		return
+	var excl: Array = []
+	for pl in get_nodes_in_group("players"):
+		excl.append(pl.get_rid())
+	if n is CollisionObject3D:
+		excl.append(n.get_rid())
+	var space := cam.get_world_3d().direct_space_state
+	for h in [0.2, 1.0, 1.6]:
+		var pt: Vector3 = n.global_position + Vector3.UP * h
+		var d := cam.global_position.distance_to(pt)
+		if d > 45.0 or not cam.is_position_in_frustum(pt):
+			continue
+		if space.intersect_ray(PhysicsRayQueryParameters3D.create(cam.global_position, pt, 1, excl)).is_empty():
+			_popins += int(not bugs.has("popin:" + str(n.name)))
+			_bug("enemies", "%s appeared out of thin air in plain view, %.0f m from her, at %s in the %s (spawn out of sight or through a door)" % [n.name, d, _v(n.global_position), _area_of(n.global_position)], "popin:" + str(n.name))
+			return
+
+## Bodies sunk into the floor: an infected's feet well under the floor, or
+## a lying body (dead, playing dead, just landed) with its skin through it.
+## The skin is checked on the posed mesh itself (a sample of its vertices
+## skinned to the current pose), so a face or an arm in the floor counts.
+func _floor_checks() -> void:
+	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	var bodies: Array = []
+	for z in get_nodes_in_group("zombies"):
+		if is_instance_valid(z) and z.is_inside_tree() and z.state != ZS.HIDDEN:
+			bodies.append([z, z.model])
+	for m in _orphans:
+		if is_instance_valid(m) and m.is_inside_tree():
+			bodies.append([m, m])
+	for e in bodies:
+		var b: Node3D = e[0]
+		var model: Node3D = e[1]
+		if model == null or b.global_position.distance_to(p.global_position) > 40.0:
+			continue
+		var excl: Array = [b.get_rid()] if b is CollisionObject3D else []
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(b.global_position + Vector3.UP * 0.6, b.global_position + Vector3.DOWN * 3.0, 1, excl))
+		if hit.is_empty():
+			continue
+		var floor_y: float = hit.position.y
+		if floor_y - b.global_position.y > 0.25:
+			_sunk += int(not bugs.has("sunk:" + str(b.name)))
+			_bug("enemies", "%s stands %.0f cm inside the floor at %s" % [b.name, (floor_y - b.global_position.y) * 100.0, _v(b.global_position)], "sunk:" + str(b.name))
+			continue
+		var key := b.get_instance_id()
+		var dead: bool = b.is_in_group("zombies") and b.state == ZS.DEAD
+		if dead and _floor_checked.has(key):
+			continue   # a corpse settles once; checked after its fall
+		if sim_t - _floor_checked.get(key, -10.0) < 1.0:
+			continue
+		var sk := _skeleton(model)
+		if sk == null:
+			continue
+		var hips := sk.find_bone("Hips")
+		if hips >= 0 and (sk.global_transform * sk.get_bone_global_pose(hips).origin).y - floor_y > 0.55:
+			continue   # on its feet: the feet do the touching
+		if dead and b.get_meta("dead_since", -1.0) < 0.0:
+			b.set_meta("dead_since", sim_t)
+		if dead and sim_t - float(b.get_meta("dead_since")) < 4.0:
+			continue
+		_floor_checked[key] = sim_t
+		var low := _lowest_skin_y(model)
+		if floor_y - low > 0.08:
+			_sunk += int(not bugs.has("sunk:" + str(b.name)))
+			_bug("enemies", "%s lies %.0f cm into the floor at %s in the %s (%s)" % [b.name, (floor_y - low) * 100.0, _v(b.global_position), _area_of(b.global_position), "dead" if dead else "alive"], "sunk:" + str(b.name))
+
+func _skeleton(model: Node) -> Skeleton3D:
+	var s := model.find_children("*", "Skeleton3D", true, false)
+	return s[0] if not s.is_empty() else null
+
+## Lowest point of a rigged model's skin in its current pose.
+func _lowest_skin_y(model: Node) -> float:
+	var low := INF
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null or mi.skin == null or not mi.is_visible_in_tree():
+			continue
+		var sk: Skeleton3D = mi.get_node_or_null(mi.skeleton)
+		if sk == null:
+			continue
+		var skin: Skin = mi.skin
+		var xf: Array = []
+		for i in skin.get_bind_count():
+			var bi := skin.get_bind_bone(i)
+			if bi < 0:
+				bi = sk.find_bone(skin.get_bind_name(i))
+			xf.append(sk.get_bone_global_pose(bi) * skin.get_bind_pose(i))
+		var g: Transform3D = sk.global_transform
+		for v in _mesh_sample(mi.mesh):
+			var acc := Vector3.ZERO
+			for bw in v[1]:
+				acc += (xf[bw[0]] * v[0]) * bw[1]
+			low = minf(low, (g * acc).y)
+	return low
+
+## About 1500 vertices of a skinned mesh with their bone weights (cached).
+func _mesh_sample(mesh: Mesh) -> Array:
+	var key := mesh.get_instance_id()
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var out: Array = []
+	for si in mesh.get_surface_count():
+		var a := mesh.surface_get_arrays(si)
+		var verts: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var bones = a[Mesh.ARRAY_BONES]
+		var weights = a[Mesh.ARRAY_WEIGHTS]
+		if bones == null or weights == null or bones.size() == 0 or verts.is_empty():
+			continue
+		var per: int = bones.size() / verts.size()
+		var step := maxi(1, verts.size() / 1500)
+		var i := 0
+		while i < verts.size():
+			var bw: Array = []
+			for k in per:
+				if weights[i * per + k] > 0.001:
+					bw.append([bones[i * per + k], weights[i * per + k]])
+			out.append([verts[i], bw])
+			i += step
+	_mesh_cache[key] = out
+	return out
 
 func _scan_audio(node: Node, listener: Vector3) -> void:
 	for c in node.get_children():
@@ -792,6 +967,8 @@ func _main() -> void:
 	await _frames(3)
 	if only == "probe":
 		await _run_probe()
+	if only == "scares":
+		await _run_scares()
 	if only in ["", "route"]:
 		await _run_route()
 	if only in ["", "weapons"]:
@@ -820,7 +997,7 @@ func _finish() -> void:
 				calm += _music_log[k]
 		if tense > 10.0:
 			_bug("music", "the fight track played %.0f s of %.0f s of fights with only ordinary infected (%s)" % [tense, tense + calm, ", ".join(parts)], "music_action")
-	_note("kills: %s; damage taken %.0f; strikes %d (through walls %d)" % [JSON.stringify(_kills), _damage_taken, _strikes, _wall_strikes])
+	_note("kills: %s; damage taken %.0f; strikes %d (through walls %d); infected appearing in view %d; bodies sunk into the floor %d" % [JSON.stringify(_kills), _damage_taken, _strikes, _wall_strikes, _popins, _sunk])
 	print("PLAYTEST DONE %d bugs" % bugs.size())
 	for k in bugs:
 		print("  - ", bugs[k])
@@ -843,12 +1020,14 @@ func probe_level() -> void:
 	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
 	var step := 0.25
 	var floor_at := {}
-	var bounds := Rect2(-28, -32, 52, 60)
+	var bounds := Rect2(-28, -36, 52, 64)
 	var x := bounds.position.x
 	while x < bounds.end.x:
 		var z := bounds.position.y
 		while z < bounds.end.y:
-			var q := PhysicsRayQueryParameters3D.create(Vector3(x, 0.6, z), Vector3(x, -0.6, z), 1)
+			# A hair off the grid: a ray exactly on the seam between two
+			# floor slabs (x = -20.0) slips between them and reads as void.
+			var q := PhysicsRayQueryParameters3D.create(Vector3(x + 0.013, 0.6, z + 0.017), Vector3(x + 0.013, -0.6, z + 0.017), 1)
 			floor_at[Vector2i(roundi(x / step), roundi(z / step))] = not space.intersect_ray(q).is_empty()
 			z += step
 		x += step
@@ -935,6 +1114,104 @@ func _run_probe() -> void:
 	probe_level()
 	await _wait(25.0)
 	CHEATS.set_cheat("god_mode", false)
+
+## The scripted scares that bring infected in (0.10 feedback: three popped
+## up out of thin air by the diner; one fell from the ceiling and lay alive
+## half inside the floor). She walks into each trigger looking where a
+## player would; the monitor flags any infected that appears in her view
+## and any body in the floor, and this checks they come in their way and
+## get up and come for her.
+func _run_scares() -> void:
+	GS.reset_run()
+	GS.set_flag("story_intro")
+	await _start_solo()
+	CHEATS.set_cheat("god_mode", true)
+	await _wait(1.0)
+	if CUTS.active:
+		CUTS._on_skip_pressed()
+	await _wait(1.5)
+	var lvl := _level()
+	# 1. The diner: walking east past the shopfronts, eyes on the diner.
+	var sh: Node = lvl.find_child("DinerShutter", true, false)
+	if sh == null:
+		_bug("scares", "the diner has no roller shutter (DinerShutter)")
+	await _scare_walk(Vector3(1.0, 0.2, -25.0), Vector3(4.2, 0.2, -25.0), Vector3(7.0, 1.3, -29.8))
+	var t0 := sim_t
+	var came := await _scare_arrivals("diner_shutter_w", 3, 4.0)
+	if sh and not await _until_t(func(): return sh.is_open, 8.0):
+		_bug("scares", "the diner shutter never went up")
+	_note("diner shutter up %.1f s after she got there" % (sim_t - t0))
+	var out := 0
+	var end := sim_t + 12.0
+	while sim_t < end and out < came.size():
+		out = 0
+		for z in came:
+			if not is_instance_valid(z) or z.state == ZS.DEAD or z.global_position.z > -29.5:
+				out += 1
+		await physics_frame
+	if out < came.size():
+		var where := []
+		for z in came:
+			if is_instance_valid(z) and z.global_position.z <= -29.5:
+				where.append(_v(z.global_position))
+		_bug("scares", "%d of the %d infected from the diner never came out (still at %s)" % [came.size() - out, came.size(), ", ".join(where)])
+	for z in came:
+		if is_instance_valid(z) and z.state != ZS.DEAD:
+			await fight(z, "", 20.0)
+	# 2. The reading room: walking up to the rifle, the ceiling caves in.
+	await _scare_walk(Vector3(-15.6, 0.05, 3.4), Vector3(-15.8, 0.05, 1.0), Vector3(-19.0, 1.0, -3.8))
+	var drop := await _scare_arrivals("reading_drop_body", 1, 3.0)
+	if not drop.is_empty():
+		var z: Node = drop[0]
+		var landed := await _until_t(func(): return not is_instance_valid(z) or z._drop_phase >= 2 or z._drop_phase == 0, 4.0)
+		if not landed:
+			_bug("scares", "the infected from the ceiling never landed (at %s)" % _v(z.global_position))
+		elif is_instance_valid(z):
+			_note("the infected from the ceiling landed at %s" % _v(z.global_position))
+			var up := await _until_t(func(): return not is_instance_valid(z) or z.state in [ZS.CHASE, ZS.ATTACK, ZS.STAGGER, ZS.DEAD], 6.0)
+			if not up:
+				_bug("scares", "the infected from the ceiling lay there and never got up (state %d at %s)" % [z.state, _v(z.global_position)])
+			elif is_instance_valid(z) and absf(z.global_position.y) > 0.12:
+				_bug("scares", "the infected from the ceiling got up at the wrong height, %s" % _v(z.global_position))
+			if is_instance_valid(z) and z.state != ZS.DEAD:
+				await fight(z, "", 20.0)
+	CHEATS.set_cheat("god_mode", false)
+
+## Stand at `from` looking at `look`, then step to `to` (inside the trigger).
+func _scare_walk(from: Vector3, to: Vector3, look: Vector3) -> void:
+	await _recover()
+	_stop()
+	p.global_position = from
+	p.velocity = Vector3.ZERO
+	var d := look - (to + Vector3.UP * 1.5)
+	p.yaw = atan2(-d.x, -d.z)
+	p.pitch = clampf(atan2(d.y, Vector2(d.x, d.z).length()), -0.6, 0.6)
+	await _wait(0.6)
+	p.global_position = to
+	p.velocity = Vector3.ZERO
+	_stuck_ref = Vector3.INF
+
+## The infected a scare brings in (named `prefix`...), once they're there.
+func _scare_arrivals(prefix: String, want: int, max_t: float) -> Array:
+	var found: Array = []
+	var end := sim_t + max_t
+	while sim_t < end and found.size() < want:
+		found = []
+		for z in get_nodes_in_group("zombies"):
+			if str(z.name).begins_with(prefix):
+				found.append(z)
+		await physics_frame
+	if found.size() < want:
+		_bug("scares", "the '%s' scare brought %d infected, not %d" % [prefix, found.size(), want])
+	return found
+
+func _until_t(cond: Callable, max_t: float) -> bool:
+	var end := sim_t + max_t
+	while sim_t < end:
+		if cond.call():
+			return true
+		await physics_frame
+	return false
 
 func _run_route() -> void:
 	# A brand-new game, as from Play Solo.
