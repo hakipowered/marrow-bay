@@ -132,6 +132,10 @@ banner.
   elevator ride when it runs after chapter 1.
 - `tests/playtest.gd -- only probe2`: walks every room looking for spots where
   she gets stuck.
+- `tests/playtest.gd -- only warden2`: the bot fights the Warden its own way
+  (`WARDEN_DEBUG=1` prints its aim and line of fire every second).
+- `tools/content/check_excludes.py`: every prop model the game uses goes into
+  the content packs.
 - `tests/wall_overlap.gd -- res://scenes/levels/undercroft.tscn`: no two walls
   in one plane.
 - `tests/undercroft_shots.gd`: screenshots of every room (`torch`, `lit` and
@@ -142,6 +146,10 @@ banner.
 - Doors are walls to the navmesh (it is baked with them shut), so infected
   don't path through them; the Tallyman opens ordinary doors when he reaches
   them. The playtest bot uses `cross()` for every doorway with a door.
+- The "Android Content" export preset leaves out Poly Haven models nothing
+  used, by hand (`exclude_filter` in `export_presets.cfg`). A level that
+  starts using one of them has to take it off that list, or the phone build
+  has an empty node where the prop should be. Chapter 2 took 16 off it.
 - The coal yard's moonlight is on its own render layer (`YARD_LAYER`) so it
   doesn't leak into the tunnels.
 - Chapter 3 ("Paper Trail") picks up in the deep stacks.

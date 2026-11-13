@@ -46,6 +46,13 @@ run() {
 }
 
 echo "Playtest ($MODE) on $(git rev-parse --short HEAD 2>/dev/null)"
+# Every prop model the game uses goes into the content packs (phones, web).
+if python3 tools/content/check_excludes.py > "$LOGS/content_excludes.log" 2>&1; then
+	printf '  ok    %-22s\n' content_excludes
+else
+	FAILED+=(content_excludes)
+	printf '  FAIL  %-22s\n' content_excludes
+fi
 run smoke_level      120 --script tests/smoke_level.gd
 run wall_overlap     120 --script tests/wall_overlap.gd
 run level_probe      180 --fixed-fps 60 --script tests/playtest.gd -- only probe
