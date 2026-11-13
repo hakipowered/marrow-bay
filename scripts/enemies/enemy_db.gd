@@ -29,3 +29,23 @@ const ZONE_MULT := {"head": 3.0, "torso": 1.0, "arm": 0.6, "leg": 0.8}
 
 static func get_type(id: String) -> Dictionary:
 	return TYPES.get(id, TYPES["shambler"])
+
+## Own rigged, animated model per body plan. Human infected share the scanned
+## townspeople; the others each need their own.
+const OWN_MODEL := {"quadruped": "hound", "tiny": "larva", "brood_mother": "brood_mother"}
+
+## Whether this type has a real, animated model in the game. Types without one
+## are never spawned: no stand-in made of boxes ever reaches a build.
+static func has_model(id: String) -> bool:
+	var d := get_type(id)
+	var own := ""
+	if d.get("quadruped"):
+		own = OWN_MODEL["quadruped"]
+	elif d.get("tiny"):
+		own = OWN_MODEL["tiny"]
+	elif id == "brood_mother":
+		own = OWN_MODEL["brood_mother"]
+	if own == "":
+		return true
+	return ResourceLoader.exists("res://assets/characters/enemies/%s/%s.glb" % [own, own]) \
+		and ResourceLoader.exists("res://assets/characters/enemies/%s/%s_anims.res" % [own, own])

@@ -97,7 +97,7 @@ func _rpc_request_drop(item: String, pos: Vector3, amount: int) -> void:
 ## Host-requested spawn of a new enemy on every peer (window break-ins, brood larvae).
 @rpc("authority", "reliable", "call_local")
 func spawn_zombie_synced(name_: String, pos: Vector3, variant := "shambler") -> void:
-	if has_node(name_):
+	if has_node(name_) or not EnemyDB.has_model(variant):
 		return
 	var z := Zombie.new()
 	z.name = name_
@@ -271,6 +271,9 @@ func place_pickup(item: String, at: Vector3, id: String, amount := 0) -> void:
 
 func place_zombie(name_: String, at: Vector3, rot_deg := 0.0, variant := "shambler", asleep := false, look := "") -> void:
 	if GameState.has_flag("dead:" + name_):
+		return
+	if not EnemyDB.has_model(variant):
+		push_warning("%s: %s has no real model yet, not placed" % [name_, variant])
 		return
 	var z := Zombie.new()
 	z.name = name_
