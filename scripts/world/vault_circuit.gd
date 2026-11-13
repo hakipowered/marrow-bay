@@ -55,7 +55,7 @@ func _tube(at: Vector3, yaw: float, flicker: bool) -> void:
 				mi.set_surface_override_material(s, g)
 				_glass.append(g)
 	# Dim and cold: enough to see the stacks, not enough to feel safe.
-	var l := RoomBuilder.light(self, at + Vector3(0, -0.3, 0), TUBE, 0.55, 5.5, false, flicker)
+	var l := RoomBuilder.light(self, at + Vector3(0, -0.3, 0), TUBE, 0.42, 5.0, false, flicker)
 	_lights.append(l)
 	_flicker_on.append(flicker)
 
