@@ -1101,6 +1101,11 @@ func _screen_dir(src: Vector3) -> Vector2:
 	var d := Vector2(local.x, local.z)
 	return d.normalized() if d.length() > 0.01 else Vector2.ZERO
 
+## A jolt of the camera from something big nearby (an engine catching, a
+## boss's slam). 0.5 is a hard shove, 1.0 the heaviest hit.
+func shake(amount: float) -> void:
+	_shake = maxf(_shake, amount)
+
 func _tick_shake(delta: float) -> void:
 	if camera == null:
 		return

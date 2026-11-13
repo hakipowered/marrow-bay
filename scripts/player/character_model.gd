@@ -543,6 +543,7 @@ func hands_on(left: Node3D, right: Node3D) -> void:
 		_skel.add_child(_grip)
 	_grip.left_target = left
 	_grip.right_target = right
+	_grip.rig = hand_rig
 	_grip.active = true
 	create_tween().tween_property(_grip, "influence", 1.0, 0.25)
 

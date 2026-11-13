@@ -52,6 +52,24 @@ func attach(id: String, parent: Node3D, volume_db := 0.0, unit := 8.0) -> AudioS
 	a.finished.connect(a.queue_free)
 	return a
 
+## A sound that keeps going (a running engine, a klaxon) on `parent` until
+## the player is freed or stopped. Null when the sound doesn't exist.
+func loop_on(id: String, parent: Node3D, volume_db := 0.0, unit := 8.0) -> AudioStreamPlayer3D:
+	var v := _variants(id)
+	if v.is_empty():
+		return null
+	var st: AudioStream = (v[0] as AudioStream).duplicate()
+	if st is AudioStreamOggVorbis:
+		(st as AudioStreamOggVorbis).loop = true
+	var a := AudioStreamPlayer3D.new()
+	a.stream = st
+	a.volume_db = volume_db
+	a.unit_size = unit
+	a.bus = "SFX"
+	parent.add_child(a)
+	a.play()
+	return a
+
 ## A creature's voice, carried on it: full only up close (unit metres), it
 ## fades with distance and is gone by max_dist, and it comes through a wall
 ## or a door muffled and quieter. Groans from across the level used to sound

@@ -950,6 +950,15 @@ func dust_puff(pos: Vector3, size := 1.0) -> void:
 		"additive": false, "sphere": 0.5 * size,
 		"ramp": [[0.0, Color(0.45, 0.41, 0.36, 0.0)], [0.1, Color(0.45, 0.41, 0.36, 0.35)], [1.0, Color(0.42, 0.39, 0.35, 0.0)]]})
 
+## A cough of diesel smoke (an engine turning over, an exhaust): a dark,
+## sooty puff that rolls upward and thins out.
+func exhaust(pos: Vector3, size := 1.0) -> void:
+	_burst(pos, _quad(1, 1), _sprite_mat(SMOKE_TEX, false, 1.0, 0.3), {"amount": int(5 + 5 * size), "life": 2.2, "life_rand": 0.4,
+		"dir": Vector3.UP, "spread": 25.0, "vmin": 0.6 * size + 0.3, "vmax": 1.4 * size + 0.5, "damp": 1.2, "gravity": Vector3(0, 0.25, 0),
+		"smin": 0.25 * size, "smax": 0.45 * size, "scurve": [[0, 0.4], [1, 2.6]], "amin": 0.0, "amax": 360.0,
+		"additive": false, "sphere": 0.08,
+		"ramp": [[0.0, Color(0.1, 0.1, 0.1, 0.0)], [0.08, Color(0.12, 0.11, 0.1, 0.55)], [1.0, Color(0.2, 0.19, 0.18, 0.0)]]})
+
 ## A spitter's acid glob bursting: sizzling droplets and a puff of fumes.
 func acid_splash(pos: Vector3, normal: Vector3) -> void:
 	if normal == Vector3.ZERO:
