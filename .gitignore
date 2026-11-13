@@ -10,3 +10,4 @@ relay/node_modules/
 # Python bytecode
 __pycache__/
 *.pyc
+boot/build_info.json

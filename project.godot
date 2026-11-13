@@ -4,11 +4,13 @@ config_version=5
 [application]
 config/name="RaGoon City"
 config/description="Original two-player co-op survival horror."
-run/main_scene="res://scenes/main_menu.tscn"
+run/main_scene="res://boot/boot.tscn"
 config/features=PackedStringArray("4.4", "Mobile")
 config/icon="res://icon.png"
 
 [autoload]
+
+PackMount="*res://boot/pack_mount.gd"
 GameState="*res://scripts/autoload/game_state.gd"
 Net="*res://scripts/autoload/net.gd"
 SaveSystem="*res://scripts/autoload/save_system.gd"

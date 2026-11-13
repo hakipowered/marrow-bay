@@ -12,8 +12,16 @@ const LAN_PORT := 24680
 const INVITE_SCHEME := "ragooncity://join/"
 const CODE_ALPHABET := "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
+## How long the host waits for a joiner's version hello before telling the
+## player that their friend's game is too old to check.
+const HELLO_TIMEOUT := 6.0
+const VersionCheck := preload("res://scripts/net/version_check.gd")
+
 var room_code := ""
 var relay_url := RELAY_URL
+## Joiners whose game content matches the host's (see version_check.gd).
+var _verified := {}
+var _version_check: Node
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -21,6 +29,14 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(func(): session_ready.emit())
 	multiplayer.connection_failed.connect(func(): session_failed.emit("Could not connect"))
 	multiplayer.server_disconnected.connect(func(): session_failed.emit("Host left the game"))
+	_version_check = VersionCheck.new()
+	_version_check.name = "VersionCheck"
+	add_child(_version_check)
+	_version_check.peer_verified.connect(_on_peer_verified)
+	_version_check.peer_rejected.connect(func(_id, theirs): session_failed.emit(VersionCheck.explain(PackMount.version_name, theirs)))
+	_version_check.rejected_by_host.connect(func(theirs):
+		close.call_deferred()
+		session_failed.emit(VersionCheck.explain(PackMount.version_name, theirs)))
 	var cfg := ConfigFile.new()
 	if cfg.load("user://settings.cfg") == OK:
 		relay_url = cfg.get_value("net", "relay_url", RELAY_URL)
@@ -95,6 +111,7 @@ func _wait_for_id(character: String) -> void:
 		session_ready.emit()
 	else:
 		session_ready.emit()
+		_version_check.send_hello()
 		_rpc_register.rpc_id(1, character, _my_looks(character))
 
 func host_lan(character: String) -> void:
@@ -116,6 +133,7 @@ func join_lan(ip: String, character: String) -> void:
 	multiplayer.multiplayer_peer = peer
 	await multiplayer.connected_to_server
 	GameState.character_by_peer[multiplayer.get_unique_id()] = character
+	_version_check.send_hello()
 	_rpc_register.rpc_id(1, character, _my_looks(character))
 
 ## The joiner's saved look for both survivors, since the host may hand it
@@ -133,6 +151,8 @@ func _rpc_register(character: String, looks: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
+	if not _verified.has(id):
+		return  # a different version of the game: version_check.gd said why
 	var host_char: String = GameState.character_by_peer.get(1, "zegan")
 	if character == host_char:
 		character = GameState.partner_character(host_char)
@@ -149,9 +169,22 @@ func _rpc_roster(roster: Dictionary, customs: Dictionary) -> void:
 	GameState.customization_by_peer = customs
 
 func _on_peer_connected(id: int) -> void:
+	if not multiplayer.is_server():
+		partner_joined.emit(id)
+		return
+	# The host lets a joiner in once its hello shows the same game content.
+	get_tree().create_timer(HELLO_TIMEOUT).timeout.connect(func():
+		if not _verified.has(id) and multiplayer.get_peers().has(id):
+			session_failed.emit("Your friend's game is an older version. They need to close and reopen RaGoon City to update."))
+
+func _on_peer_verified(id: int) -> void:
+	if _verified.has(id):
+		return
+	_verified[id] = true
 	partner_joined.emit(id)
 
 func _on_peer_disconnected(id: int) -> void:
+	_verified.erase(id)
 	GameState.character_by_peer.erase(id)
 	partner_left.emit(id)
 
@@ -159,6 +192,7 @@ func is_coop() -> bool:
 	return GameState.mode == GameState.Mode.COOP
 
 func close() -> void:
+	_verified.clear()
 	if multiplayer.multiplayer_peer and not multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
