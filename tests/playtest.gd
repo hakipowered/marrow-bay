@@ -611,7 +611,10 @@ func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 		_kills[kind] = _kills.get(kind, 0) + 1
 		return true
 	if is_instance_valid(z) and not p.downed:
-		_bug("combat", "couldn't put down a %s (%s) in %.0fs: hp %.0f -> %.0f, state %s, weapon %s" % [kind, z.look, max_t, hp0, z.hp, ZS.keys()[z.state], p.inventory.equipped], "nokill:" + kind)
+		var gw: Dictionary = WeaponDB.WEAPONS.get(p.inventory.equipped, {})
+		var why := "mag %d, %d in the bag, %.1f m off, %s" % [p.inventory.mag.get(p.inventory.equipped, 0), p.inventory.ammo_count(gw.get("ammo", "")) if gw.has("ammo") else 0,
+			z.global_position.distance_to(p.global_position), "clear shot" if _line_of_fire(z, false) else "no clear shot"]
+		_bug("combat", "couldn't put down a %s (%s) in %.0fs: hp %.0f -> %.0f, state %s, weapon %s (%s)" % [kind, z.look, max_t, hp0, z.hp, ZS.keys()[z.state], p.inventory.equipped, why], "nokill:" + kind)
 	return false
 
 func _heal() -> void:
@@ -1146,6 +1149,21 @@ func probe_level() -> void:
 			"lights_out":
 				if lvl.get_node_or_null(NodePath(t.room)) == null:
 					_bug("level", "scare '%s' turns out the lights in '%s', which isn't in the level" % [sid, t.room], "scarewire:" + sid)
+	# Infected waiting up in a vent (the ventling): there must be a vent above
+	# it, and nothing of it on the floor until it comes out (0.10: an
+	# invisible body stood in the West corridor, soaking shots meant for the
+	# bloater and waking up unseen).
+	for zz in get_nodes_in_group("zombies"):
+		if zz.state != ZS.HIDDEN:
+			continue
+		if zz._vent_above() == null:
+			_bug("level", "%s (%s) waits hidden at %s with no vent above it: it would come out of a bare ceiling" % [zz.name, zz.variant, _v(zz.global_position)], "novent:" + str(zz.name))
+		var solid: bool = zz.collision_layer != 0
+		for hb in zz._hitboxes:
+			if is_instance_valid(hb) and hb.collision_layer != 0:
+				solid = true
+		if solid:
+			_bug("level", "%s (%s) is up in its vent, but an invisible body at %s can still be bumped into or shot" % [zz.name, zz.variant, _v(zz.global_position)], "hiddensolid:" + str(zz.name))
 
 ## Quick level check (about a minute): the level probe, then 25 s with
 ## her standing at the start under god mode while the infected settle and
@@ -1245,6 +1263,37 @@ func _run_scares() -> void:
 	for z in dead:
 		if is_instance_valid(z) and z.state != ZS.DEAD:
 			await fight(z, "", 20.0)
+	# 4. The West corridor: shooting down it at the bloater doesn't hit (or
+	# wake) anything unseen; walking under the vent, the ventling bursts out
+	# of it and lands on its feet.
+	var vent_z: Node = lvl.get_node_or_null("Z_corr_vent")
+	if vent_z == null:
+		_bug("scares", "no ventling in the West corridor (Z_corr_vent)")
+	else:
+		await _scare_walk(Vector3(-11.0, 0.05, 5.7), Vector3(-13.6, 0.05, 6.2), Vector3(-22.0, 1.2, 6.5))
+		var q := PhysicsRayQueryParameters3D.create(p.camera.global_position, Vector3(-22.0, 1.2, 6.5), 1 | 4 | 8, [p.get_rid()])
+		q.collide_with_areas = true
+		var hit: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty() and (hit.collider == vent_z or hit.collider.get_meta("enemy", null) == vent_z):
+			_bug("scares", "a shot down the West corridor hits the ventling while it's still hidden in the vent")
+		if vent_z.state != ZS.HIDDEN:
+			_bug("scares", "the ventling left its vent before she came near (state %d)" % vent_z.state)
+		await _scare_walk(Vector3(-13.6, 0.05, 6.2), Vector3(-16.2, 0.05, 6.4), Vector3(-18.4, 2.6, 6.4))
+		if not await _until_t(func(): return not is_instance_valid(vent_z) or vent_z.state != ZS.HIDDEN, 1.5):
+			_bug("scares", "walking under the vent, the ventling never came out")
+		elif is_instance_valid(vent_z):
+			await _wait(1.2)
+			if is_instance_valid(vent_z) and vent_z.state != ZS.DEAD:
+				if not vent_z.model.visible:
+					_bug("scares", "the ventling came out of its vent invisible")
+				elif absf(vent_z.model.position.y) > 0.05 or absf(vent_z.global_position.y) > 0.12:
+					_bug("scares", "the ventling didn't land on the floor (body %.2f, model %.2f)" % [vent_z.global_position.y, vent_z.model.position.y])
+				else:
+					_note("the ventling burst out of the corridor vent and landed")
+				await fight(vent_z, "", 20.0)
+	var bloater: Node = lvl.get_node_or_null("Z_corr_1")
+	if is_instance_valid(bloater) and bloater.state != ZS.DEAD:
+		await fight(bloater, "", 25.0)
 	CHEATS.set_cheat("god_mode", false)
 
 ## Stand at `from` looking at `look`, then step to `to` (inside the trigger).

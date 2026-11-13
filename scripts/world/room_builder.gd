@@ -13,6 +13,8 @@ class_name RoomBuilder
 ##   pilasters: {sides, spacing, width, depth, slot}, beams: {axis "x"|"z"|"both", spacing, depth, width, slot},
 ##   decals: {"blood": n, "stain": n, "scorch": n, "wall_blood": n}, papers: n, probe: bool,
 ##   ceiling_holes: [[x, z, w, d]] (local; a broken-through hole with a dark crawlspace above)
+##                  [[x, z, w, d, {"vent": true}]]: an air vent instead, a metal duct
+##                  with a grille that a ventling bursts out through (VentGrille)
 ## }
 ##
 ## Two rooms must never both build a wall in the same place: the renderer
@@ -170,6 +172,9 @@ static func _crawlspace(root: Node3D, top: float, h: Array) -> void:
 	var z0: float = h[1]
 	var w: float = h[2]
 	var d: float = h[3]
+	if h.size() > 4 and h[4].get("vent", false):
+		_vent(root, top, x0, z0, w, d)
+		return
 	var rise := 2.6
 	var dark := Mats.trim(Color(0.07, 0.055, 0.045), 0.95)
 	var wood := Mats.trim(Color(0.24, 0.17, 0.11), 0.85)
@@ -203,6 +208,45 @@ static func _crawlspace(root: Node3D, top: float, h: Array) -> void:
 		lath.position = Vector3(px, top - 0.24, pz)
 		lath.rotation = Vector3(rng.randf_range(-0.9, 0.9), rng.randf() * TAU, rng.randf_range(-1.2, 1.2))
 		root.add_child(lath)
+
+## An air vent in the ceiling: a galvanised duct going up into the dark, a
+## frame round the opening and a slatted grille in it. The grille is its own
+## node (group "vent_grilles") so whatever comes through can knock it out.
+static func _vent(root: Node3D, top: float, x0: float, z0: float, w: float, d: float) -> void:
+	var duct := Mats.trim(Color(0.16, 0.165, 0.17), 0.5, 0.6)
+	var inner := Mats.trim(Color(0.05, 0.05, 0.05), 0.9)
+	var frame := Mats.trim(Color(0.42, 0.42, 0.4), 0.45, 0.7)
+	var rise := 2.2
+	var c := Vector3(x0 + w / 2, top + rise / 2, z0 + d / 2)
+	for s in [-1.0, 1.0]:
+		_box(root, c + Vector3(s * (w / 2 + 0.03), 0, 0), Vector3(0.06, rise, d + 0.06), duct, true)
+		_box(root, c + Vector3(0, 0, s * (d / 2 + 0.03)), Vector3(w + 0.06, rise, 0.06), duct, true)
+	_box(root, Vector3(c.x, top + rise + 0.03, c.z), Vector3(w + 0.06, 0.06, d + 0.06), inner, true)
+	# Frame round the opening, proud of the ceiling.
+	var under := top - 0.2 - 0.02   # the ceiling's underside, just below it
+	for s in [-1.0, 1.0]:
+		_box(root, Vector3(c.x + s * (w / 2 + 0.04), under, c.z), Vector3(0.08, 0.04, d + 0.16), frame, false)
+		_box(root, Vector3(c.x, under, c.z + s * (d / 2 + 0.04)), Vector3(w + 0.16, 0.04, 0.08), frame, false)
+	# The grille: slats across a thin rim, screwed in at the corners.
+	var g := Node3D.new()
+	g.name = "VentGrille"
+	g.add_to_group("vent_grilles")
+	g.position = Vector3(c.x, under + 0.01, c.z)
+	root.add_child(g)
+	var slat_mat := Mats.trim(Color(0.3, 0.3, 0.29), 0.55, 0.65)
+	for s in [-1.0, 1.0]:
+		_box(g, Vector3(s * (w / 2 - 0.02), 0, 0), Vector3(0.04, 0.025, d), slat_mat, false)
+		_box(g, Vector3(0, 0, s * (d / 2 - 0.02)), Vector3(w, 0.025, 0.04), slat_mat, false)
+	var n := int(w / 0.09)
+	for k in n:
+		var sl := MeshInstance3D.new()
+		var sb := BoxMesh.new()
+		sb.size = Vector3(0.022, 0.05, d - 0.06)
+		sl.mesh = sb
+		sl.material_override = slat_mat
+		sl.position = Vector3(-w / 2 + (k + 0.5) * w / n, 0.01, 0)
+		sl.rotation.z = deg_to_rad(35.0)   # angled louvres: you can't see up it
+		g.add_child(sl)
 
 ## A real window: sill, frame, mullions, dirty moonlit glass, optional planks
 ## nailed across, and a cold spot light outside so the frame casts shadows inside.
