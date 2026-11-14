@@ -787,7 +787,7 @@ func _monitor() -> void:
 		_stuck_t += dt
 		if _stuck_t > 1.5:
 			if p.global_position.distance_to(_stuck_ref) < 0.2:
-				_bug("movement", "stuck at %s pushing toward %s" % [_v(p.global_position), _v(p.global_position + Basis(Vector3.UP, p.yaw) * Vector3(p.move_input.x, 0, p.move_input.y))], "stuck:%d:%d" % [roundi(p.global_position.x), roundi(p.global_position.z)])
+				_bug("movement", "stuck at %s pushing toward %s%s" % [_v(p.global_position), _v(p.global_position + Basis(Vector3.UP, p.yaw) * Vector3(p.move_input.x, 0, p.move_input.y)), _blocked_by(p)], "stuck:%d:%d" % [roundi(p.global_position.x), roundi(p.global_position.z)])
 			_stuck_ref = p.global_position
 			_stuck_t = 0.0
 	else:
@@ -977,6 +977,28 @@ func _scan_audio(node: Node, listener: Vector3) -> void:
 		if c.get_child_count() > 0 and not (c is AudioStreamPlayer3D):
 			_scan_audio(c, listener)
 
+## What she is pushing against, for the "stuck" report: an infected (and
+## what it is doing) or the prop/wall node in the way.
+func _blocked_by(p) -> String:
+	var names: PackedStringArray = []
+	for i in p.get_slide_collision_count():
+		var c: KinematicCollision3D = p.get_slide_collision(i)
+		var o: Object = c.get_collider()
+		if o == null or absf(c.get_normal().y) > 0.7:
+			continue   # the floor
+		var n: Node = o as Node
+		var z: Node = n
+		while z and not z.is_in_group("zombies"):
+			z = z.get_parent()
+		var label := ""
+		if z:
+			label = "infected %s (%s, state %d)" % [z.name, z.get("variant"), z.get("state")]
+		elif n:
+			label = "%s/%s" % [n.get_parent().name if n.get_parent() else "", n.name]
+		if label != "" and not label in names:
+			names.append(label)
+	return " against " + ", ".join(names) if names.size() > 0 else ""
+
 ## Roughly how loud a 3D sound reaches the listener (Godot's own formula).
 func _heard_db(a: AudioStreamPlayer3D, d: float) -> float:
 	if a.max_distance > 0.0 and d > a.max_distance:
@@ -1007,7 +1029,8 @@ func _audio_report() -> void:
 		if v[3] > -20.0:
 			audible += 1
 			var id: String = str(v[1]).get_file()
-			if not (id.contains("attack") or id.contains("alert") or id.contains("death") or id.contains("shriek") or id.contains("slam") or id.contains("roar")):
+			# "swipe" is the whoosh of a swinging arm, not a voice.
+			if not (id.contains("attack") or id.contains("swipe") or id.contains("alert") or id.contains("death") or id.contains("shriek") or id.contains("slam") or id.contains("roar")):
 				groans += 1
 	var per_min := audible / span * 60.0
 	var groans_min := groans / span * 60.0
@@ -1722,8 +1745,24 @@ func _run_route2() -> void:
 		await _wait_cutscene_end(4.0)
 	await pick_up("c2_stacks_ammo")
 	if not GS.has_flag("c2_complete"):
-		_bug("chapter2", "reached the deep stacks and chapter 2 didn't finish")
+		_bug("chapter2", "reached the deep stacks and chapter 2 didn't finish (%s)" % _scene_blockers())
 	_note("chapter 2 done in %.0fs, hp %.0f, bag %s" % [sim_t - t0, p.hp, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+
+## Why a story scene isn't starting where she stands (what
+## Chapter2Story._quiet waits on): infected after her within 12 m, the
+## Tallyman within 10 m, or her hands busy.
+func _scene_blockers() -> String:
+	var at: Vector3 = p.global_position
+	var out: PackedStringArray = []
+	if p.downed or p.pinned or p.working != "":
+		out.append("she is busy (%s)" % p.working)
+	for z in get_nodes_in_group("zombies"):
+		if z.global_position.distance_to(at) < 12.0 and z.state in [ZS.CHASE, ZS.ATTACK, ZS.CHARGE, ZS.PINNING]:
+			out.append("infected %s (%s, state %d) at %s" % [z.name, z.variant, z.state, _v(z.global_position)])
+	for st in get_nodes_in_group("stalker"):
+		if st.active:
+			out.append("Tallyman %.0f m away" % st.global_position.distance_to(at))
+	return ", ".join(out) if out.size() > 0 else "nothing in the way"
 
 func _stalker_where() -> String:
 	var st = get_first_node_in_group("stalker")
