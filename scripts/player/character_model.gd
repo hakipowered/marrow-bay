@@ -356,6 +356,8 @@ var _cancel_at := -1.0   # a combat clip may give way to movement after this poi
 var hold := "gun"
 
 func play(state: String, aiming: bool) -> void:
+	if state == "valve":
+		state = "idle"   # at a handwheel: standing, HandsOnGrip turns it
 	var aims: Dictionary = AIM_ANIMS if hold == "gun" or hold == "" else GUARD_ANIMS
 	var anim: String = aims.get(state, state) if aiming else state
 	anim = STATE_CLIPS.get(state, anim)

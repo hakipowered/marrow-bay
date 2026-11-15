@@ -4,8 +4,11 @@ extends CharacterBody3D
 ## respirator mask, dragging a hooked iron archive pole. He was the Archive's
 ## night keeper; now he walks the building counting the living.
 ## He cannot be killed: enough damage drops him to one knee for a few seconds.
-## Heavy footsteps carry through walls. He opens normal doors. He does not run;
-## he does not need to. Host-simulated.
+## Heavy footsteps carry through walls. He does not run; he does not need to.
+## A shut door keeps him out (the navmesh doesn't go through doorways): he
+## waits outside it, breathing, then loses the scent and walks back to where
+## he came in, and picks the hunt up again once someone is out where he can
+## get at them. Host-simulated.
 
 @export var active := false
 var target: Node3D
@@ -19,6 +22,13 @@ var _hitboxes: Array = []
 
 const SPEED := 1.55
 const STAGGER_DAMAGE := 260.0
+## How long he waits outside a door someone shut themselves in behind.
+const LINGER := 9.0
+
+var _home := Vector3.ZERO
+var _lost_t := 0.0
+var _reach_t := 0.0
+var _reach: Dictionary = {}   # player -> can he walk to them (every 0.5 s)
 
 ## He mutters while he hunts. Breathing and speech never overlap: the breath
 ## loop stops while he talks and comes back after a short pause.
@@ -38,12 +48,15 @@ func _ready() -> void:
 	add_to_group("stalker")
 	collision_layer = 4
 	collision_mask = 1 | 2 | Door.BARS_LAYER
+	# His body is shorter than he is (2.45 m): at 2.5 m he couldn't get under
+	# a 2.3-2.4 m door head and stood stuck in the clock gallery's doorway.
+	# He stoops under them instead (_stoop).
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.42
-	cap.height = 2.5
+	cap.height = 2.2
 	cs.shape = cap
-	cs.position.y = 1.25
+	cs.position.y = 1.1
 	add_child(cs)
 	_model = _build_model()
 	add_child(_model)
@@ -81,6 +94,10 @@ func _ready() -> void:
 		add_child(a)
 	_agent = NavigationAgent3D.new()
 	_agent.radius = 0.5
+	# Close to each corner of the path: cutting one a metre early walked him
+	# into the jamb of a doorway and he stood there pushing.
+	_agent.path_desired_distance = 0.35
+	_agent.target_desired_distance = 0.6
 	add_child(_agent)
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
@@ -90,6 +107,7 @@ func _ready() -> void:
 	sync.replication_config = cfg
 	add_child(sync)
 	visible = active
+	_home = position
 
 func _build_model() -> Node3D:
 	var path := "res://assets/characters/tallyman/tallyman.glb"
@@ -134,15 +152,28 @@ func _build_model() -> Node3D:
 @rpc("authority", "reliable", "call_local")
 func activate(at: Vector3) -> void:
 	active = true
+	leaving = false
 	visible = true
 	global_position = at
+	_home = at
+	_lost_t = 0.0
 	if _breath.stream:
 		_breath.play()
+
+## Done hunting for now (host): he turns his back on them and walks off to
+## `to`; the story puts him away once nobody can see him (Chapter2Story).
+var leaving := false
+var _leave_to := Vector3.ZERO
+
+func leave(to: Vector3) -> void:
+	leaving = true
+	_leave_to = to
 
 ## Gone for now (chapter 2 after the Warden scene): every phone runs this
 ## itself from the story, so it needs no RPC.
 func deactivate() -> void:
 	active = false
+	leaving = false
 	visible = false
 	velocity = Vector3.ZERO
 	if _breath:
@@ -194,6 +225,7 @@ func _physics_process(delta: float) -> void:
 	if not active:
 		return
 	_animate(delta)
+	_stoop(delta)
 	_step_t -= delta * (velocity.length() / SPEED)
 	if _step_t <= 0 and velocity.length() > 0.2:
 		_step_t = 0.85
@@ -206,9 +238,36 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
-	target = _nearest()
-	if target == null:
+	if leaving:
+		_walk_to(_leave_to, delta, false)
 		return
+	_reach_t -= delta
+	if _reach_t <= 0.0:
+		_reach_t = 0.5
+		_reach.clear()
+		for p in get_tree().get_nodes_in_group("players"):
+			_reach[p] = _can_reach(p)
+	var hunted := _nearest()
+	target = null
+	if hunted and _reach.get(hunted, true):
+		target = hunted
+	else:
+		# Whoever he's after is shut in behind a door: someone he can get to
+		# instead, or wait outside a while and then give up.
+		for p in _reach:
+			if is_instance_valid(p) and _reach[p] and _huntable(p) and (target == null or global_position.distance_to(p.global_position) < global_position.distance_to(target.global_position)):
+				target = p
+	if target == null:
+		_lost_t += delta
+		if hunted and _lost_t < LINGER:
+			_walk_to(hunted.global_position, delta, false)
+		elif global_position.distance_to(_home) > 0.8:
+			_walk_to(_home, delta, false)
+		else:
+			velocity = Vector3(0, velocity.y - 18.0 * delta, 0)
+			move_and_slide()
+		return
+	_lost_t = 0.0
 	var d := global_position.distance_to(target.global_position)
 	_talk_cd -= delta
 	if _talk_cd <= 0.0 and not _speaking and d < 22.0:
@@ -217,7 +276,30 @@ func _physics_process(delta: float) -> void:
 	if d < 1.8 and _attack_cd <= 0:
 		_attack_cd = 2.2
 		_swing.rpc(target.get_path())
-	_agent.target_position = target.global_position
+	_walk_to(target.global_position, delta)
+
+## Ducks his head under a door head or a low pipe (every phone, from where he
+## is): the model shrinks a touch towards the floor so his feet stay put.
+var _stoop_k := 1.0
+
+func _stoop(delta: float) -> void:
+	if _model == null:
+		return
+	var want := 1.0
+	var fwd := -global_transform.basis.z
+	var space := get_world_3d().direct_space_state
+	for ahead: float in [0.0, 0.35]:
+		var from: Vector3 = global_position + fwd * ahead + Vector3.UP * 1.4
+		var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.UP * 1.15, 1, [get_rid()])
+		var hit := space.intersect_ray(q)
+		if not hit.is_empty():
+			var room: float = hit["position"].y - global_position.y
+			want = minf(want, clampf((room - 0.05) / 2.45, 0.86, 1.0))
+	_stoop_k = move_toward(_stoop_k, want, delta * 0.8)
+	_model.scale = Vector3.ONE * _stoop_k
+
+func _walk_to(goal: Vector3, delta: float, hunting := true) -> void:
+	_agent.target_position = goal
 	var next := _agent.get_next_path_position()
 	var dir := next - global_position
 	dir.y = 0
@@ -225,18 +307,40 @@ func _physics_process(delta: float) -> void:
 		dir = dir.normalized()
 		velocity = Vector3(dir.x * SPEED, velocity.y - 18.0 * delta, dir.z * SPEED)
 		rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), 3 * delta)
+	else:
+		velocity = Vector3(0, velocity.y - 18.0 * delta, 0)
 	move_and_slide()
-	# Opens ordinary doors in his way. Locked and co-op doors still stop him.
+	if not hunting:
+		return
+	# Shoves open an ordinary door in front of him while he hunts (locked and
+	# co-op doors stop him), so whoever is behind it sees him standing there.
+	var fwd := -global_transform.basis.z
 	for door in get_tree().get_nodes_in_group("doors"):
 		if door.kind == Door.Kind.MANUAL and not door.is_open and door.global_position.distance_to(global_position) < 1.6:
-			door._rpc_set_open.rpc(true, -global_transform.basis.z)
+			var to: Vector3 = door.global_position - global_position
+			to.y = 0.0
+			if to.normalized().dot(fwd) > 0.3:
+				door._rpc_set_open.rpc(true, fwd)
+
+## Whether the navmesh takes him to `p`: a shut door, or the doorway it
+## stands in, cuts him off from whoever is on the far side.
+func _can_reach(p: Node3D) -> bool:
+	var to := p.global_position
+	var path := NavigationServer3D.map_get_path(get_world_3d().navigation_map, global_position, to, true)
+	if path.is_empty():
+		return false
+	var end: Vector3 = path[path.size() - 1]
+	return Vector2(end.x - to.x, end.z - to.z).length() < 1.2 and absf(end.y - to.y) < 1.2
+
+func _huntable(p: Node) -> bool:
+	return not p.downed and not _in_safe_room(p)
 
 func _nearest() -> Node3D:
 	var best: Node3D = null
 	var bd := INF
 	for p in get_tree().get_nodes_in_group("players"):
 		var dd := global_position.distance_to(p.global_position)
-		if not p.downed and dd < bd and not _in_safe_room(p):
+		if dd < bd and _huntable(p):
 			bd = dd
 			best = p
 	return best

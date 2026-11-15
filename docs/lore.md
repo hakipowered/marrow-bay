@@ -207,8 +207,10 @@ reading room. Hides it with a rag around the wrist so the others won't panic.
   exactly what is happening to him. Talk to him afterwards for a few more
   lines (the power, the count, Orrin, Nasri's coffee).
 - **Ch. 2:** he is already down in the Undercroft, barred into the shelter
-  staff's muster room with the generator's starting handle on his belt. Over
-  the tannoy he tells them where it is and unbars the door. When they get
+  staff's muster room with the flood door's key on his belt (the Warden's key:
+  the door won't lift without it, power or no power). When the generator
+  runs he hears it, tells them over the tannoy where the key is and unbars the
+  door. When they get
   there he counts the shelter one last time ("Not one of them went out.") and
   turns in front of them, in his riot gear, with the steel truncheon and the
   riot shield he drilled with for twenty years. The bite on his back has
@@ -247,8 +249,13 @@ use to pull boxes off the high shelves.
   count. He mutters numbers ("...forty-one... forty-two...") and lines from the
   job ("The Archive is closed. You are late.").
 - He can't be killed until the finale. Enough damage drops him to one knee for
-  about four seconds. He opens ordinary doors; locked doors, co-op doors and
-  safe rooms stop him.
+  about four seconds. A shut door keeps him out: he stands outside it,
+  breathing, then walks away and comes back later. Safe rooms stop him.
+- Before he turned all the way he went down to the engine hall and made sure
+  nobody would raise the flood door to the deep stacks: he took the fuse out
+  of the generator's cabinet and locked it in the master clock, and threw the
+  starting handle into the flooded pump sump. His note in the cabinet lists
+  it, in a hand that gets worse line by line.
 - **First seen** in Ch. 1 through the reading room's frosted glass. **Hunts**
   in Ch. 2, 3 and 8. **Unmasked** in Ch. 8 (boss 9).
 
@@ -280,7 +287,7 @@ The story's one motif. Use it, don't explain it.
 | 1 | **Shelter** | `gates`: the gates and banner, faces at the windows, chapter card | done |
 | 1 | | `warden`: Hardass in the office (who he is, the shelter, the fever, Nasri and the 1891 files, Orrin, City Hall and the vault, the bitten wrist), gives the vault elevator key card (`vault_card`), sits back down by the door. Acting clips: `tools/import_talk.gd` | done |
 | 1 | | `glass`: the Tallyman behind the frosted pane, then out through the staff stair door, which slams and is bolted ("Something big. Don't let it see us.") | done |
-| 2 | **The Count** | `scripts/story/chapter2_story.gd` (the Undercroft, see `docs/chapter2.md`): `c2_arrival` the lift opens on the service level; `c2_hall` the flood door and the dead generator; `c2_hunt` the master clock strikes and the Tallyman starts hunting; `c2_intercom` Hardass on the tannoy; `c2_warden` Hardass has turned (boss 1, `WardenBoss`); `c2_end` Nasri's staff card and his chalk in the deep stacks | done |
+| 2 | **The Count** | `scripts/story/chapter2_story.gd` (the Undercroft, see `docs/chapter2.md`): `c2_arrival` the lift opens on the service level; `c2_hall` the flood door and the dead generator; `c2_hunt` the master clock strikes and the Tallyman starts hunting; `c2_intercom` the lights come on and Hardass on the tannoy says the flood door needs his key; `c2_warden` Hardass has turned (boss 1, `WardenBoss`); `c2_end` Nasri's staff card and his chalk in the deep stacks | done |
 | 3 | **Paper Trail** | Nasri's office in the vault, the recording; the Bookbinder (boss 2) | to do |
 | 4 | **Night Market** | Naghal's broadcast; the Sweepers arrive | to do |
 | 5 | **Zaga** | the grate and the slingshot; Taken | to do |

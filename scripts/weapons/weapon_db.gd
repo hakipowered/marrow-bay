@@ -24,9 +24,9 @@ const WEAPONS := {
 }
 
 const AMMO := {
-	"9mm": {"name": "9mm Rounds", "stack": 60, "pickup": 15},
-	"50cal": {"name": ".50 Magnum Rounds", "stack": 12, "pickup": 6},
-	"shells": {"name": "Shotgun Shells", "stack": 30, "pickup": 6},
+	"9mm": {"name": "9mm Rounds", "stack": 100, "pickup": 15},
+	"50cal": {"name": ".50 Magnum Rounds", "stack": 24, "pickup": 6},
+	"shells": {"name": "Shotgun Shells", "stack": 50, "pickup": 6},
 	"rifle": {"name": "Rifle Rounds", "stack": 60, "pickup": 10},
 	"bolts": {"name": "Crossbow Bolts", "stack": 12, "pickup": 4},
 	"grenades": {"name": "Launcher Grenades", "stack": 6, "pickup": 2},
