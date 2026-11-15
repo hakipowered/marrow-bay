@@ -33,7 +33,7 @@ are the only light until the generator runs.
 | Back stair | (31.5, -12.5) | 3 x 3 | Caved in. The Tallyman comes down it. |
 | Muster room | (19, 4.5) | 14 x 10 | Barred from inside. The Warden's arena. |
 | Pump room | (33, 4.5) | 6 x 7.5 | Sump B, flooded: three valves, the drill board, the starting handle at the bottom. |
-| Engine hall | (39, -6) | 16 x 18 | The generator and the flood door. Checkpoint `ch2_hall`. |
+| Engine hall | (39, -6) | 16 x 18 | The generator and the flood door. Checkpoint `ch2_hall`, also taken the moment the generator catches, stragglers or not, so a death after that keeps the power on. |
 | Coal yard | (55, -6) | 22 x 18 | Outdoors in the rain: coal heaps, a burning ambulance wreck, the fuel shed with the diesel. |
 | Deep stacks | (43, 12) | 8 x 8 | Behind the flood door. Nasri's staff card and his chalk. The end. |
 
@@ -155,7 +155,9 @@ room, the key where he dropped it, the objective on the banner.
 ## Tests (all in the playtest gate, `tools/playtest.sh`)
 
 - `tests/chapter2_flow.gd`: the whole chapter by its rules, start to end
-  (including the valves in the wrong order first, and reloads part way).
+  (including the valves in the wrong order first, reloads part way, and a
+  death just after the generator catches: Continue keeps the power on, and
+  the tannoy, the muster room and the Warden's key follow as before).
 - `tests/stalker_doors.gd`: the hunting Tallyman comes out of the clock
   gallery, waits outside the pump room door, gives up, and comes back when
   she is out in the tunnel, and follows her in through the door left open.

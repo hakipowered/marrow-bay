@@ -54,6 +54,8 @@ const OBJ_FIT := "Fit the starting handle to the generator in the engine hall"
 ## Set on load for a save from before the pump room (see the top).
 const OLD_FLOW := "c2_old_flow"
 const KEY_ID := "c2_flood_key"
+## The engine hall's checkpoint (Undercroft), taken when the generator catches.
+const HALL_CHECKPOINT := "ch2_hall"
 
 const HUNT_FROM := Vector3(32.9, 0.0, -8.3)
 
@@ -227,6 +229,12 @@ func generator_changed(part: String) -> void:
 				Cutscenes.set_objective(OBJ_POWER)
 			if multiplayer.is_server():
 				_rpc_bark.rpc("obcera", "o_g_lights", "Lights! We've got lights!")
+				# The engine hall's checkpoint, now: its own rule would wait
+				# out the stragglers, and a death among them went back to
+				# before the lights.
+				for c in get_tree().get_nodes_in_group("checkpoints"):
+					if c.checkpoint_id == HALL_CHECKPOINT:
+						c.reach_now()
 		_:
 			if GameState.has_flag(OLD_FLOW):
 				if part == "crank":

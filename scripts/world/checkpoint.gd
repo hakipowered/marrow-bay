@@ -60,6 +60,17 @@ func _check() -> void:
 	_pending = false
 	_rpc_reached.rpc()
 
+## Taken now by the story (host), fight or no fight, for a step Continue
+## must never undo: in chapter 2 the generator catching with the last of its
+## infected still in the engine hall (dying to them went back to before the
+## lights, and the whole crank had to be done again). Infected the noise
+## brought in were spawned for the fight, so a snapshot can't keep any dead.
+func reach_now() -> void:
+	if not multiplayer.is_server():
+		return
+	_pending = false
+	_rpc_reached.rpc()
+
 ## Only wait when Continue already has somewhere in this level to go back
 ## to: the first checkpoint of a run or of a level is taken even mid-fight,
 ## or Continue would fall back to an old save from another run.
