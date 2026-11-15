@@ -156,6 +156,8 @@ func build_snapshot() -> Dictionary:
 		"checkpoint": GameState.shared_checkpoint,
 		"flags": GameState.world_flags.duplicate(true),
 		"inventories": GameState.inventories.duplicate(true),
+		# The item box (the host's: the one both survivors share).
+		"item_box": GameState.item_box.to_save(),
 		"play_time": GameState.play_time_sec,
 		"mode": GameState.mode,
 		"run_id": GameState.run_id,
@@ -473,6 +475,8 @@ func apply_snapshot(data: Dictionary) -> void:
 	# kill after Continue would be "remembered" by the next Continue).
 	GameState.world_flags = (data.get("flags", {}) as Dictionary).duplicate(true)
 	GameState.inventories = (data.get("inventories", {}) as Dictionary).duplicate(true)
+	# Saves from before the item box have none: it starts empty.
+	GameState.item_box.from_save(data.get("item_box", []))
 	GameState.play_time_sec = data.get("play_time", 0.0)
 	GameState.set_difficulty(str(data.get("difficulty", "normal")))
 	autosave_on_arrival = false

@@ -481,19 +481,22 @@ func _on_partner_joined(_id: int) -> void:
 	_set_status("Your partner is here!")
 	WebPlatform.note("partner", true)
 	if _panel.get_child_count() > 0:
-		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags, GameState.inventories, GameState.difficulty))
+		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags, GameState.inventories, GameState.difficulty, GameState.item_box.to_save()))
 
 ## The host's save (or new run) for both phones. The bags ride along too:
 ## each survivor's bag lives on its own player's phone, so without them a
 ## resumed co-op run gave the partner a fresh starting kit (and the next save
-## wrote that over their saved bag).
+## wrote that over their saved bag). So does the item box both of them share.
 @rpc("authority", "reliable", "call_local")
-func _start_coop(level: String, checkpoint: String, flags: Dictionary, bags: Dictionary = {}, difficulty := "") -> void:
+func _start_coop(level: String, checkpoint: String, flags: Dictionary, bags: Dictionary = {}, difficulty := "", box: Array = []) -> void:
 	GameState.level_path = level
 	if difficulty != "":
 		GameState.set_difficulty(difficulty)
 	GameState.shared_checkpoint = checkpoint
 	GameState.world_flags = flags
 	GameState.inventories = bags.duplicate(true)
+	# On both phones, the host's too: the box's entries get the same numbers
+	# everywhere, which is how a take names what it wants.
+	GameState.item_box.from_save(box)
 	WebPlatform.note("started", level)
 	get_tree().change_scene_to_file(level)

@@ -30,6 +30,9 @@ var run_id: String = ""
 ## them to the host, and saves carry the look each survivor had.
 var looks: Dictionary = {}
 const LOOKS_PATH := "user://looks.json"
+## The item box: one store behind every safe room's box, shared by both
+## survivors (scripts/world/item_storage.gd). Saved with the run.
+var item_box: Node
 
 ## How hard the run is: picked when a new game starts, sent to the partner
 ## with the rest of the run, and kept in its saves (old saves are Normal).
@@ -61,6 +64,9 @@ const COOP_DROPS := 0.6
 const PRESSURE_COUNT := [1.0, 1.0, 1.35, 1.7]
 
 func _ready() -> void:
+	item_box = preload("res://scripts/world/item_storage.gd").new()
+	item_box.name = "ItemBox"
+	add_child(item_box)
 	if FileAccess.file_exists(LOOKS_PATH):
 		var d = JSON.parse_string(FileAccess.get_file_as_string(LOOKS_PATH))
 		if d is Dictionary:
@@ -197,6 +203,7 @@ func reset_run() -> void:
 	world_flags.clear()
 	inventories.clear()
 	play_time_sec = 0.0
+	item_box.clear()
 	run_id = new_run_id()
 	difficulty = "normal"
 	SaveSystem.checkpoint_snapshot = {}

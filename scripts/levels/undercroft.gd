@@ -355,6 +355,9 @@ func _keepers_lodge() -> void:
 	RoomBuilder.light(r, Vector3(6.45, 1.2, 1.1), Color(1.0, 0.62, 0.3), 0.8, 4.0, false, true)
 	UndercroftPower.work_light(r, Vector3(3.5, 2.96, 3.0), 0.0, 0.5, 6.0)
 	place_checkpoint("ch2_lodge", Vector3(11.5, 0, 7.6), Vector3(6.2, 3, 5.2), true)
+	# The item box, the same store as the office's: a supply crate in the
+	# corner between the bookshelf and the cot.
+	place_item_box(Vector3(13.65, 0, 9.92), 180, "lodge")
 	place_pickup("file:keeper_ledger", Vector3(8.75, 0.8, 8.6), "c2_ledger")
 	place_pickup("ink_ribbon", Vector3(8.7, 0.8, 9.6), "c2_lodge_ribbon")
 	place_pickup("herb_green", Vector3(11.0, 1.15, 10.1), "c2_lodge_herb")

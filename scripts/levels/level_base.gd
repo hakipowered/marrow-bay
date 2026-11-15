@@ -344,6 +344,16 @@ func place_zombie(name_: String, at: Vector3, rot_deg := 0.0, variant := "shambl
 	z.rotation_degrees.y = rot_deg
 	add_child(z)
 
+## A safe room's item box (every box opens onto the same store). at is on
+## the floor; the box's front faces local +z turned by rot_deg.
+func place_item_box(at: Vector3, rot_deg: float, id: String) -> ItemBox:
+	var b := ItemBox.new()
+	b.name = "ItemBox_" + id
+	b.position = at
+	b.rotation_degrees.y = rot_deg
+	add_child(b)
+	return b
+
 func place_checkpoint(id: String, at: Vector3, size: Vector3, safe := false) -> void:
 	var c := Checkpoint.new()
 	c.checkpoint_id = id

@@ -111,6 +111,9 @@ SOUNDS = {
     "clock_chime": (2, 3.0, -14, "a deep old regulator clock striking once: a heavy resonant gong-like bell, long ring"),
     "clock_tick": (2, 0.5, -24, "one loud tick of an old pendulum regulator clock, wooden case"),
     "drawer_open": (1, 0.8, -17, "a spring-loaded wooden drawer in a clock's plinth snapping open"),
+    # The item box in the safe rooms: an old wooden military supply crate.
+    "box_open": (1, 1.6, -18, "unlatching an old wooden military supply crate: two metal draw latches flicked open, then the heavy wooden lid creaking up on stiff iron hinges"),
+    "box_close": (1, 1.2, -17, "lowering the heavy lid of an old wooden military supply crate: a creak, a solid wooden thump, then two metal draw latches snapped shut"),
     "pa_crackle": (1, 1.6, -18, "an old public address loudspeaker crackling on with static and a short feedback whine"),
     "door_bang": (2, 1.2, -12, "something huge pounding a steel door from the other side: one heavy booming impact, the door rattling in its frame"),
     # The pump room's sump (chapter 2)
