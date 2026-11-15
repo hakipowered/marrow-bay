@@ -933,14 +933,16 @@ func _floor_checks() -> void:
 		_floor_checked[key] = sim_t
 		var lowest := _lowest_skin(model)
 		var low := lowest.y
-		# The floor under that lowest bit of skin (a body that fell off the
-		# kerb lies on the road, though it died standing on the sidewalk).
+		# Or the floor under that lowest bit of skin, if lower: a body that
+		# fell off the kerb lies on the road though it died on the sidewalk.
+		# (Never the higher one: the kerb's collision has a ramp the drawn
+		# kerb doesn't, so a hand on the road beside it is not in it.)
 		var under := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(lowest.x, b.global_position.y + 0.6, lowest.z), Vector3(lowest.x, b.global_position.y - 3.0, lowest.z), 1, excl))
 		if not under.is_empty():
-			floor_y = under.position.y
+			floor_y = minf(floor_y, under.position.y)
 		if floor_y - low > 0.08:
 			_sunk += int(not bugs.has("sunk:" + str(b.name)))
-			_bug("enemies", "%s lies %.0f cm into the floor at %s in the %s (%s)" % [b.name, (floor_y - low) * 100.0, _v(b.global_position), _area_of(b.global_position), "dead" if dead else "alive"], "sunk:" + str(b.name))
+			_bug("enemies", "%s lies %.0f cm into the floor at %s in the %s (%s; lowest skin at %s over %s)" % [b.name, (floor_y - low) * 100.0, _v(b.global_position), _area_of(b.global_position), "dead" if dead else "alive", _v(lowest), str(under.collider.get_parent().name) if not under.is_empty() and under.collider.get_parent() else "?"], "sunk:" + str(b.name))
 
 func _skeleton(model: Node) -> Skeleton3D:
 	var s := model.find_children("*", "Skeleton3D", true, false)

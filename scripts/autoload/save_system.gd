@@ -398,8 +398,6 @@ func describe(d: Dictionary) -> Dictionary:
 	var diff := str(d.get("difficulty", "normal"))
 	if not GameState.DIFFICULTY.has(diff):
 		diff = "normal"
-	if party_text != "":
-		party_text += "  ·  " + GameState.difficulty_name(diff)
 	return {
 		"chapter": chapter_label(str(d.get("level", "")), flags),
 		"place": PLACES.get(cp, cp.capitalize().replace("_", " ")),

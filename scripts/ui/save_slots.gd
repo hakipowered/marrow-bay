@@ -175,7 +175,8 @@ func _card(info: Dictionary) -> Button:
 	_line(text, str(info.get("place", "")), 32, CREAM)
 	_line(text, "Play time %s     %s" % [info.get("play_time_text", ""), info.get("when", "")], 26, MUTED)
 	if str(info.get("party", "")) != "":
-		_line(text, str(info.get("party", "")), 26, MUTED)
+		# Who played it, and on what difficulty (older saves: Normal).
+		_line(text, "%s  ·  %s" % [info.get("party", ""), GameState.difficulty_name(str(info.get("difficulty", "normal")))], 26, MUTED)
 	return b
 
 func _line(parent: Control, s: String, size_px: int, color: Color) -> Label:
