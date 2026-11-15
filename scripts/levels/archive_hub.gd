@@ -540,7 +540,10 @@ func _reading_room() -> void:
 		"trim": Color(0.2, 0.11, 0.06),
 		"floor_look": {"tile_size": 2.0, "roughness_mul": 0.7},
 		"wall_look": {"tile_size": 2.2, "tint": Color(0.75, 0.85, 0.75), "stain_amount": 0.6},
-		"openings": {"s": [[10.0, 1.2, 2.3]]},   # lines up with the corridor's doorway (x -16.0 .. -14.8)
+		# South: lines up with the corridor's doorway (x -16.0 .. -14.8). West:
+		# the staff stair door (z -1.75 .. -0.65), bolted from the far side;
+		# the Tallyman leaves by it in the "glass" scene (Chapter1Story).
+		"openings": {"s": [[10.0, 1.2, 2.3]], "w": [[5.25, 1.1, 2.2]]},
 		# South wall: back to back with the corridor's (one wall in the same
 		# place as another flickers through it). East: the Great Hall's wall
 		# closes z -2 .. 5; this room closes the rest itself.
@@ -577,10 +580,37 @@ func _reading_room() -> void:
 	RoomBuilder.light(r, Vector3(9, 1.1, 6), Color(1.0, 0.6, 0.3), 0.9, 4.0, false, true)
 	RoomBuilder.light(r, Vector3(4.5, 3.8, 6.0), WARM, 1.1, 7.0, true)
 	RoomBuilder.light(r, Vector3(9.5, 3.8, 6.0), WARM, 0.7, 6.0, false, true)
+	_staff_stair()
 	place_pickup("weapon:longshot", Vector3(-17, 0.82, -1), "reading_rifle")
 	place_pickup("ammo:rifle", Vector3(-16.6, 0.82, -0.6), "reading_rifle_ammo")
 	place_zombie("Z_read_1", Vector3(-20, 0, 2), 0, "shambler", true, "student")
 	place_zombie("Z_read_2", Vector3(-15, 0, -4), 180, "spitter")
+
+## The reading room's staff stair: a dark landing behind a bolted door in
+## the west wall, where the archivists' stair goes down to the stacks. Players
+## never get through (Door.Kind.BARRED); the Tallyman leaves the reading room
+## by it, and the hook's drag marks run across the floor to it.
+func _staff_stair() -> void:
+	RoomBuilder.build(self, {
+		"id": "StaffStair", "pos": Vector3(-27.9, 0, -2.6), "size": Vector3(1.9, 2.8, 2.8),
+		"floor": "basement_floor", "wall": "basement_wall", "trim": Color(0.2, 0.18, 0.16),
+		"floor_look": {"tile_size": 2.0, "wetness": 0.3},
+		"wall_look": {"tile_size": 2.0, "stain_amount": 0.9},
+		"look": {"grime_amount": 0.9, "grime_height": 1.2},
+		# The reading room's wall closes this side.
+		"skip_walls": ["e"],
+	})
+	var d := place_door(Vector3(-26.0, 0, -1.2), 90, Door.Kind.BARRED, "wood_panel", 1.1, 2.2, "staff_stair")
+	d.add_to_group("staff_stair_door")
+	var sign := Label3D.new()
+	sign.text = "STAFF STAIR\nSTACKS · NO PUBLIC ACCESS"
+	sign.font_size = 26
+	sign.pixel_size = 0.0022
+	sign.modulate = Color(0.85, 0.82, 0.72)
+	sign.outline_size = 0
+	sign.position = Vector3(-25.8, 2.42, -1.2)
+	sign.rotation_degrees.y = 90
+	add_child(sign)
 
 # ---------------- Office (safe room) ----------------
 func _office_safe_room() -> void:
@@ -601,7 +631,10 @@ func _office_safe_room() -> void:
 	RoomBuilder.prop(r, "vintage_telephone_wall_clock", Vector3(4, 2.2, 0.15), 0, 1.0, false)
 	RoomBuilder.shelf_unit(r, Vector3(7.5, 0, 1.4), -90, 1.6, 1.9, 0.45, "office")
 	RoomBuilder.prop(r, "medical_box", Vector3(7.5, 0.98, 1.0), -90, 1.0, false)
-	RoomBuilder.prop(r, "ArmChair_01", Vector3(2.0, 0, 4.6), 120)
+	# Warden Hardass's armchair beside the door, turned to face it: he keeps
+	# watch from it (Chapter1Story).
+	var chair: Array = Chapter1Story.warden_chair()
+	RoomBuilder.prop(r, "ArmChair_01", chair[0] - Vector3(12, 0, 0), chair[1])
 	RoomBuilder.prop(r, "hanging_picture_frame_01", Vector3(0.16, 1.8, 3.0), 90, 1.0, false)
 	RoomBuilder.prop(r, "mantel_clock_01", Vector3(5.9, 0.79, 1.4), -20, 1.0, false)
 	RoomBuilder.light(r, Vector3(4, 2.9, 4), Color(1.0, 0.86, 0.66), 1.8, 7.0, true)

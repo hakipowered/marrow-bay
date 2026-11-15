@@ -26,7 +26,7 @@ a City Hall that has been run by the same few families for a century.
 | **Ashgrove Street** | Downtown shopping street that runs to the Archive. Shuttered shops, a fire escape, the burning wreck. | Prologue |
 | **RaGoon City Civic Archive** | 1902 granite records hall: births, deaths, deeds, court rolls, and the sealed 1891 quarantine files. Since the floods of 1974 it is also the district's official storm shelter. | Ch. 1–3 |
 | **The Great Hall** | The Archive's public hall, two storeys, balcony, card catalogues. Turned into the shelter dormitory three days ago: cots, blankets, the count board. | Ch. 1 |
-| **The reading room / west wing** | Long tables, green lamps, rolling ladders. The frosted pane in its south wall is where the Tallyman is first seen. | Ch. 1 |
+| **The reading room / west wing** | Long tables, green lamps, rolling ladders. The frosted pane in its south wall is where the Tallyman is first seen. The staff stair in its west wall (down to the stacks, "NO PUBLIC ACCESS") is how he leaves: he bolts it behind him, and it stays bolted. Hook drag marks run from the pane to that door. | Ch. 1 |
 | **Archivist's office** | Wood panelling, a desk, a TV, a wall clock. Hardass made it the shelter's office; it is the first safe room. | Ch. 1 |
 | **Records vault** | Underground stacks, moving shelves, the vault elevator to the old service tunnels. Nasri's desk is down here. | Ch. 1–3 |
 | **The river district / Night Market** | Floating stalls and food carts on the flood plain; floods every spring. | Ch. 4 |
@@ -189,8 +189,23 @@ Shelter coordinator, 58, ex-army medic, twenty years running the Archive's
 security desk. Built like a door. Kept the shelter alive for three days, counted
 41 people in, and got bitten on the second night pulling a child out of the
 reading room. Hides it with a rag around the wrist so the others won't panic.
-- **Tonight:** stays behind in the office "to keep the count", gives them the
-  vault elevator key card. He knows exactly what is happening to him.
+- **Tonight:** has kept watch for three nights from the armchair beside the
+  office door, facing it. He gets up, stops them, checks their eyes for the
+  fever, and tells them who he is and what happened: the city made the Archive
+  a storm shelter three nights ago, 41 people came in, the fever came in with
+  them ("two days asleep, then they wake up hungry"), most of them never left.
+  He knew Nasri: Nasri pulled the 1891 files for the city doctor, spent his
+  nights in the vault copying the burial records, kept saying the numbers
+  didn't add up, went down two days ago and never came back; Orrin went after
+  him and came back as something else ("If you hear counting in the dark, you
+  move."). When Obcera says Nasri sent her a sealed package, he tells her to
+  keep it out of anyone else's hands: City Hall radioed twice before the lines
+  died, not to send help, but to ask if the vault was still locked. Zegan sees
+  his wrist bleeding; he snatches the hand back ("It's a scratch. Leave it.").
+  He holds out the vault elevator key card in his good hand, says no to going
+  with them, and sits back down facing the door "to keep the count". He knows
+  exactly what is happening to him. Talk to him afterwards for a few more
+  lines (the power, the count, Orrin, Nasri's coffee).
 - **Ch. 2:** he is already down in the Undercroft, barred into the shelter
   staff's muster room with the generator's starting handle on his belt. Over
   the tannoy he tells them where it is and unbars the door. When they get
@@ -245,8 +260,8 @@ The story's one motif. Use it, don't explain it.
 
 - The narrator: "Every city keeps a ledger. Births. Deaths. Debts."
 - Pell's 1891 ledger: 212 names, numbered, and a total that is off by one.
-- Hardass: "Forty-one people came here for shelter. I counted them in. Count
-  yourselves out."
+- Hardass: "Forty-one people came through those gates. I counted every one of
+  them in." And afterwards: "When you come back up, I'll count you two out."
 - The count board in the Great Hall: 41, then tally marks crossed out.
 - The Tallyman counts out loud. In co-op he says the players' number too.
 - Nasri: "The count's wrong. It's always been wrong."
@@ -263,8 +278,8 @@ The story's one motif. Use it, don't explain it.
 |---|---|---|---|
 | 0 | **Last Call** (prologue) | `intro` in `scripts/story/chapter1_story.gd`. Film `assets/story/video/intro_a.ogv`: the narrated city, the tunnel worker opening his eyes (one shot), Zegan's CPR and flatline, the covered body, the radio nobody answers, Obcera riding, the body sitting up and grabbing Zegan, the swerve. Film `intro_b.ogv`: the crash, Obcera getting up and running to the overturned ambulance, the dead man pinning Zegan, her U-lock, getting him out, the package and her brother's note, her asking him to come, his reason, their names. Then the burning wreck in the engine. Both films are cut by `tools/story/build_intro.py` (sources in the project files under `story-film/`) | done |
 | 1 | **Shelter** | `gates`: the gates and banner, faces at the windows, chapter card | done |
-| 1 | | `warden`: Hardass in the office, gives the vault elevator key card (`vault_card`) | done |
-| 1 | | `glass`: the Tallyman behind the frosted pane | done |
+| 1 | | `warden`: Hardass in the office (who he is, the shelter, the fever, Nasri and the 1891 files, Orrin, City Hall and the vault, the bitten wrist), gives the vault elevator key card (`vault_card`), sits back down by the door. Acting clips: `tools/import_talk.gd` | done |
+| 1 | | `glass`: the Tallyman behind the frosted pane, then out through the staff stair door, which slams and is bolted ("Something big. Don't let it see us.") | done |
 | 2 | **The Count** | `scripts/story/chapter2_story.gd` (the Undercroft, see `docs/chapter2.md`): `c2_arrival` the lift opens on the service level; `c2_hall` the flood door and the dead generator; `c2_hunt` the master clock strikes and the Tallyman starts hunting; `c2_intercom` Hardass on the tannoy; `c2_warden` Hardass has turned (boss 1, `WardenBoss`); `c2_end` Nasri's staff card and his chalk in the deep stacks | done |
 | 3 | **Paper Trail** | Nasri's office in the vault, the recording; the Bookbinder (boss 2) | to do |
 | 4 | **Night Market** | Naghal's broadcast; the Sweepers arrive | to do |

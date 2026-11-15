@@ -35,22 +35,52 @@ func _ready() -> void:
 	var lib := "res://assets/characters/%s/%s_anims.res" % [character, character]
 	if ResourceLoader.exists(lib):
 		_anim.add_animation_library("", load(lib))
+	# Acting clips ("talk/..."): talking, listening, sitting down and getting
+	# up, retargeted onto this model (tools/import_talk.gd). Added before
+	# anything plays: adding a library mid-blend crashes the engine.
+	if _skel:
+		CombatClips.attach(_anim, _skel, character, "talk")
 	if character == "tallyman":
 		_build_pole()
-	play("idle")
+	play(idle_clip())
+
+## This character's own standing loop when it has one (so the warden doesn't
+## stand in the same rig idle as the survivors), else the rig's idle.
+func idle_clip() -> String:
+	for c in ["talk/idle", "idle"]:
+		if has_clip(c):
+			return c
+	return "idle"
+
+## Where a seated clip puts the hips, behind the actor's mark (the chair
+## goes there): from the talk library, in metres, in the actor's own space.
+func seat_back() -> Vector3:
+	if _anim and _anim.has_animation_library("talk"):
+		return _anim.get_animation_library("talk").get_meta("seat_back", Vector3(0, 0, -0.4))
+	return Vector3(0, 0, -0.4)
+
+## How long a clip runs (0 if missing).
+func clip_length(clip: String) -> float:
+	return _anim.get_animation(clip).length if has_clip(clip) else 0.0
 
 func has_clip(clip: String) -> bool:
 	return _anim != null and _anim.has_animation(clip)
 
-## Loop or one-shot clip by name, blended from whatever is playing.
-func play(clip: String, blend := 0.25, speed := 1.0) -> void:
+## Loop or one-shot clip by name, blended from whatever is playing; `from`
+## starts it that many seconds in.
+func play(clip: String, blend := 0.25, speed := 1.0, from := 0.0) -> void:
 	if has_clip(clip):
 		_anim.play(clip, blend, speed)
+		if from > 0.0:
+			_anim.seek(from, false)
 
-## A one-shot clip, then back to `then` (a loop) when it ends.
-func play_once(clip: String, then := "idle", blend := 0.2, speed := 1.0) -> void:
+## A one-shot clip, then back to `then` (a loop; default: their own idle)
+## when it ends.
+func play_once(clip: String, then := "", blend := 0.2, speed := 1.0) -> void:
 	if not has_clip(clip):
 		return
+	if then == "":
+		then = idle_clip()
 	_anim.play(clip, blend, speed)
 	var dur := _anim.get_animation(clip).length / maxf(speed, 0.01)
 	get_tree().create_timer(max(dur - 0.25, 0.1)).timeout.connect(func():
@@ -59,7 +89,9 @@ func play_once(clip: String, then := "idle", blend := 0.2, speed := 1.0) -> void
 
 ## Walks to `to` (world space) playing `clip`, turning to face the way.
 ## Returns the tween's finished signal so a cutscene can wait on it.
-func walk_to(to: Vector3, speed := 1.2, clip := "walk", then := "idle") -> Signal:
+func walk_to(to: Vector3, speed := 1.2, clip := "walk", then := "") -> Signal:
+	if then == "":
+		then = idle_clip()
 	if _walk_tween:
 		_walk_tween.kill()
 	var from := global_position

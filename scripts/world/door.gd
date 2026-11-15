@@ -7,8 +7,11 @@ extends Node3D
 ##  LOCKED    - needs a key item (by key_id), then behaves like MANUAL.
 ##  COOP      - two handles/wheels; both players must hold at the same time.
 ##              The waiting player gets a "Call partner" prompt for call-outs.
+##  BARRED    - bolted from the far side: never opens for the players (the
+##              story can swing it, e.g. the Tallyman leaving the reading room
+##              by the staff stair).
 
-enum Kind { MANUAL, AUTOMATIC, LOCKED, COOP }
+enum Kind { MANUAL, AUTOMATIC, LOCKED, COOP, BARRED }
 ## Physics layer 6: things bodies can't pass but bullets fly through (an iron
 ## gate's bars). Survivors, the infected and the Tallyman collide with it;
 ## Combat's rays (world + hitboxes) don't, so you can shoot the infected
@@ -192,6 +195,8 @@ func interact_text(player: Node, handle := -1) -> String:
 			return "Turn the wheel with your partner" if Net.is_coop() and not Cheats.on("solo_coop_doors") else "Open"
 		Kind.MANUAL:
 			return "Close" if is_open else "Open"
+		Kind.BARRED:
+			return "Bolted from the other side"
 	return ""
 
 func interact(player: Node, handle := -1) -> void:
@@ -207,6 +212,13 @@ func interact(player: Node, handle := -1) -> void:
 				Sfx.play_at("door_locked", global_position + Vector3.UP)
 		Kind.COOP:
 			_rpc_request.rpc_id(1, true, away, handle)
+		Kind.BARRED:
+			Sfx.play_at("door_locked", global_position + Vector3.UP)
+
+## Story only: opens or shuts the door on this phone (a cutscene plays on
+## every phone at once), with its sound.
+func swing(open: bool, away := Vector3.ZERO, animate := true) -> void:
+	_set_open(open, away, animate)
 
 @rpc("any_peer", "reliable", "call_local")
 func _rpc_request(open: bool, away: Vector3, handle: int) -> void:

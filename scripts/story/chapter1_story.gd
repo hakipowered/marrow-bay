@@ -22,8 +22,27 @@ const WRECK := Vector3(-8.0, 0.0, -27.6)
 const GATE := Vector3(0.0, 0.0, -14.0)
 ## Frosted pane in the wall between the west corridor and the reading room.
 const PANE := Vector3(-19.4, 1.65, 5.0)
-const HARDASS_SPOT := Vector3(17.0, 0.0, 2.7)
-const HARDASS_REST := Vector3(18.9, 0.0, 6.0)
+## The bolted staff stair door in the reading room's west wall (ArchiveHub):
+## the Tallyman's way in and out. His path from the pane to it, and the hook
+## marks it has left on the floor.
+const STAFF_DOOR := Vector3(-26.0, 0.0, -1.2)
+const TALLY_EXIT := [Vector3(-23.0, 0.0, 0.9), Vector3(-25.2, 0.0, -1.2), Vector3(-27.3, 0.0, -1.2)]
+## Warden Hardass keeps watch from the armchair beside the office door,
+## facing it: he counted every one of the shelter in through that door.
+## HARDASS_POST is the spot he stands up onto (the seated clips put the chair
+## WARDEN_SEAT_BACK behind it, see warden_chair()); HARDASS_TALK is where he
+## stops them, a step inside the door, where Zegan and Obcera stand.
+const HARDASS_POST := Vector3(14.0, 0.0, 4.55)
+const HARDASS_WATCH := Vector3(12.4, 0.0, 2.6)
+const HARDASS_TALK := Vector3(13.75, 0.0, 3.75)
+const WARDEN_Z := Vector3(13.4, 0.0, 2.35)
+const WARDEN_O := Vector3(12.85, 0.0, 2.95)
+const WARDEN_SEAT_BACK := 0.45
+## Eye heights (metres) for framing faces under the letterbox bars.
+const EYE := {"hardass": 1.66, "zegan": 1.69, "obcera": 1.58}
+## The letterbox bars (Cutscenes "bars") cover this much of the screen
+## height at the top and again at the bottom.
+const BARS := 0.11
 
 ## Objectives after Hardass hands over the card. The first replaced "Find a
 ## way down to the records vault", which never said where the power was.
@@ -57,6 +76,7 @@ func _ready() -> void:
 	_build_wreck()
 	_build_banner()
 	_build_frosted_pane()
+	_build_drag_marks()
 	_build_hardass()
 	Cutscenes.all_peers_ready.connect(_on_all_ready)
 	if not GameState.has_flag("story_intro"):
@@ -150,6 +170,10 @@ func on_cutscene_end(id: String) -> void:
 			if is_instance_valid(_tally):
 				_tally.queue_free()
 			_tally = null
+			# Skipped while he was in the doorway: it is bolted again.
+			var door := _staff_door()
+			if door and door.is_open:
+				door.swing(false, Vector3.ZERO, false)
 		"warden":
 			_hardass_at_rest()
 			for p in _players():
@@ -296,46 +320,212 @@ func _glass() -> Array:
 		{"do": "cam", "pos": Vector3(-18.9, 1.65, 6.9), "look": PANE + Vector3(0, 0.15, 0), "fov": 38.0, "t": 2.8, "block": false},
 		{"do": "shake", "amount": 0.006, "t": 2.8},
 		{"do": "wait", "t": 3.0},
+		# He goes back the way he came: across the reading room to the staff
+		# stair door, which slams and is bolted behind him. (That door stays
+		# bolted: the room is empty when they get in.)
 		{"do": "call", "fn": "_tally_leave", "wait": false},
 		{"do": "wait", "t": 3.2},
 		{"do": "cam", "pos": Vector3(-17.7, 1.6, 7.5), "look": Vector3(-15.9, 1.5, 6.4), "fov": 48.0},
 		{"do": "say", "who": "zegan", "line": "z_glass_what", "text": "What the hell was that?"},
+		{"do": "cam", "pos": Vector3(-17.5, 1.6, 7.45), "look": Vector3(-15.9, 1.5, 6.4), "fov": 45.0, "t": 4.5, "block": false},
+		{"do": "wait", "t": 2.9},
+		{"do": "call", "fn": "_turn_to", "args": ["zegan", PANE + Vector3(-2.0, 0, -2.0)], "wait": false},
+		{"do": "call", "fn": "_turn_to", "args": ["obcera", PANE + Vector3(-2.0, 0, -2.0)], "wait": false, "delay": 0.2},
+		{"do": "wait", "t": 1.4},
 		{"do": "say", "who": "obcera", "line": "o_glass_big", "text": "Something big. Don't let it see us."},
 		{"do": "wait", "t": 0.8},
 		{"do": "fade", "to": 1.0, "t": 0.6},
 	]
 
-## Warden Hardass in the archivist's office.
+## Warden Hardass in the archivist's office. He has kept watch in the
+## armchair by the door for three nights; he stops them, checks them for the
+## fever, says who he is, what happened to his shelter, what Nasri was doing
+## in the vault, who the thing behind the glass was, and what City Hall
+## wanted. Zegan sees the bite; he hides it. He gives them his key card and
+## goes back to his chair to keep the count.
 func _warden() -> Array:
-	return [
+	var H := HARDASS_TALK
+	var Z := WARDEN_Z
+	var O := WARDEN_O
+	var P := HARDASS_POST
+	_cam_avoid = [H, Z, O, warden_chair()[0]]
+	_cam_room = Rect2(12.3, 0.3, 7.4, 7.4)   # the archivist's office, inside its walls
+	var card := "h1_card_on" if VaultCircuit.is_on() else "h1_card"
+	var card_text := "The vault elevator goes down to the old service tunnels. That's where he went. " + \
+		("You've got the power back on. Take my card." if VaultCircuit.is_on() else "It needs power. The breaker's in the boiler room. Take my card.")
+	var steps: Array = [
 		{"do": "call", "fn": "_warden_stage"},
 		{"do": "bars", "on": true, "t": 0.4, "wait": false},
-		{"do": "cam", "pos": Vector3(18.3, 1.75, 3.4), "look": Vector3(13.4, 1.35, 2.6), "fov": 50.0},
-		{"do": "call", "fn": "_hardass_play", "args": ["alert"]},
-		{"do": "say", "who": "hardass", "line": "h_eyes", "text": "Stop. Right there. Let me see your eyes."},
-		{"do": "cam", "pos": Vector3(16.1, 1.6, 2.3), "look": Vector3(13.3, 1.5, 2.6), "fov": 48.0},
-		{"do": "call", "fn": "_gesture", "args": ["zegan", "call"]},
-		{"do": "say", "who": "zegan", "line": "z_h_medic", "text": "Easy. I'm a paramedic. Are you hurt?"},
-		{"do": "cam", "pos": Vector3(15.3, 1.62, 3.0), "look": HARDASS_SPOT + Vector3(0, 1.55, 0), "fov": 38.0},
-		{"do": "call", "fn": "_hardass_once", "args": ["hit"]},
-		{"do": "say", "who": "hardass", "line": "h_scratch", "text": "It's a scratch. Forget it."},
-		{"do": "cam", "pos": Vector3(12.5, 1.7, 3.7), "look": HARDASS_SPOT + Vector3(0, 1.45, 0), "fov": 48.0},
-		{"do": "say", "who": "obcera", "line": "o_h_nasri", "text": "I'm looking for Nasri. Records clerk. He works here."},
-		{"do": "cam", "pos": Vector3(14.9, 1.6, 3.5), "look": HARDASS_SPOT + Vector3(0, 1.5, 0), "fov": 44.0},
-		{"do": "cam", "pos": Vector3(15.6, 1.6, 3.2), "look": HARDASS_SPOT + Vector3(0, 1.55, 0), "fov": 36.0, "t": 10.0, "block": false},
-		{"do": "say", "who": "hardass", "line": "h_nasri", "text": "Nasri went down to the vault two days ago. He never came back up."},
-		{"do": "say", "who": "hardass", "line": "h_count", "text": "Forty-one people came here for shelter. I counted them in. Count yourselves out.", "gap": 0.6},
-		{"do": "cam", "pos": Vector3(15.0, 1.3, 1.6), "look": Vector3(16.6, 1.0, 2.3), "fov": 42.0},
-		{"do": "call", "fn": "_hardass_once", "args": ["call"]},
-		{"do": "say", "who": "hardass", "line": "h_card", "text": "The vault elevator is the only way out of this building. It needs power. Take the card."},
-		{"do": "cam", "pos": Vector3(14.6, 1.6, 3.7), "look": Vector3(13.3, 1.55, 3.0), "fov": 44.0},
-		{"do": "say", "who": "obcera", "line": "o_h_you", "text": "And you?"},
-		{"do": "cam", "pos": Vector3(19.5, 2.3, 7.5), "look": Vector3(16.2, 1.2, 2.8), "fov": 52.0},
-		{"do": "call", "fn": "_hardass_walk_off", "wait": false},
-		{"do": "say", "who": "hardass", "line": "h_keep", "text": "Somebody has to keep the count.", "gap": 1.4},
-		{"do": "wait", "t": 2.0},
-		{"do": "fade", "to": 1.0, "t": 0.6},
+		# In through the door; he is in the armchair beside it, watching it.
+		{"do": "cam", "pos": Vector3(17.0, 1.72, 3.2), "look": Vector3(13.3, 1.05, 3.7), "fov": 50.0},
+		{"do": "cam", "pos": Vector3(16.6, 1.66, 3.3), "look": Vector3(13.4, 1.0, 3.8), "fov": 48.0, "t": 4.0, "block": false},
+		{"do": "wait", "t": 1.2},
+		{"do": "call", "fn": "_h_rise", "wait": false},
+		{"do": "call", "fn": "_turn_to", "args": ["zegan", P], "wait": false, "delay": 0.3},
+		{"do": "call", "fn": "_turn_to", "args": ["obcera", P], "wait": false, "delay": 0.5},
+		{"do": "say", "who": "hardass", "line": "h1_stop", "text": "Stop. Right there.", "gap": 0.4},
+		# Up out of the chair and a step towards them, a hand up.
+		_ots(Z, "zegan", P, "hardass", 1.0, 44.0),
+		{"do": "wait", "t": 1.6},
+		{"do": "call", "fn": "_h_step_in"},
+		{"do": "call", "fn": "_turn_to", "args": ["zegan", H], "wait": false},
+		{"do": "call", "fn": "_turn_to", "args": ["obcera", H], "wait": false},
+		_close(H, "hardass", Z - H, 1.35, 42.0, -0.12),
+		{"do": "call", "fn": "_h_once", "args": ["talk/talk_raise"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_eyes", "text": "Into the light. Let me see your eyes."},
+		# He looks them over: Zegan, then Obcera.
+		_ots(H, "hardass", Z, "zegan", 1.0, 40.0),
+		{"do": "call", "fn": "_h_loop", "args": ["talk/listen"]},
+		{"do": "call", "fn": "_h_face", "args": [O, 0.8], "delay": 2.8, "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_clean", "text": "No grey in the skin. No dark veins at the temples... Alright. You're clean.", "gap": 0.3},
+		{"do": "call", "fn": "_h_face", "args": [Z, 0.6], "wait": false},
+		_close(Z, "zegan", H - Z, 1.3, 40.0, 0.1),
+		{"do": "call", "fn": "_act", "args": ["zegan", "talk/talk_right"], "wait": false},
+		{"do": "say", "who": "zegan", "line": "z1_who", "text": "I'm a paramedic. Who's in charge here?"},
+		# Who he is, and what happened to the shelter.
+		_close(H, "hardass", (Z + O) / 2.0 - H, 1.4, 40.0, 0.0),
+		{"do": "call", "fn": "_h_once", "args": ["talk/talk_right"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_name", "text": "You're looking at him. Jackson Hardass. Twenty years on this building's security desk."},
+		_push_in(_close(H, "hardass", (Z + O) / 2.0 - H, 1.4, 40.0, 0.0), H, "hardass", 1.15, 8.0),
+		{"do": "call", "fn": "_h_once", "args": ["talk/talk_open"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_shelter", "text": "Three nights ago the city made this place a storm shelter. Forty-one people came through those gates. I counted every one of them in."},
+		_close(O, "obcera", H - O, 1.3, 40.0, -0.1),
+		{"do": "call", "fn": "_act", "args": ["obcera", "talk/talk_open"], "wait": false},
+		{"do": "say", "who": "obcera", "line": "o1_empty", "text": "Forty-one people? We didn't see anyone alive out there."},
+		_close(H, "hardass", O - H, 1.25, 40.0, 0.1),
+		{"do": "call", "fn": "_h_once", "args": ["talk/headache"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_fever", "text": "The fever came in with them. Two days asleep... then they wake up hungry.", "gap": 0.4},
+		# He looks back out through the door, at the hall full of his dead.
+		{"do": "call", "fn": "_h_face", "args": [HARDASS_WATCH + Vector3(-2.0, 0, 0), 1.0], "wait": false},
+		{"do": "cam", "pos": Vector3(15.3, 1.62, 3.4), "look": Vector3(12.0, 1.35, 2.9), "fov": 46.0},
+		{"do": "cam", "pos": Vector3(15.05, 1.6, 3.35), "look": Vector3(12.0, 1.35, 2.9), "fov": 43.0, "t": 5.0, "block": false},
+		{"do": "wait", "t": 0.6},
+		{"do": "say", "who": "hardass", "line": "h1_never", "text": "Most of my forty-one never left this building.", "gap": 0.6},
+		# Nasri.
+		{"do": "call", "fn": "_h_face", "args": [O, 0.7], "wait": false},
+		_ots(H, "hardass", O, "obcera", -1.0, 40.0),
+		{"do": "call", "fn": "_act", "args": ["obcera", "talk/talk_right"], "wait": false},
+		{"do": "say", "who": "obcera", "line": "o1_nasri", "text": "I'm looking for my brother. Nasri. He works in records."},
+		_close(H, "hardass", O - H, 1.4, 40.0, -0.1),
+		_push_in(_close(H, "hardass", O - H, 1.4, 40.0, -0.1), H, "hardass", 1.1, 22.0, -0.1),
+		{"do": "call", "fn": "_h_once", "args": ["talk/talk_right"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_nasri1", "text": "Nasri. Good man. Pulled some old files for the city doctor, and hasn't slept since."},
+		{"do": "call", "fn": "_h_once", "args": ["talk/talk_open"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_nasri2", "text": "Eighteen ninety-one. The same fever, the same sleep. He spent his nights in the vault copying the old burial records. Kept saying the numbers didn't add up.", "gap": 0.4},
+		{"do": "call", "fn": "_h_loop", "args": ["talk/listen"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_nasri3", "text": "Two days ago he went down there and never came back up. Orrin, our night keeper, went after him.", "gap": 0.4},
 	]
+	# The thing behind the reading room glass, if they have seen it.
+	if GameState.has_flag("story_glass"):
+		steps += [
+			_close(Z, "zegan", H - Z, 1.3, 40.0, 0.1),
+			{"do": "call", "fn": "_act", "args": ["zegan", "talk/talk_open"], "wait": false},
+			{"do": "say", "who": "zegan", "line": "z1_glass", "text": "Something big walked past the reading room glass. Dragging a hook."},
+		]
+	steps += [
+		_low(H, "hardass", (Z + O) / 2.0 - H, 1.3, 38.0),
+		{"do": "call", "fn": "_h_once", "args": ["talk/talk_raise"], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_orrin", "text": "Orrin came back. He isn't Orrin anymore. If you hear counting in the dark... you move.", "gap": 0.5},
+		# The package, and City Hall.
+		_close(O, "obcera", H - O, 1.25, 40.0, -0.1),
+		{"do": "call", "fn": "_act", "args": ["obcera", "talk/hand_hip"], "wait": false},
+		{"do": "say", "who": "obcera", "line": "o1_package", "text": "Nasri sent me this. Sealed. I'm putting it in his hands."},
+		{"do": "cam", "pos": Vector3(14.95, 1.7, 1.15), "look": Vector3(13.35, 1.25, 3.2), "fov": 50.0},
+		{"do": "cam", "pos": Vector3(14.75, 1.68, 1.3), "look": Vector3(13.35, 1.25, 3.2), "fov": 47.0, "t": 10.0, "block": false},
+		{"do": "call", "fn": "_h_for", "args": ["talk/talk_angry", 9.6], "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_cityhall", "text": "Then don't let anyone else get their hands on it. City Hall radioed twice before the lines went dead. Not to send help. To ask if the vault was still locked.", "gap": 0.5},
+		# Zegan sees the bite on his wrist; he pulls the hand away.
+		_ots(Z, "zegan", H, "hardass", -1.0, 44.0),
+		{"do": "call", "fn": "_act", "args": ["zegan", "talk/talk_right"], "wait": false},
+		{"do": "say", "who": "zegan", "line": "z1_wrist", "text": "Your wrist's bleeding. Let me look at that.", "gap": 0.1},
+		{"do": "call", "fn": "_h_pull_back", "wait": false},
+		{"do": "say", "who": "hardass", "line": "h1_scratch", "text": "It's a scratch. Leave it.", "gap": 0.6},
+		# His key card, held out in his good hand.
+		{"do": "cam", "pos": Vector3(14.6, 1.45, 1.55), "look": Vector3(13.4, 1.2, 3.25), "fov": 46.0},
+		{"do": "call", "fn": "_h_hand_over", "wait": false},
+		{"do": "say", "who": "hardass", "line": card, "text": card_text},
+		_close(O, "obcera", H - O, 1.2, 40.0, -0.1),
+		{"do": "call", "fn": "_act", "args": ["obcera", "talk/talk_raise"], "wait": false},
+		{"do": "say", "who": "obcera", "line": "o1_come", "text": "Come with us.", "gap": 0.5},
+		# Back to his chair, to keep watch on the door.
+		{"do": "call", "fn": "_turn_to", "args": ["zegan", P], "wait": false, "delay": 0.6},
+		{"do": "call", "fn": "_turn_to", "args": ["obcera", P], "wait": false, "delay": 0.8},
+		{"do": "cam", "pos": Vector3(12.55, 1.85, 1.3), "look": Vector3(14.15, 1.0, 4.55), "fov": 46.0},
+		{"do": "call", "fn": "_h_sit_back", "wait": false},
+		{"do": "wait", "t": 1.6},
+		{"do": "say", "who": "hardass", "line": "h1_keep", "text": "Somebody has to keep the count... Go. Find your brother.", "gap": 1.0},
+		{"do": "cam", "pos": Vector3(12.75, 1.8, 1.6), "look": Vector3(14.15, 0.95, 4.6), "fov": 40.0, "t": 3.0, "block": false},
+		{"do": "wait", "t": 1.8},
+		{"do": "fade", "to": 1.0, "t": 0.7},
+	]
+	return steps
+
+## A camera on one face, from `dir` (flat, from them towards the camera) at
+## `dist` metres: the top of the head sits just under the letterbox bar
+## whatever the lens, and `side` (metres) moves them off centre (positive:
+## to the right of frame). The camera swings round them (or comes closer)
+## until nobody in the scene stands at it or between it and the face.
+func _close(at: Vector3, who: String, dir: Vector3, dist: float, fov := 40.0, side := 0.0) -> Dictionary:
+	var off := _clear_spot(at, Vector3(dir.x, 0, dir.z).normalized(), dist)
+	var d := off.normalized()
+	var top: float = EYE.get(who, 1.65) + 0.13
+	var half := off.length() * tan(deg_to_rad(fov / 2.0)) * (1.0 - 2.0 * BARS)
+	var look_h := top + 0.06 - half
+	var right := Vector3(d.z, 0, -d.x)   # the camera's right, looking back along -d
+	return {"do": "cam", "pos": at + off + Vector3.UP * (look_h + 0.05), "look": at + Vector3.UP * look_h - right * side, "fov": fov}
+
+## The same from a little below the eye line, looking up: a warning.
+func _low(at: Vector3, who: String, dir: Vector3, dist: float, fov := 38.0) -> Dictionary:
+	var c := _close(at, who, dir, dist, fov)
+	c["pos"] = c["pos"] - Vector3.UP * 0.22
+	return c
+
+## Over `near`'s shoulder (side 1: their right) onto `far`'s face. Far enough
+## behind them that their shoulder frames the shot instead of filling it.
+func _ots(near: Vector3, near_who: String, far: Vector3, far_who: String, side := 1.0, fov := 38.0) -> Dictionary:
+	var f := Vector3(far.x - near.x, 0, far.z - near.z).normalized()
+	var right := Vector3(-f.z, 0, f.x)
+	var pos: Vector3 = near - f * 0.85 + right * 0.42 * side + Vector3.UP * (float(EYE.get(near_who, 1.65)) + 0.04)
+	var dist := Vector3(far.x - pos.x, 0, far.z - pos.z).length()
+	var top: float = EYE.get(far_who, 1.65) + 0.13
+	var half := dist * tan(deg_to_rad(fov / 2.0)) * (1.0 - 2.0 * BARS)
+	return {"do": "cam", "pos": pos, "look": far + Vector3.UP * (top + 0.06 - half) - right * 0.12 * side, "fov": fov}
+
+## A slow move straight in on the same face (from where `c`, a _close shot of
+## them, stands) to `dist` metres, over `t` seconds, keeping the head clear of
+## the bar all the way.
+func _push_in(c: Dictionary, at: Vector3, who: String, dist: float, t: float, side := 0.0) -> Dictionary:
+	var p: Vector3 = c["pos"]
+	var n := _close(at, who, p - at, dist, float(c["fov"]), side)
+	n["t"] = t
+	n["block"] = false
+	return n
+
+## Where the people (and the armchair) are while the scene is built, and the
+## room the cameras stay inside.
+var _cam_avoid: Array = []
+var _cam_room := Rect2()
+
+func _clear_spot(at: Vector3, d: Vector3, dist: float) -> Vector3:
+	for k in [1.0, 0.85, 0.72]:
+		for deg in [0.0, 15.0, -15.0, 30.0, -30.0, 45.0, -45.0, 60.0, -60.0]:
+			var off: Vector3 = d.rotated(Vector3.UP, deg_to_rad(deg)) * dist * k
+			if _spot_ok(at, at + off):
+				return off
+	return d * dist
+
+func _spot_ok(at: Vector3, p: Vector3) -> bool:
+	if _cam_room.size != Vector2.ZERO and not _cam_room.has_point(Vector2(p.x, p.z)):
+		return false
+	var a := Vector2(at.x, at.z)
+	var b := Vector2(p.x, p.z)
+	for o in _cam_avoid:
+		var q := Vector2(o.x, o.z)
+		if q.distance_to(a) < 0.2:
+			continue   # the one we are filming
+		if q.distance_to(Geometry2D.get_closest_point_to_segment(q, a, b)) < 0.45:
+			return false
+	return true
 
 ## The vault elevator: the doors shut on the vault, the car drops, the light
 ## dies, and the car hits the bottom in the dark. Chapter 2 picks up from
@@ -561,15 +751,71 @@ func _tally_stare() -> void:
 	_tally.face(Vector3(-17.0, 0.0, 6.6), 1.4)
 	Cutscenes._sfx(SFX % "title_hit", -14.0)
 
-func _tally_leave() -> Signal:
+## Across the reading room to the staff stair, through the door, which
+## slams; then the bolt. The breathing and the scrape fade with him.
+func _tally_leave() -> void:
 	_scrape(-8.0)
-	var s := _tally.walk_to(Vector3(-13.6, 0.0, 3.4), 0.95, "stalk")
+	var door := _staff_door()
+	var speeds := [0.95, 1.3, 1.15]
 	var tw := _tally.create_tween()
-	tw.tween_interval(3.5)
+	var from := _tally.global_position
+	var yaw := _tally.rotation.y
+	_tally.play("stalk", 0.3)
+	for i in TALLY_EXIT.size():
+		var to: Vector3 = TALLY_EXIT[i]
+		var target := yaw + wrapf(_yaw_to(from, to) - yaw, -PI, PI)
+		yaw = target
+		tw.tween_property(_tally, "rotation:y", target, 0.45).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(_tally, "global_position", to, from.distance_to(to) / speeds[i])
+		if i == 1 and door:
+			# He pulls the door open and ducks through.
+			tw.tween_callback(func(): door.swing(true, Vector3.LEFT))
+			tw.tween_interval(0.7)
+		from = to
 	tw.tween_callback(func():
 		for a in _tally.find_children("*", "AudioStreamPlayer3D", false, false):
-			a.create_tween().tween_property(a, "volume_db", -60.0, 2.5))
-	return s
+			a.create_tween().tween_property(a, "volume_db", -60.0, 1.5))
+	if door:
+		tw.tween_callback(func():
+			door.swing(false, Vector3.LEFT)
+			Sfx.play_at("door_bang", STAFF_DOOR + Vector3.UP, "", 4.0, 14.0))
+		tw.tween_interval(0.8)
+		tw.tween_callback(func(): Sfx.play_at("bolt_shut", STAFF_DOOR + Vector3.UP * 1.2, "door_locked", 6.0, 14.0))
+
+func _staff_door() -> Door:
+	return get_tree().get_first_node_in_group("staff_stair_door") as Door
+
+## The hook's marks: two dark scrapes side by side, dragged across the
+## reading room floor from the pane to the staff stair door, over and over.
+func _build_drag_marks() -> void:
+	var g := Gradient.new()
+	g.set_color(0, Color(0.05, 0.04, 0.035, 0.0))
+	g.set_color(1, Color(0.05, 0.04, 0.035, 0.0))
+	g.add_point(0.35, Color(0.06, 0.05, 0.04, 0.75))
+	g.add_point(0.5, Color(0.03, 0.025, 0.02, 0.9))
+	g.add_point(0.65, Color(0.06, 0.05, 0.04, 0.75))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.width = 32
+	tex.height = 8
+	var pts: Array = [Vector3(-19.75, 0.0, 3.9)] + TALLY_EXIT.slice(0, 2)
+	for i in pts.size() - 1:
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[i + 1]
+		var dir := (b - a).normalized()
+		var side := Vector3(-dir.z, 0, dir.x)
+		var n := int(a.distance_to(b) / 0.9)
+		for k in n:
+			for prong in [-0.035, 0.035]:
+				var d := Decal.new()
+				d.texture_albedo = tex
+				d.size = Vector3(0.05, 0.3, 0.75 + randf() * 0.25)
+				var at: Vector3 = a.lerp(b, (k + 0.5) / n) + side * (0.55 + float(prong) + randf_range(-0.05, 0.05))
+				d.position = at + Vector3.UP * 0.05
+				d.rotation.y = atan2(dir.x, dir.z) + randf_range(-0.08, 0.08)
+				d.modulate = Color(1, 1, 1, randf_range(0.55, 0.9))
+				d.cull_mask = 1
+				add_child(d)
 
 func _scrape(vol: float) -> void:
 	var a := _audio3d(SFX % "hook_scrape", vol, false)
@@ -595,27 +841,202 @@ func _audio3d(path: String, vol: float, looped: bool) -> AudioStreamPlayer3D:
 	return a
 
 func _warden_stage() -> void:
-	_place("zegan", Vector3(13.3, 0.0, 2.2), HARDASS_SPOT)
-	_place("obcera", Vector3(13.1, 0.0, 3.1), HARDASS_SPOT)
+	# Just inside the door, looking into the room.
+	_place("zegan", WARDEN_Z, WARDEN_Z + Vector3(2.0, 0, 0.6))
+	_place("obcera", WARDEN_O, WARDEN_O + Vector3(2.0, 0, 0.3))
 	if _hardass:
-		_hardass.global_position = HARDASS_SPOT
-		_hardass.rotation.y = _yaw_to(HARDASS_SPOT, Vector3(13.2, 0, 2.6))
-		_hardass.play("idle", 0.0)
+		_h_reset()
+		_hardass.global_position = HARDASS_POST
+		_hardass.rotation.y = _yaw_to(HARDASS_POST, HARDASS_WATCH)
+		_hardass.play("talk/sit_arms_crossed", 0.0)
 		_talk.monitorable = false
 
-func _hardass_play(clip: String) -> void:
-	if _hardass:
-		_hardass.play(clip, 0.3)
+# ---------------------------------------------------------------- the warden
+# His moves are the "talk" clips (tools/import_talk.gd): sitting, getting up,
+# talking with his hands, grief, pulling the bitten hand away, holding out the
+# card. Every timed return to his idle carries a token, so a skipped scene
+# (on_cutscene_end puts him back in his chair) is never undone by a late one.
 
-func _hardass_once(clip: String) -> void:
-	if _hardass:
-		_hardass.play_once(clip, "idle", 0.2)
+var _h_tw: Tween
+var _h_token := 0
+var _card: Node3D
 
-func _hardass_walk_off() -> Signal:
+func _h_idle() -> String:
+	return _hardass.idle_clip() if _hardass else "idle"
+
+## Stops whatever he was in the middle of.
+func _h_reset() -> void:
+	_h_token += 1
+	if _h_tw:
+		_h_tw.kill()
+		_h_tw = null
+	if _hardass:
+		_hardass.stop_walk()
+	if is_instance_valid(_card):
+		_card.queue_free()
+	_card = null
+
+## Plays a clip, then back to standing after `secs` (default: the clip's own
+## length), unless something else has started since.
+func _h_play_then(clip: String, secs := -1.0, speed := 1.0, from := 0.0, then := "") -> void:
+	if not _hardass or not _hardass.has_clip(clip):
+		return
+	_h_token += 1
+	var tok := _h_token
+	_hardass.play(clip, 0.25, speed, from)
+	if secs < 0.0:
+		secs = (_hardass.clip_length(clip) - from) / maxf(speed, 0.01) - 0.3
+	var back := then if then != "" else _h_idle()
+	get_tree().create_timer(maxf(secs, 0.1)).timeout.connect(func():
+		if tok == _h_token and is_instance_valid(_hardass):
+			_hardass.play(back, 0.35))
+
+func _h_once(clip: String, speed := 1.0) -> void:
+	_h_play_then(clip, -1.0, speed)
+
+func _h_for(clip: String, secs: float) -> void:
+	_h_play_then(clip, secs)
+
+func _h_loop(clip: String) -> void:
+	if _hardass and _hardass.has_clip(clip):
+		_h_token += 1
+		_hardass.play(clip, 0.35)
+
+func _h_face(point: Vector3, t := 0.6) -> void:
+	if _hardass:
+		_hardass.face(point, t)
+
+## Up out of the armchair onto his feet.
+func _h_rise() -> void:
+	_h_play_then("talk/sit_to_stand", -1.0, 1.35)
+
+## A step towards them (his walk is the tired, injured one).
+func _h_step_in() -> Signal:
 	if not _hardass:
 		return get_tree().process_frame
+	_h_token += 1
 	var clip := "injured_walk" if _hardass.has_clip("injured_walk") else "walk"
-	return _hardass.walk_to(HARDASS_REST, 0.8, clip)
+	var s := _hardass.walk_to(HARDASS_TALK, 0.75, clip, _h_idle())
+	s.connect(func(): _h_face(WARDEN_Z, 0.5), CONNECT_ONE_SHOT)
+	return s
+
+## Zegan reaches for the bitten hand: he snatches it back against his chest.
+## (The clip starts with the hand already out; it starts past that.)
+func _h_pull_back() -> void:
+	_h_play_then("talk/hand_pull", -1.0, 1.0, 1.1)
+
+## Holds his key card out in his good hand (the left: the bite is on the
+## right). The card goes once his hand comes back.
+func _h_hand_over() -> void:
+	if not _hardass:
+		return
+	_h_play_then("talk/hand_over", -1.0, 1.0)
+	_card = _key_card()
+	if _card:
+		var tok := _h_token
+		get_tree().create_timer(_hardass.clip_length("talk/hand_over") * 0.62).timeout.connect(func():
+			if tok == _h_token and is_instance_valid(_card):
+				_card.queue_free())
+
+## The vault key card in his left hand: white plastic, a dark stripe, the
+## Archive's crest in red.
+func _key_card() -> Node3D:
+	var skel: Skeleton3D = _hardass.find_child("Skeleton3D", true, false)
+	if skel == null or skel.find_bone("LeftHand") < 0:
+		return null
+	var att := BoneAttachment3D.new()
+	att.bone_name = "LeftHand"
+	skel.add_child(att)
+	var holder := Node3D.new()
+	# Flat on the palm, along the fingers. In his hand bone's space (cm,
+	# measured from the hand's vertices): the palm's middle is ~13.8 cm out
+	# from the wrist along +Y and its face points along PALM. Meshy
+	# armatures are scaled 0.01: the holder undoes it so the card is real size.
+	const PALM := Vector3(0.86, -0.16, -0.48)
+	var n := PALM.normalized()
+	var along := Vector3(0.08, 0.99, -0.12)
+	along = (along - n * along.dot(n)).normalized()
+	var k := 1.0 / maxf(skel.global_transform.basis.get_scale().x, 0.0001)
+	holder.transform = Transform3D(Basis(along, n.cross(along), n).scaled(Vector3.ONE * k), Vector3(0.94, 13.4, -0.1) + n * 1.6)
+	att.add_child(holder)
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.086, 0.054, 0.004)
+	mi.mesh = bm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.86, 0.85, 0.8)
+	mat.roughness = 0.45
+	mi.material_override = mat
+	holder.add_child(mi)
+	var stripe := MeshInstance3D.new()
+	var sm := BoxMesh.new()
+	sm.size = Vector3(0.086, 0.012, 0.0045)
+	stripe.mesh = sm
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = Color(0.08, 0.08, 0.09)
+	stripe.material_override = smat
+	stripe.position.y = 0.012
+	holder.add_child(stripe)
+	var crest := MeshInstance3D.new()
+	var cm := BoxMesh.new()
+	cm.size = Vector3(0.016, 0.016, 0.0046)
+	crest.mesh = cm
+	var cmat := StandardMaterial3D.new()
+	cmat.albedo_color = Color(0.6, 0.08, 0.06)
+	crest.material_override = cmat
+	crest.position = Vector3(-0.026, -0.01, 0)
+	holder.add_child(crest)
+	return att
+
+## Back to the armchair: walks over, turns to face the door again, sits,
+## folds his arms.
+func _h_sit_back() -> void:
+	if not _hardass:
+		return
+	_h_reset()
+	var tok := _h_token
+	var from := _hardass.global_position
+	var walk := "injured_walk" if _hardass.has_clip("injured_walk") else "walk"
+	_hardass.rotation.y = _yaw_to(from, HARDASS_POST)
+	_hardass.play(walk, 0.3)
+	var face := _yaw_to(HARDASS_POST, HARDASS_WATCH)
+	var sit := "talk/stand_to_sit"
+	var sit_speed := 1.15
+	_h_tw = create_tween()
+	_h_tw.tween_property(_hardass, "global_position", HARDASS_POST, from.distance_to(HARDASS_POST) / 0.7)
+	_h_tw.tween_callback(func(): _hardass.play(_h_idle(), 0.3))
+	_h_tw.tween_property(_hardass, "rotation:y", _hardass.rotation.y + wrapf(face - _hardass.rotation.y, -PI, PI), 0.8).set_trans(Tween.TRANS_SINE)
+	_h_tw.tween_callback(func(): _hardass.play(sit, 0.3, sit_speed))
+	_h_tw.tween_interval(_hardass.clip_length(sit) / sit_speed - 0.3)
+	_h_tw.tween_callback(func():
+		if tok == _h_token:
+			_hardass.play("talk/sit_arms_crossed", 0.5))
+
+# ---------------------------------------------------------------- survivors
+
+## A survivor turns on the spot to face a point.
+func _turn_to(ch: String, point: Vector3) -> void:
+	var m := _model_of(ch)
+	if m == null:
+		return
+	var holder: Node3D = m.get_parent() if _player_of(ch) else m
+	var target := _yaw_to(holder.global_position, point)
+	var tw := holder.create_tween()
+	tw.tween_property(holder, "rotation:y", holder.rotation.y + wrapf(target - holder.rotation.y, -PI, PI), 0.6).set_trans(Tween.TRANS_SINE)
+	var p := _player_of(ch)
+	if p and p.is_multiplayer_authority():
+		p.sync_yaw = target
+		p.yaw = target
+
+## A survivor's line gesture (a "talk" clip), then they stand listening.
+func _act(ch: String, clip: String) -> void:
+	var m := _model_of(ch)
+	if m == null or not m.has_clip(clip):
+		return
+	m.play_once(clip, 0.25)
+	get_tree().create_timer(maxf(m.clip_length(clip) - 0.35, 0.1)).timeout.connect(func():
+		if is_instance_valid(m) and m.current_clip() == clip:
+			m.act("talk/listen"))
 
 # ================================================================== the set
 
@@ -814,45 +1235,69 @@ func _build_hardass() -> void:
 	_talk.set("story", self)
 	var cs := CollisionShape3D.new()
 	var sh := CapsuleShape3D.new()
-	sh.radius = 0.45
-	sh.height = 1.8
+	sh.radius = 0.55
+	sh.height = 1.6
 	cs.shape = sh
-	cs.position.y = 0.95
+	cs.position = Vector3(0, 0.8, 0.2)
 	_talk.add_child(cs)
 	_hardass.add_child(_talk)
-	if GameState.has_flag("story_warden"):
-		_hardass_at_rest()
-	else:
-		_hardass.position = HARDASS_SPOT
-		_hardass.rotation.y = _yaw_to(HARDASS_SPOT, Vector3(12.0, 0, 2.6))
-		_talk.monitorable = false
+	# His legs, stretched out in front of the armchair (the chair is a prop
+	# with its own collider): nobody walks through him.
+	var legs := StaticBody3D.new()
+	legs.collision_layer = 1
+	var ls := CollisionShape3D.new()
+	var lb := BoxShape3D.new()
+	lb.size = Vector3(0.6, 0.6, 0.5)
+	ls.shape = lb
+	ls.position = Vector3(0, 0.3, 0.05)
+	legs.add_child(ls)
+	legs.position = HARDASS_POST
+	legs.rotation.y = _yaw_to(HARDASS_POST, HARDASS_WATCH)
+	add_child(legs)
+	_hardass_at_rest()
+	_talk.monitorable = GameState.has_flag("story_warden")
 
+## Where the armchair goes (archive_hub builds it): behind his post, facing
+## the door like him. [position, rotation in degrees] for RoomBuilder.prop.
+static func warden_chair() -> Array:
+	var f := (HARDASS_WATCH - HARDASS_POST).normalized()
+	return [HARDASS_POST - f * WARDEN_SEAT_BACK, rad_to_deg(atan2(f.x, f.z))]
+
+## In his armchair by the door, arms folded, watching it: where he waits
+## for them, and where he goes back to after their talk.
 func _hardass_at_rest() -> void:
 	if not _hardass:
 		return
-	_hardass.stop_walk()
-	_hardass.global_position = HARDASS_REST
-	_hardass.rotation.y = _yaw_to(HARDASS_REST, Vector3(20.0, 0, 6.6))
-	_hardass.play("idle", 0.3)
-	_talk.monitorable = true
+	_h_reset()
+	_hardass.global_position = HARDASS_POST
+	_hardass.rotation.y = _yaw_to(HARDASS_POST, HARDASS_WATCH)
+	_hardass.play("talk/sit_arms_crossed", 0.3)
+	if _talk:
+		_talk.monitorable = true
 
-## Talking to Hardass after his scene: one of his lines, for this player only.
+## Talking to Hardass after his scene: one of his lines, for this player
+## only, from his chair.
 var _talk_i := 0
 func talk_to_hardass() -> void:
-	var lines := [["h_keep", "Somebody has to keep the count."], ["h_count", "Forty-one people came here for shelter. I counted them in. Count yourselves out."],
-		["h_card", "The vault elevator is the only way out of this building. It needs power. Take the card."]]
+	var power := ["h1_t_power_on", "Power's on. The elevator's waiting. Go."] if VaultCircuit.is_on() \
+		else ["h1_t_power", "The breaker's in the boiler room, through the vault. Then the elevator."]
+	var lines := [power, ["h1_t_count", "Forty-one in. When you come back up, I'll count you two out."],
+		["h1_t_orrin", "If you hear counting in the dark, you move. Don't stop to look."],
+		["h1_t_nasri", "Nasri brought me coffee every night shift for nine years. Bring him back."]]
 	var l: Array = lines[_talk_i % lines.size()]
 	_talk_i += 1
-	_hardass.face(_player_of(GameState.local_character()).global_position if _player_of(GameState.local_character()) else HARDASS_SPOT, 0.5)
+	var dur := 3.5
 	var a := _audio3d("res://assets/audio/voice/story/%s.ogg" % l[0], 0.0, false)
 	if a:
 		a.bus = "Voice"
-		a.position.y = 1.6
+		a.position.y = 1.2
 		_hardass.add_child(a)
 		a.play()
 		a.finished.connect(a.queue_free)
+		dur = a.stream.get_length()
+	_h_play_then("talk/sit_talk", dur, 1.0, 0.0, "talk/sit_arms_crossed")
 	var hud := get_tree().get_first_node_in_group("hud")
 	if hud:
-		hud.show_subtitle("Warden Hardass", l[1], 4.0)
+		hud.show_subtitle("Warden Hardass", l[1], dur + 0.5)
 
 const TalkArea := preload("res://scripts/story/talk_area.gd")
