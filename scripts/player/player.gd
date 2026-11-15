@@ -232,7 +232,9 @@ func _ready() -> void:
 	spring = SpringArm3D.new()
 	spring.spring_length = CAM_DIST
 	spring.collision_mask = 1
-	spring.margin = 0.15
+	# Off walls by its ball (0.18) plus this; small enough that the arm still
+	# swings back from her head when she's pressed to a wall (_fit_shoulder).
+	spring.margin = 0.05
 	spring.position.x = SHOULDER_OFFSET.x
 	var s := SphereShape3D.new()
 	s.radius = 0.18
@@ -322,6 +324,7 @@ func _physics_process(delta: float) -> void:
 		_aim_flashlight(delta, sync_lamp)
 		return
 	_sync_inventory(delta)
+	_fit_shoulder(delta)
 	rescue_area.collision_layer = 16 if (downed or pinned) else 0
 	if _burn_t > 0:
 		_burn_t -= delta
@@ -1186,6 +1189,37 @@ func _die() -> void:
 	var level := get_tree().get_first_node_in_group("level")
 	if level and level.has_method("report_death"):
 		level.report_death(character)
+
+## The camera's arm starts at her right shoulder, but never inside a wall
+## beside her. A SpringArm3D can't see a wall it starts in: with her right
+## side to a wall (backed up against it by a brute) the camera went through
+## to the far side, and every shot, fired from the camera, hit the wall.
+var _shoulder_q: PhysicsShapeQueryParameters3D
+
+func _fit_shoulder(delta: float) -> void:
+	if spring == null or not is_inside_tree():
+		return
+	if _shoulder_q == null:
+		_shoulder_q = PhysicsShapeQueryParameters3D.new()
+		# No bigger than the arm's own ball: pressed to a wall, her head is
+		# only about 0.32 m from it, and a cast that starts touching the
+		# wall doesn't see it at all.
+		var ball := SphereShape3D.new()
+		ball.radius = 0.18
+		_shoulder_q.shape = ball
+		_shoulder_q.collision_mask = spring.collision_mask
+		_shoulder_q.exclude = [get_rid()]
+	_shoulder_q.transform = Transform3D(Basis(), pivot.global_position)
+	_shoulder_q.motion = pivot.global_transform.basis.x * SHOULDER_OFFSET.x
+	var safe: float = get_world_3d().direct_space_state.cast_motion(_shoulder_q)[0]
+	# Stop short by the arm's margin, so the arm can still swing back from there.
+	var want := maxf(SHOULDER_OFFSET.x * safe - spring.margin - 0.03, 0.0) if safe < 1.0 else SHOULDER_OFFSET.x
+	# In at once (never through the wall), back out to the shoulder gently.
+	spring.position.x = want if want < spring.position.x else lerpf(spring.position.x, want, minf(8.0 * delta, 1.0))
+	# Squeezed right in (her back to a corner): don't look out through the
+	# inside of her head.
+	var inside := camera.global_position.distance_to(pivot.global_position) < 0.4
+	camera.cull_mask = (camera.cull_mask & ~self_layer) if inside else (camera.cull_mask | self_layer)
 
 ## Downed or dead: the camera eases back and looks down at her.
 func _tick_death_cam(delta: float) -> void:

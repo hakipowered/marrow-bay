@@ -854,6 +854,29 @@ func collect_drops(area: String) -> void:
 
 # ================================================================ monitor
 
+## PT_TRACE=Z_vault_2,Z_vault_1 prints where those infected are, what they
+## are doing and where she is, once a second (for chasing a route problem).
+var _trace: PackedStringArray = OS.get_environment("PT_TRACE").split(",", false)
+
+func _trace_tick() -> void:
+	var lvl := _level()
+	if lvl == null:
+		return
+	var bits: PackedStringArray = ["t=%.0f her %s hp %.0f fighting %s" % [sim_t, _v(p.global_position), p.hp, _fight_kind]]
+	for n in _trace:
+		var z: Node = lvl.get_node_or_null(n)
+		if z == null:
+			for d in get_nodes_in_group("doors"):
+				if d.get("door_id") == n:
+					z = d
+		if z == null:
+			bits.append("%s gone" % n)
+		elif z.is_in_group("doors"):
+			bits.append("%s open=%s" % [n, z.get("is_open")])
+		else:
+			bits.append("%s %s %s hp %.0f" % [n, ZS.keys()[z.state], _v(z.global_position), z.hp])
+	print("PTTRACE ", " | ".join(bits))
+
 func _monitor() -> void:
 	sim_t += 1.0 / Engine.physics_ticks_per_second
 	if stop_at > 0.0 and sim_t > stop_at:
@@ -864,6 +887,8 @@ func _monitor() -> void:
 		_shot("t%04d" % int(sim_t))
 	if p == null or not is_instance_valid(p) or not p.is_inside_tree():
 		return
+	if _trace.size() > 0 and int(sim_t * 60.0) % 60 == 0:
+		_trace_tick()
 	var dt := 1.0 / Engine.physics_ticks_per_second
 	# 1. Legs follow real speed (0.7 / 0.9 feedback: running on the spot,
 	#    fast legs while slow).
