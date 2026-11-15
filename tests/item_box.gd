@@ -237,19 +237,21 @@ func _office() -> void:
 		_bug("took a second shotgun into the bag (%d now)" % p.inventory.count("m12"))
 	if not "already carrying" in menu._box_hint.text:
 		_bug("taking a gun she already carries wasn't refused with a reason: '%s'" % menu._box_hint.text)
-	# 9mm: TAKE is one bag slot's worth (60), TAKE ALL the rest.
-	store._put("ammo:9mm", 100)
+	# 9mm: TAKE is one bag slot's worth (a stack), TAKE ALL the rest. Two
+	# stacks and a bit in the box, so more than a stack is left after TAKE.
+	var st: int = load("res://scripts/weapons/item_info.gd").stack("ammo:9mm")
+	store._put("ammo:9mm", st * 2 + 5 - store.count("ammo:9mm"))
 	store.changed.emit()
 	var before: int = p.inventory.ammo_count("9mm")
 	bi = _box_index("ammo:9mm")
 	menu._on_box_slot(bi)
 	menu._take(false)
 	await _frames(2)
-	if p.inventory.ammo_count("9mm") - before != 60 or store.count("ammo:9mm") != 105:
-		_bug("TAKE moved %d rounds (box now %d); want 60 and 105" % [p.inventory.ammo_count("9mm") - before, store.count("ammo:9mm")])
+	if p.inventory.ammo_count("9mm") - before != st or store.count("ammo:9mm") != st + 5:
+		_bug("TAKE moved %d rounds (box now %d); want %d and %d" % [p.inventory.ammo_count("9mm") - before, store.count("ammo:9mm"), st, st + 5])
 	var acts: Array = menu._actions.get_children().filter(func(b): return not b.is_queued_for_deletion()).map(func(b): return b.text)
 	if not "TAKE ALL" in acts:
-		_bug("no TAKE ALL for 105 rounds in the box: %s" % [acts])
+		_bug("no TAKE ALL for %d rounds in the box: %s" % [st + 5, acts])
 	menu._take(true)
 	await _frames(2)
 	if store.count("ammo:9mm") != 0 or _box_index("ammo:9mm") >= 0:
