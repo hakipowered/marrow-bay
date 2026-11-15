@@ -318,7 +318,9 @@ func _build_middle() -> Control:
 	col.add_child(_hint)
 	return col
 
-func _make_slot(i: int) -> Button:
+## One square slot (icon, count, the E tag for what's in hand). on_tap
+## replaces the bag's own tap handling (the item box screen's box slots).
+func _make_slot(i: int, on_tap := Callable()) -> Button:
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(SLOT, SLOT)
 	b.focus_mode = Control.FOCUS_NONE
@@ -361,7 +363,10 @@ func _make_slot(i: int) -> Button:
 	var tsb := _box(BLOOD, Color(GOLD, 0.7), 6, 1)
 	tag.add_theme_stylebox_override("normal", tsb)
 	b.add_child(tag)
-	b.pressed.connect(func(): _on_slot(i))
+	if on_tap.is_valid():
+		b.pressed.connect(on_tap)
+	else:
+		b.pressed.connect(func(): _on_slot(i))
 	return b
 
 func _build_details() -> Control:
@@ -716,10 +721,17 @@ func _refresh_details() -> void:
 		bar.add_theme_stylebox_override("fill", _box(Color(GOLD, 0.85), Color(0, 0, 0, 0), 3, 0))
 		row.add_child(bar)
 		_stats.add_child(row)
+	var line := _loaded_line(id, k)
+	if line != "":
+		_stats.add_child(_lbl(line, "ui", 26, GOLD))
+	_add_actions(id, k)
+
+## The gold line under the stats: a bag gun's loaded and carried rounds.
+func _loaded_line(id: String, k: String) -> String:
 	if _tab == "items" and k == "weapon" and WeaponDB.WEAPONS[id].has("mag"):
 		var w: Dictionary = WeaponDB.WEAPONS[id]
-		_stats.add_child(_lbl("LOADED  %d / %d      CARRIED  %d" % [int(player.inventory.mag.get(id, 0)), w["mag"], player.inventory.ammo_count(w["ammo"])], "ui", 26, GOLD))
-	_add_actions(id, k)
+		return "LOADED  %d / %d      CARRIED  %d" % [int(player.inventory.mag.get(id, 0)), w["mag"], player.inventory.ammo_count(w["ammo"])]
+	return ""
 
 func _add_actions(id: String, k: String) -> void:
 	var inv := player.inventory

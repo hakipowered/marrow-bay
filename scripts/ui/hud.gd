@@ -10,6 +10,7 @@ var _ammo: Label
 var _weapon: Label
 var _weapon_icon: TextureRect
 var _inventory: Control
+var _box_menu: Control     # the item box screen, made the first time a box is opened
 var _weapon_pressed_at := 0.0
 var _weapon_long := false
 var _prompt: Button
@@ -237,10 +238,24 @@ func _process(_d: float) -> void:
 		_weapon_pressed_at = 0.0
 		toggle_inventory()
 
+## A safe room's item box: the box beside the bag (scripts/ui/item_box_menu.gd).
+func open_item_box(box: Node) -> void:
+	if player == null or _pause.visible or _inventory.visible:
+		return
+	if _box_menu == null:
+		_box_menu = preload("res://scripts/ui/item_box_menu.gd").new()
+		_box_menu.visible = false
+		add_child(_box_menu)
+	if not _box_menu.visible:
+		_box_menu.open_box(player, box)
+
 ## Opens or closes the bag. Solo pauses the world; co-op never does, so the
 ## menu reminds you that things can still reach you.
 func toggle_inventory() -> void:
 	if _pause.visible:
+		return
+	if _box_menu and _box_menu.visible:
+		_box_menu.close()
 		return
 	if _inventory.visible:
 		_inventory.close()
@@ -465,6 +480,8 @@ func show_subtitle(speaker: String, text: String, duration: float) -> void:
 func toggle_pause() -> void:
 	if _inventory.visible:
 		_inventory.close()
+	if _box_menu and _box_menu.visible:
+		_box_menu.close()
 	_pause.visible = not _pause.visible
 	if _pause.visible:
 		_pause.refresh()

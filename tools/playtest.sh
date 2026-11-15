@@ -17,7 +17,8 @@
 # levels batched, its adapting on made-up phones; full mode: the bot's whole
 # route with it), the
 # bot's weapon / bag / save / death sections, the save slots (old saves, the
-# save and load screens, the autosave rules), the difficulty numbers and the
+# save and load screens, the autosave rules), the safe rooms' item box (store,
+# take, saves, the same box in chapter 2), the difficulty numbers and the
 # extra infected that Hard and co-op bring (the level probes again with every
 # one of them in, the scares with Hard's bigger groups), and the co-op tests
 # with two copies of the game through a local relay (needs node and the ws
@@ -86,6 +87,7 @@ run bot_weapons      600 --fixed-fps 60 --script tests/playtest.gd -- only weapo
 run bot_bag          300 --fixed-fps 60 --script tests/playtest.gd -- only bag
 run bot_save         300 --fixed-fps 60 --script tests/playtest.gd -- only save
 run save_slots       300 --script tests/save_slots.gd
+run item_box         300 --script tests/item_box.gd
 run bot_death        300 --fixed-fps 60 --script tests/playtest.gd -- only death
 # Difficulty: the numbers, every extra infected standing where it should, the
 # level probe with all of them in (Hard co-op), the scares on Hard solo.
@@ -138,6 +140,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	coop coop_playtest tests/playtest_coop.gd
 	coop coop_saves tests/coop_saves.gd
 	coop coop_pickups tests/coop_pickups.gd
+	coop coop_item_box tests/coop_item_box.gd
 	kill $RELAY 2>/dev/null
 else
 	echo "  skip  co-op tests (needs node with the ws package; see the top of this file)"

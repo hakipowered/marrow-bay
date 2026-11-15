@@ -641,6 +641,9 @@ func _office_safe_room() -> void:
 	RoomBuilder.light(r, Vector3(4, 2.9, 4), Color(1.0, 0.86, 0.66), 1.8, 7.0, true)
 	place_door(Vector3(12, 0, 2.6), 90, Door.Kind.MANUAL, "wood_panel", 1.2, 2.3, "office_door")
 	place_checkpoint("safe_office", Vector3(16, 0, 4), Vector3(6, 3, 6), true)
+	# The item box: the wardens' supply crate against the south wall, under
+	# the ceiling lamp, lid toward the room.
+	place_item_box(Vector3(16.3, 0, 7.42), 180, "office")
 	place_pickup("herb_red", Vector3(19.5, 1.47, 1.8), "office_red_herb")
 	place_pickup("ink_ribbon", Vector3(17.3, 0.82, 1.4), "office_tape")
 	place_pickup("key:brass_quill_key", Vector3(17.8, 0.82, 1.0), "brass_quill_key")
