@@ -1,8 +1,13 @@
 extends SceneTree
 ## Pictures of the item boxes: the office's and the keeper's lodge's, shut and
 ## open, from the survivor's own camera, and the box screen with things in it.
-## xvfb-run -a -s "-screen 0 1450x1208x24" godot --path . --rendering-driver vulkan \
-##   --rendering-method mobile --resolution 1450x1208 --script tests/render_item_box.gd -- <out_dir> [office|lodge]
+## xvfb-run -a -s "-screen 0 1088x906x24" godot --path . --rendering-driver vulkan \
+##   --rendering-method mobile --resolution 1088x906 --script tests/render_item_box.gd -- <out_dir> [office|lodge]
+## Half the Fold's inner screen. Steps count frames: under the cloud's software
+## renderer a frame takes seconds. There vulkan falls back to opengl3, and the
+## screen grade (layer 5) is hidden because it draws the 3D view black, so the
+## rooms come out far brighter than on a phone.
+
 ## Chapter 1's story so far (the office scene played, the vault not yet
 ## reached: "story_elevator" sends a chapter 1 load on to chapter 2), and
 ## chapter 2's opening scenes.
@@ -39,7 +44,7 @@ func _stand(dist: float, side := 0.0, pitch := -0.32) -> void:
 
 func _shot(name: String) -> void:
 	root.get_texture().get_image().save_png("%s/%s_%s.png" % [out, where, name])
-	print("saved ", where, "_", name, "  prompt: \"", p._prompt_text, "\"")
+	print("saved ", where, "_", name, " at frame ", frames, ", ", Time.get_ticks_msec() / 1000, " s  prompt: \"", p._prompt_text, "\"")
 
 func _process(d: float) -> bool:
 	frames += 1
@@ -66,7 +71,7 @@ func _process(d: float) -> bool:
 		root.get_node("Net").start_solo("obcera")
 		change_scene_to_file(gs.level_path)
 		return false
-	if frames < 60:
+	if frames < 40:
 		return false
 	if p == null:
 		p = get_first_node_in_group("players")
@@ -79,13 +84,19 @@ func _process(d: float) -> bool:
 		for s in get_nodes_in_group("stalker"):
 			s.queue_free()
 		p.equip("p9")
+		# The screen grade (post_fx, layer 5) reads the screen texture, which
+		# comes back black under xvfb's software GL: hide it for pictures.
+		for n in current_scene.find_children("*", "CanvasLayer", true, false):
+			if n.layer == 5:
+				n.visible = false
 		t = 0.0
 		return false
-	t += d
+	# Frames, not seconds: under a software renderer a frame can take seconds.
+	t += 1.0 / 30.0
 	match step:
 		0:
 			_stand(2.1, 0.5)
-			if t > 2.5:
+			if t > 0.4:
 				p.interact_ray.force_raycast_update()
 				p._update_focus()
 				_shot("1_shut")
@@ -93,21 +104,21 @@ func _process(d: float) -> bool:
 				t = 0.0
 		1:
 			_stand(2.6, -1.4, -0.42)
-			if t > 1.0:
+			if t > 0.3:
 				_shot("2_wide")
 				box.set_in_use(true)
 				step = 2
 				t = 0.0
 		2:
 			_stand(1.9, 0.6, -0.5)
-			if t > 1.8:
+			if t > 0.5:
 				_shot("3_open")
 				box.set_in_use(false)
 				step = 3
 				t = 0.0
 		3:
 			_stand(1.2, 0.0)
-			if t > 1.2:
+			if t > 0.3:
 				p.interact_ray.force_raycast_update()
 				p._update_focus()
 				print("prompt at the box: ", p._prompt_text)
@@ -115,7 +126,7 @@ func _process(d: float) -> bool:
 				step = 4
 				t = 0.0
 		4:
-			if t > 1.0:
+			if t > 0.3:
 				_shot("4_screen")
 				var menu: Node = hud._box_menu
 				menu._side = "box"
@@ -125,15 +136,16 @@ func _process(d: float) -> bool:
 				step = 5
 				t = 0.0
 		5:
-			if t > 1.0:
+			if t > 0.3:
 				_shot("5_screen_gun")
 				var menu: Node = hud._box_menu
+				# Third in the box (the grenades): a double tap takes them.
 				menu._on_box_slot(2)
 				menu._on_box_slot(2)
 				step = 6
 				t = 0.0
 		6:
-			if t > 1.0:
-				_shot("6_took_shells")
+			if t > 0.3:
+				_shot("6_took_grenades")
 				quit()
 	return false

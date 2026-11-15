@@ -263,7 +263,8 @@ func _loaded_line(id: String, k: String) -> String:
 		return ""
 	if k == "weapon" and WeaponDB.WEAPONS[id].has("mag"):
 		var w: Dictionary = WeaponDB.WEAPONS[id]
-		return "LOADED  %d / %d      IN THE BOX  %d" % [int(e["mag"]), w["mag"], GameState.item_box.count(Inventory.ammo_id(w["ammo"]))]
+		# Her own rounds for it, as in the bag view: is it worth taking?
+		return "LOADED  %d / %d      CARRIED  %d" % [int(e["mag"]), w["mag"], player.inventory.ammo_count(w["ammo"])]
 	if k != "weapon":
 		return "IN THE BOX  %d" % int(e["n"])
 	return ""
