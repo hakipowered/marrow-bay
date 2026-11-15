@@ -137,7 +137,11 @@ func _process(delta: float) -> bool:
 					var p = get_first_node_in_group("players")
 					_check(p.inventory.key_items.has("vault_card"), "got the vault key card")
 					var h = current_scene.find_child("WardenHardass", true, false)
-					_check(h != null and h.global_position.distance_to(Vector3(18.9, 0, 6.0)) < 0.3, "Hardass moved to his corner")
+					var st = current_scene.get_node("Story")
+					_check(h != null and h.global_position.distance_to(st.HARDASS_POST) < 0.3, "Hardass back in his chair by the door")
+					var to_door: Vector3 = st.HARDASS_WATCH - st.HARDASS_POST
+					var fwd: Vector3 = -h.global_transform.basis.z if h else Vector3.ZERO
+					_check(h != null and fwd.dot(to_door.normalized()) > 0.8, "Hardass faces the door, not a wall")
 				if sc[0] == "glass":
 					_check(current_scene.get_node("Story")._tally == null, "Tallyman puppet removed")
 				_check(_all_zombies_shown(), "zombies back in view after '%s'" % sc[0])

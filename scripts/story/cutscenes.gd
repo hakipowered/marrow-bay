@@ -82,6 +82,10 @@ var _cam_base := Transform3D()
 var _voice: AudioStreamPlayer
 var _loops: Array[AudioStreamPlayer] = []
 var _sub_until := 0.0
+## Seconds of game time (the same clock tweens, timers and the actors' clips
+## run on), so waits stay in step with the acting at any frame rate.
+var _clock := 0.0
+var _sub_fade: Tween
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -337,8 +341,8 @@ func _delayed(s: Dictionary, token: int) -> void:
 	await _do(s, token)
 
 func _sleep(t: float, token: int) -> void:
-	var end := Time.get_ticks_msec() + int(t * 1000.0)
-	while Time.get_ticks_msec() < end and not _skip and token == _token:
+	var end := _clock + t
+	while _clock < end and not _skip and token == _token:
 		await get_tree().process_frame
 
 func _do(s: Dictionary, token: int) -> void:
@@ -504,6 +508,7 @@ func _look(pos: Vector3, at: Vector3) -> Transform3D:
 	return tr
 
 func _process(delta: float) -> void:
+	_clock += delta
 	if not active or not is_instance_valid(_cam):
 		return
 	var tr := _cam_base
@@ -512,9 +517,10 @@ func _process(delta: float) -> void:
 		var a := _shake * clampf(_shake_t * 2.0, 0.0, 1.0)
 		tr.origin += Vector3(randf_range(-a, a), randf_range(-a, a), randf_range(-a, a))
 	_cam.global_transform = tr
-	if _sub_until > 0.0 and Time.get_ticks_msec() / 1000.0 > _sub_until:
+	if _sub_until > 0.0 and _clock > _sub_until:
 		_sub_until = 0.0
-		create_tween().tween_property(_sub_box, "modulate:a", 0.0, 0.35)
+		_sub_fade = create_tween()
+		_sub_fade.tween_property(_sub_box, "modulate:a", 0.0, 0.35)
 
 # ------------------------------------------------------------------ text
 
@@ -525,8 +531,12 @@ func _show_sub(who: String, text: String, secs: float) -> void:
 	_sub_name.add_theme_color_override("font_color", sp[1])
 	_sub_text.text = text
 	_sub_text.add_theme_color_override("font_color", Color(0.93, 0.9, 0.84) if who != "narrator" else Color(0.86, 0.83, 0.76))
+	# A line that starts while the last one is still fading out stays up.
+	if _sub_fade:
+		_sub_fade.kill()
+		_sub_fade = null
 	_sub_box.modulate.a = 1.0
-	_sub_until = Time.get_ticks_msec() / 1000.0 + secs
+	_sub_until = _clock + secs
 
 func _show_title(text: String, sub: String, secs: float, token: int, chapter := false) -> void:
 	_title.text = text

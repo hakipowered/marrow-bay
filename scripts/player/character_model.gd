@@ -409,6 +409,9 @@ func prepare_clips() -> void:
 	# This survivor's own way of standing (Obcera's idle), so the two of
 	# them never stand there in the same loop.
 	CombatClips.attach(_anim, _skel, character, "moves")
+	# Acting clips for the story scenes ("talk/talk_open", "talk/listen"...),
+	# tools/import_talk.gd.
+	CombatClips.attach(_anim, _skel, character, "talk")
 	build_stance(_anim)
 
 ## Bones that carry the aim: everything above the hips.
@@ -519,6 +522,21 @@ func play_once(clip: String, blend := 0.15, speed := 1.0) -> void:
 		_current = clip
 		_one_shot = true
 		_cancel_at = -1.0
+
+## Cutscenes: a looping acting clip ("talk/listen"), held until the scene
+## lets go; the player's own movement replaces it at once after that.
+func act(clip: String, blend := 0.3) -> void:
+	if _anim and _anim.has_animation(clip):
+		_anim.speed_scale = 1.0
+		_anim.play(clip, blend)
+		_current = clip
+		_one_shot = false
+
+func has_clip(clip: String) -> bool:
+	return _anim != null and _anim.has_animation(clip)
+
+func clip_length(clip: String) -> float:
+	return _anim.get_animation(clip).length if has_clip(clip) else 0.0
 
 ## Knife slashes, the hatchet chop and grenade throws (the "combat" library,
 ## retargeted onto this skeleton on first use). After cancel_after seconds
