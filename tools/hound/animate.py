@@ -108,7 +108,8 @@ def leg_points(k, dy=0.0, dz=0.0, cw=0.0, ct=0.0, dx=0.0):
     return P + Rw @ (L["W0"] - L["P0"]), P, P + Rt @ (L["T0"] - L["P0"])
 
 def apply_frame(pose):
-    """pose: {"fk": {bone: (rx,ry,rz)}, "loc": {bone: (x,y,z)}, "legs": {k: (W,P,T)} or None for FK legs}"""
+    """pose: {"fk": {bone: (rx,ry,rz)}, "loc": {bone: (x,y,z)}, "legs": {k: (W,P,T)} or None for FK legs,
+    "poles": {k: point} (optional, rest when left out)}"""
     for b in FKB:
         pb[b].rotation_mode = 'QUATERNION'
         pb[b].rotation_quaternion = fk_quat(b, pose["fk"].get(b, (0, 0, 0)))
@@ -125,6 +126,8 @@ def apply_frame(pose):
         if on:
             W, P, T = legs[k]
             set_tgt("tgtW_" + k, W); set_tgt("tgtP_" + k, P); set_tgt("tgtT_" + k, T)
+        # Knee and elbow poles: at rest, or carried with the body (deaths).
+        set_tgt("pole_" + k, pose.get("poles", {}).get(k, REST["pole_" + k].translation))
     bpy.context.view_layer.update()
     return {b: pb[b].matrix.copy() for b in FKB}
 
@@ -376,64 +379,281 @@ def clip_hit(t):
     }
     return {"fk": fk, "loc": {"body": (0, 0.07 * k, -0.03 * k)}, "legs": legs}
 
-def death_side(side):
-    # side=+1 rolls over to its right (-X) side, -1 to its left.
+# ---------------------------------------------------------------- deaths
+# The deaths move the whole body (a turn about its centre plus a shift) and
+# keep the legs on IK, carried with the body. While the legs buckle the paws
+# stay planted; as it goes over they slide out or swing up; on the ground
+# they paddle and then lie limp. Every paw, wrist and toe target is held
+# above the floor, so a leg under the body rests on the ground instead of
+# sinking into it, and an upper leg drops onto the one below.
+HB = REST["body"].translation.copy()
+FLOOR = {"W": 0.07, "P": 0.035, "T": 0.018}
+
+def rot3(rx, ry, rz):
+    return (Matrix.Rotation(math.radians(rz), 3, 'Z') @ Matrix.Rotation(math.radians(ry), 3, 'Y')
+            @ Matrix.Rotation(math.radians(rx), 3, 'X'))
+
+def body_xf(rot, shift):
+    """Where a point of the body (rest pose, rig space) goes when the body
+    turns by rot (degrees about the world axes, about its centre) and shifts."""
+    R = rot3(*rot)
+    t = Vector(shift)
+    return lambda v: HB + t + R @ (Vector(v) - HB)
+
+def drop(t, t0, t1):
+    """0 before t0, falling like a weight (u^2) to 1 at t1, then 1."""
+    u = min(max((t - t0) / (t1 - t0), 0.0), 1.0)
+    return u * u
+
+def thud(t, t1, amp=1.0, freq=13.0, damp=8.0):
+    """The bounce after a body hits the ground at t1: dies away in ~0.4 s."""
+    if t < t1:
+        return 0.0
+    tau = t - t1
+    return amp * math.exp(-damp * tau) * abs(math.sin(freq * tau))
+
+def bump_at(t, c, width):
+    """A smooth 0..1..0 pulse centred on c, width seconds wide."""
+    return bump((t - c) / width + 0.5)
+
+def carried(k, xf, dy=0.0, dz=0.0, cw=0.0, ct=0.0, gx=0.0, lift=0.0):
+    """A leg pose in the body's own frame (as leg_points, plus gx sideways),
+    carried along with the body, then kept above the floor (+ lift)."""
+    L = LEGS[k]
+    P = L["P0"] + Vector((gx, dy, dz))
+    Rw = Matrix.Rotation(math.radians(cw), 3, 'X')
+    Rt = Matrix.Rotation(math.radians(ct), 3, 'X')
+    pts = (P + Rw @ (L["W0"] - L["P0"]), P, P + Rt @ (L["T0"] - L["P0"]))
+    out = []
+    for nm, p in zip("WPT", pts):
+        q = xf(p)
+        q.z = max(q.z, FLOOR[nm] + lift + 0.012)
+        out.append(q)
+    return tuple(out)
+
+def planted(k, dy=0.0, dx=0.0, cw=0.0):
+    return tuple(Vector(p) for p in leg_points(k, dy, 0.0, cw, 0.0, dx))
+
+def mixp(a, b, u, lift=0.0):
+    u = min(max(u, 0.0), 1.0)
+    out = tuple(x.lerp(y, u) for x, y in zip(a, b))
+    for nm, q in zip("WPT", out):
+        q.z = max(q.z, FLOOR[nm] + lift)
+    return out
+
+def poles(xf):
+    return {k: xf(REST["pole_" + k].translation) for k in LEGS}
+
+def upper(k, d):
+    """Lying on side d (+1 left side down), is this leg the one on top?"""
+    return LEGS[k]["sx"] == -d
+
+def limp_leg(k, d, xf, paddle=(0.0, 0.0, 0.0), relax=1.0):
+    """A leg of a dog lying on its side: a little bent, the top legs fallen
+    toward the ground onto the ones below. paddle = (dy, dz, cw) on top."""
+    f = LEGS[k]["kind"] == "f"
+    top = upper(k, d)
+    dy = (-0.06 if f else 0.07) + (-0.05 if (top and f) else 0.03 if top else 0.0)
+    dz = (0.13 if f else 0.12) + (0.07 if top else 0.0) * relax
+    cw = (40 if f else -30) * relax
+    ct = (30 if f else 15) * relax
+    gx = d * 0.2 * relax if top else -d * 0.02
+    return carried(k, xf, dy + paddle[0], dz + paddle[1], cw + paddle[2], ct, gx, 0.045 if top else 0.02)
+
+def head_down(d, k, lift=0.0, whip=0.0):
+    """Neck and head laid out on the ground beside the body (k 0..1), lift
+    raises it a little (a last try), whip bends it on the impact."""
+    return {
+        "neck1": (24 * k - 14 * lift + 10 * whip, 10 * d * k * (1 - 0.6 * lift), 0),
+        "neck2": (14 * k - 8 * lift + 8 * whip, 6 * d * k * (1 - 0.6 * lift), 0),
+        "head": (-12 * k + 6 * lift - 6 * whip, -16 * d * k, 0),
+    }
+
+def tail_limp(d, k, sway=0.0):
+    return {
+        "tail1": (-24 * (1 - k) - 6 * k + sway, 0, -18 * d * k),
+        "tail2": (-6 * (1 - k) - 4 * k + sway * 0.8, 0, -12 * d * k),
+        "tail3": (-4 * k + sway * 0.6, 0, -6 * d * k),
+        "tail4": (-4 * k + sway * 0.4, 0, -2 * d * k),
+    }
+
+def death_buckle(d):
+    """Shot down standing: jolted, the front legs buckle, it tips over onto
+    one side (d=+1 its left), thuds, paddles, two last breaths, goes limp."""
     def f(t):
-        fold = ease([(0, 0), (0.18, 0.5), (0.45, 1.0)], t)       # legs buckle
-        roll = ease([(0, 0), (0.25, 0.0), (0.7, 1.0), (0.82, 0.93), (0.95, 1.0)], t)
-        twitch = math.sin(t * 40) * max(0.0, 1 - abs(t - 1.35) / 0.25) * 0.5
-        ang = 90 * roll * side
-        drop = ease([(0, 0.0), (0.45, -0.24), (0.7, -0.40)], t)
-        lift = 0.17 * roll
+        jolt = ease([(0, 0), (0.06, 1), (0.28, 0)], t)
+        buck = ease([(0.04, 0), (0.42, 1)], t)
+        F = drop(t, 0.36, 0.74)
+        bump = thud(t, 0.74, 1.0)
+        roll = 7 * jolt + 90 * F + 7 * bump
+        sink = 0.17 * buck * (1 - F)
+        cz = lerp(0.57 - sink - 0.02 * jolt, 0.17, F) + 0.03 * bump
+        cx = d * (0.035 * jolt + 0.05 * buck + 0.25 * F)
+        cy = -0.05 * buck + 0.03 * F
+        pitch = 13 * buck * (1 - F) + 2 * F
+        yaw = -7 * d * F
+        # paddling: running in the air, fading out
+        pe = ease([(0.86, 0), (1.0, 1), (1.45, 0.8), (2.15, 0)], t)
+        breath = bump_at(t, 2.25, 0.35) + 0.8 * bump_at(t, 2.8, 0.45)
+        xf = body_xf((pitch - 2 * breath, d * roll, yaw), (cx, cy, cz - HB.z))
+        w = 2 * math.pi * 2.3
+        legs = {}
+        for k, ph in (("fL", 0.0), ("fR", math.pi), ("hL", math.pi * 0.5), ("hR", math.pi * 1.5)):
+            front = k[0] == "f"
+            s = math.sin(w * t + ph)
+            c = max(0.0, math.cos(w * t + ph))
+            pad = (0.2 * pe * s, 0.12 * pe * c, (40 if front else -30) * pe * c)
+            relax = ease([(0.7, 0.4), (1.0, 0.8), (2.2, 0.8), (2.9, 1.0)], t)
+            lying = limp_leg(k, d, xf, pad, relax)
+            # Down they go: the front legs fold first, the top ones swing up
+            # and over, the ones underneath slide out last.
+            stand = planted(k, (-0.03 if front else 0.0) * buck, 0.0, 0.0)
+            late = 0.08 if not upper(k, d) else 0.0
+            u = smooth((t - 0.40 - late) / 0.32)
+            legs[k] = mixp(stand, lying, u, 0.035 * max(u, F))
+        hd = smooth((t - 0.6) / 0.25)
+        lift = bump_at(t, 1.25, 0.5) * 0.9
         fk = {
-            "root": (0, ang, 0),
-            "body": (ease([(0, 0), (0.3, 8), (0.7, 0)], t), 0, 0),
-            "spine1": (0, 0, -6 * roll * side), "spine2": (0, 0, -6 * roll * side), "chest": (0, 0, -4 * roll * side),
-            "neck1": (ease([(0, 0), (0.25, -18), (0.7, 10), (1.0, 20)], t), 0, -12 * roll * side),
-            "neck2": (ease([(0, 0), (0.25, -10), (0.75, 18), (1.0, 14)], t), 0, -8 * roll * side),
-            "head": (ease([(0, 0), (0.25, -16), (0.8, 6)], t), 0, -10 * roll * side),
-            "jaw": (ease([(0, 10), (0.2, 36), (0.9, 26), (1.4, 18)], t) + 6 * twitch, 0, 0),
-            "tail1": (-30 * (1 - roll), 0, -20 * roll * side), "tail2": (-6, 0, -12 * roll * side), "tail3": (0, 0, -8 * roll * side),
-            "ear_L": (-30, 0, 0), "ear_R": (-30, 0, 0),
+            "body": (pitch - 2 * breath, d * roll, yaw),
+            "spine2": (-1.5 * breath, 0, 0), "chest": (-2.5 * breath, 0, 0),
+            "scapula_L": (-8 * buck * (1 - F), 0, 0), "scapula_R": (-8 * buck * (1 - F), 0, 0),
+            "jaw": (ease([(0, 10), (0.08, 38), (0.5, 30), (1.0, 20), (2.2, 14), (2.9, 9)], t) + 10 * breath + 12 * bump_at(t, 1.3, 0.3), 0, 0),
+            "ear_L": (-45 + 30 * F, 25 * d * F, 0), "ear_R": (-45 + 30 * F, 25 * d * F, 0),
         }
-        for s in ("L", "R"):
-            up = (s == "L") == (side > 0)        # upper-side legs flop over, lower ones stretch out
-            fk["scapula_" + s] = (-10 * fold, 0, 0)
-            fk["upperarm_" + s] = (lerp(0, -30, fold) + (10 * twitch if up else 0), 0, 0)
-            fk["forearm_" + s] = (lerp(0, 50, fold) - 22 * roll + (8 if up else 0) * roll, 0, 0)
-            fk["hand_" + s] = (lerp(0, -30, fold) + 12 * roll, 0, 0)
-            fk["thigh_" + s] = (lerp(0, -40, fold) + 18 * roll - (10 if up else 0) * roll, 0, 0)
-            fk["shin_" + s] = (lerp(0, 60, fold) - 25 * roll + (14 * twitch if up else 0), 0, 0)
-            fk["foot_" + s] = (lerp(0, -40, fold) + 18 * roll, 0, 0)
-        return {"fk": fk, "loc": {"root": (-0.12 * side * roll, 0, max(0.0, lift + drop * (1 - roll))), "body": (0, 0, drop * (1 - roll) * 0.0)}, "legs": None}
+        hdp = head_down(d, hd, lift, bump)
+        for b, v in hdp.items():
+            fk[b] = v
+        # the head lags the fall: thrown up as it goes, slapped down after
+        fk["neck1"] = (fk["neck1"][0] - 22 * bump_at(t, 0.55, 0.4) - 18 * jolt, fk["neck1"][1], 8 * d * jolt)
+        fk["head"] = (fk["head"][0] - 10 * jolt, fk["head"][1], 0)
+        for b, v in tail_limp(d, smooth((t - 0.5) / 0.5), 10 * pe * math.sin(w * t)).items():
+            fk[b] = v
+        fk["tail1"] = (fk["tail1"][0] - 25 * bump_at(t, 0.55, 0.45), fk["tail1"][1], fk["tail1"][2])
+        return {"fk": fk, "loc": {"body": (cx, cy, cz - HB.z)}, "legs": legs, "poles": poles(xf)}
     return f
 
-def death_collapse(t):
-    # Legs give out mid-stride: drops onto its chest, chin skids, rolls a little.
-    fold = ease([(0, 0), (0.25, 1.0)], t)
-    sink = ease([(0, 0), (0.12, -0.10), (0.3, -0.36), (0.36, -0.33), (0.45, -0.36)], t)
-    pitch = ease([(0, 0), (0.18, 12), (0.3, 6), (0.45, 0)], t)
-    roll = ease([(0, 0), (0.5, 0), (1.0, 0.45)], t)
-    twitch = math.sin(t * 36) * max(0.0, 1 - abs(t - 1.25) / 0.2) * 0.5
-    fk = {
-        "root": (0, 90 * roll * 0.55, 0),
-        "body": (pitch, 0, 0),
-        "neck1": (ease([(0, 0), (0.2, 22), (0.35, 26)], t), 0, 6 * roll),
-        "neck2": (ease([(0, 0), (0.2, 18), (0.35, 24)], t), 0, 8 * roll),
-        "head": (ease([(0, 0), (0.25, 10), (0.4, -14)], t), 18 * roll, 4 * roll),
-        "jaw": (ease([(0, 10), (0.15, 30), (0.6, 24), (1.2, 14)], t) + 6 * twitch, 0, 0),
-        "tail1": (-30 + 20 * fold, 0, 8 * roll), "tail2": (-4, 0, 6 * roll), "tail3": (2, 0, 0),
-        "ear_L": (-35, 0, 0), "ear_R": (-35, 0, 0),
-    }
-    for s in ("L", "R"):
-        fk["scapula_" + s] = (-14 * fold, 0, 0)
-        fk["upperarm_" + s] = (-50 * fold, 0, 0)
-        fk["forearm_" + s] = (95 * fold, 0, 0)
-        fk["hand_" + s] = (-55 * fold, 0, 0)
-        fk["thigh_" + s] = (-62 * fold, 0, 0)
-        fk["shin_" + s] = (95 * fold + 10 * twitch, 0, 0)
-        fk["foot_" + s] = (-45 * fold, 0, 0)
-    return {"fk": fk, "loc": {"root": (0, -0.12 * fold, 0.07 * roll), "body": (0, 0, sink)}, "legs": None}
+
+def death_slump(d):
+    """Shot through the back: the hind legs go, it sits down hard, sways,
+    the front legs slide out, it slumps onto its side (d=+1 its left),
+    a few weak kicks, a long last breath."""
+    def f(t):
+        jolt = ease([(0, 0), (0.07, 1), (0.3, 0)], t)
+        hind = ease([(0.06, 0), (0.5, 1)], t)              # rump goes down
+        front = ease([(1.0, 0), (1.32, 1)], t)              # front legs slide out
+        F = drop(t, 1.18, 1.5)
+        bump = thud(t, 1.5, 0.7)
+        sway = math.sin((t - 0.5) * 7.5) * ease([(0.5, 0), (0.7, 1), (1.1, 0.4)], t)
+        trem = math.sin(t * 55) * ease([(0.5, 0), (0.7, 1), (1.1, 0.6), (1.25, 0)], t)
+        roll = d * (5 * sway + 90 * F + 6 * bump) - 6 * d * jolt
+        pitch = -30 * hind * (1 - front) + 4 * front * (1 - F) + 2 * F
+        cz = lerp(0.57 - 0.17 * hind - 0.12 * front + 0.004 * trem, 0.17, F) + 0.025 * bump
+        cy = 0.07 * hind - 0.06 * front + 0.02 * F
+        cx = d * (0.05 * front + 0.22 * F) - 0.03 * d * jolt
+        yaw = 9 * d * front * (1 - 0.5 * F)
+        pe = ease([(1.62, 0), (1.75, 0.7), (2.1, 0.45), (2.5, 0)], t)
+        exhale = ease([(2.45, 0), (2.75, 1), (3.0, 0.85)], t)
+        xf = body_xf((pitch + 2 * exhale, roll, yaw), (cx, cy, cz - HB.z))
+        w = 2 * math.pi * 2.0
+        legs = {}
+        for k, ph in (("fL", 0.0), ("fR", 2.0), ("hL", 0.0), ("hR", math.pi)):
+            fr = k[0] == "f"
+            s_ = math.sin(w * t + ph)
+            c_ = max(0.0, math.cos(w * t + ph))
+            a = pe * (0.35 if fr else 1.0)
+            pad = (0.16 * a * s_, 0.10 * a * c_, (35 if fr else -30) * a * c_)
+            lying = limp_leg(k, d, xf, pad, ease([(1.3, 0.5), (1.7, 0.85), (2.6, 0.85), (3.0, 1.0)], t))
+            if fr:
+                # braced, then sliding forward and folding as the chest goes down
+                stand = planted(k, -0.16 * front, 0.0, 0.0)
+                u = smooth((t - 1.2 - (0.08 if not upper(k, d) else 0.0)) / 0.3)
+            else:
+                # tucked under the sitting rump: carried with the body, folded
+                sit = carried(k, xf, -0.12, 0.2, -50, 0, 0.0, 0.0)
+                stand = mixp(planted(k), sit, hind)
+                u = smooth((t - 1.15 - (0.1 if not upper(k, d) else 0.0)) / 0.35)
+            legs[k] = mixp(stand, lying, u, 0.035 * max(u, F))
+        lift = bump_at(t, 1.95, 0.55) * 0.6
+        hd = smooth((t - 1.3) / 0.3)
+        fk = {
+            "body": (pitch + 2 * exhale, roll, yaw),
+            "pelvis": (14 * hind * (1 - F), 0, 0),
+            "spine1": (-6 * hind * (1 - F), 0, 0),
+            "spine2": (2 * exhale, 0, 0), "chest": (3 * exhale, 0, 0),
+            "scapula_L": (-6 * front * (1 - F), 0, 0), "scapula_R": (-6 * front * (1 - F), 0, 0),
+            "jaw": (ease([(0, 10), (0.08, 40), (0.4, 24), (0.9, 18), (1.5, 22), (2.4, 16), (3.0, 8)], t) + 8 * bump_at(t, 1.95, 0.4) - 6 * exhale, 0, 0),
+            "ear_L": (-40 + 25 * hd, 20 * d * hd, 0), "ear_R": (-40 + 25 * hd, 20 * d * hd, 0),
+        }
+        for b, v in head_down(d, hd, lift, bump).items():
+            fk[b] = v
+        droop = ease([(0.5, 0), (1.0, 1), (1.3, 0)], t)       # head sags while it sits
+        fk["neck1"] = (fk["neck1"][0] + 26 * droop - 16 * jolt, fk["neck1"][1], 5 * sway * (1 - hd))
+        fk["neck2"] = (fk["neck2"][0] + 12 * droop, fk["neck2"][1], 4 * sway * (1 - hd))
+        fk["head"] = (fk["head"][0] - 8 * jolt, fk["head"][1], 0)
+        for b, v in tail_limp(d, smooth((t - 1.2) / 0.5), 6 * pe * math.sin(w * t)).items():
+            fk[b] = v
+        fk["tail1"] = (fk["tail1"][0] + 20 * hind * (1 - F), fk["tail1"][1], fk["tail1"][2])
+        return {"fk": fk, "loc": {"body": (cx, cy, cz - HB.z)}, "legs": legs, "poles": poles(xf)}
+    return f
+
+def death_plough(d):
+    """Cut down at full tilt: the front legs fold, it ploughs in on its chest
+    and skids, the rump swings round and it rolls onto its side (d=+1 its
+    left), kicks twice with the hind legs and goes still."""
+    def f(t):
+        v0, stop = 3.2, 0.42
+        tt = min(t, stop)
+        slide = v0 * tt - v0 / (2 * stop) * tt * tt          # decelerating to rest
+        fold = ease([(0, 0), (0.13, 1)], t)
+        F = drop(t, 0.22, 0.56)
+        bump = thud(t, 0.56, 0.8)
+        nose = ease([(0, 0), (0.12, 30), (0.26, 20), (0.5, 4), (0.8, 2)], t)
+        roll = d * (88 * F + 6 * bump)
+        yaw = 22 * d * ease([(0.15, 0), (0.6, 1)], t)
+        cz = lerp(0.57 - 0.29 * fold, 0.17, F) + 0.02 * bump + 0.03 * bump_at(t, 0.15, 0.12)
+        cy = -slide
+        cx = d * 0.2 * F
+        pe = ease([(0.8, 0), (0.9, 1), (1.1, 0.2), (1.3, 0.75), (1.55, 0.1), (1.9, 0)], t)
+        last = ease([(1.85, 0), (2.1, 1), (2.4, 0.8)], t)
+        xf = body_xf((nose + 2 * last, roll, yaw), (cx, cy, cz - HB.z))
+        legs = {}
+        for k in LEGS:
+            fr = k[0] == "f"
+            top = upper(k, d)
+            if fr:
+                # folded back under the chest as it goes down on them
+                tuck = carried(k, xf, 0.14, 0.24, 85, 60, 0.0, 0.02)
+                start = planted(k)
+                early = mixp(start, tuck, fold)
+                u = smooth((t - 0.45) / 0.35)
+                kick = (0.0, 0.0, 0.0)
+            else:
+                # mid-stride, gathered under it as it goes down, then dragged
+                gather = carried(k, xf, -0.06 if top else 0.04, 0.14, -35, 0, 0.0, 0.025)
+                early = mixp(planted(k), gather, smooth(t / 0.12))
+                u = smooth((t - 0.32 - (0.0 if top else 0.06)) / 0.3)
+                kick = (0.24 * pe, 0.06 * pe, -25 * pe)
+            lying = limp_leg(k, d, xf, kick, ease([(0.5, 0.5), (0.9, 0.85), (2.0, 0.85), (2.4, 1.0)], t))
+            legs[k] = mixp(early, lying, u, 0.035 * max(u, F))
+        hd = smooth((t - 0.35) / 0.3)
+        skid = ease([(0.08, 0), (0.16, 1), (0.42, 1), (0.6, 0)], t)   # chin along the floor
+        fk = {
+            "body": (nose + 2 * last, roll, yaw),
+            "spine2": (2 * last, 0, -6 * d * F), "chest": (3 * last, 0, -4 * d * F),
+            "pelvis": (-10 * fold * (1 - F), 0, 8 * d * F),
+            "jaw": (ease([(0, 14), (0.1, 34), (0.4, 20), (0.9, 24), (1.6, 14), (2.4, 9)], t) - 5 * last, 0, 0),
+            "ear_L": (-50 + 35 * hd, 22 * d * hd, 0), "ear_R": (-50 + 35 * hd, 22 * d * hd, 0),
+        }
+        for b, v in head_down(d, hd, 0.0, bump).items():
+            fk[b] = v
+        fk["neck1"] = (fk["neck1"][0] - 18 * skid, fk["neck1"][1], 0)
+        fk["neck2"] = (fk["neck2"][0] - 10 * skid, fk["neck2"][1], 0)
+        fk["head"] = (fk["head"][0] + 8 * skid, fk["head"][1], 0)
+        for b, v in tail_limp(d, smooth((t - 0.3) / 0.4)).items():
+            fk[b] = v
+        fk["tail1"] = (fk["tail1"][0] - 30 * bump_at(t, 0.3, 0.4), fk["tail1"][1], fk["tail1"][2])
+        return {"fk": fk, "loc": {"body": (cx, cy, cz - HB.z)}, "legs": legs, "poles": poles(xf)}
+    return f
 
 CLIPS = [
     ("idle", 120, clip_idle, True),
@@ -444,9 +664,13 @@ CLIPS = [
     ("lunge", 69, clip_lunge, False),
     ("bite", 69, clip_bite, False),
     ("hit", 18, clip_hit, False),
-    ("death", 48, death_side(1), False),
-    ("death_left", 48, death_side(-1), False),
-    ("death_collapse", 45, death_collapse, False),
+    # deaths: "death" falls onto its right side, "_left" onto its left
+    ("death", 90, death_buckle(-1), False),
+    ("death_left", 90, death_buckle(1), False),
+    ("death_slump", 93, death_slump(-1), False),
+    ("death_slump_left", 93, death_slump(1), False),
+    ("death_collapse", 75, death_plough(-1), False),
+    ("death_collapse_left", 75, death_plough(1), False),
 ]
 acts = []
 for name, n, fn, loop in CLIPS:

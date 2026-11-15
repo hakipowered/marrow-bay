@@ -106,8 +106,10 @@ func list_slots() -> Array[String]:
 func apply_snapshot(data: Dictionary) -> void:
 	GameState.level_path = data.get("level", GameState.level_path)
 	GameState.shared_checkpoint = data.get("checkpoint", "start")
-	GameState.world_flags = data.get("flags", {})
-	GameState.inventories = data.get("inventories", {})
+	# Copies: the run that follows mustn't write into the snapshot itself (a
+	# kill after Continue would be "remembered" by the next Continue).
+	GameState.world_flags = (data.get("flags", {}) as Dictionary).duplicate(true)
+	GameState.inventories = (data.get("inventories", {}) as Dictionary).duplicate(true)
 	GameState.play_time_sec = data.get("play_time", 0.0)
 	# Survivors come back dressed as they were saved.
 	var looks: Variant = data.get("looks", {})

@@ -107,11 +107,14 @@ func _in_sight(me: Node3D, z: Node3D) -> bool:
 	return get_viewport().get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 ## How much one chasing infected counts toward the action music
-## (Music.ACTION_ON = 6: a brute and two more, or six ordinary ones).
+## (Music.ACTION_ON = 6: a brute, or a grappler and a few more, or six
+## ordinary ones).
 func _threat_weight(z: Node) -> float:
 	var d: Dictionary = z.data
 	if d.get("charge") or d.get("bulk", 1.0) >= 1.5:
-		return 4.0
+		# A brute on her is a big fight on its own (in 0.13 one alone after
+		# a Continue played nothing, and the fight felt like the music broke).
+		return Music.ACTION_ON
 	if d.get("pins"):
 		return 2.5
 	if d.get("lunge") or d.get("ceiling_drop"):

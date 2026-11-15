@@ -15,6 +15,15 @@ enum Kind { MANUAL, AUTOMATIC, LOCKED, COOP }
 ## pressed against the gate, and they can't claw you through it either
 ## (Zombie._clear_line checks it).
 const BARS_LAYER := 32
+## The infected's way through: the level's navmesh is baked with every door
+## shut (LevelBase._bake_navigation), and each solid door carries a link
+## across its doorway that's switched on while it stands open. Without it a
+## door opened after the level loaded stayed a wall to them: they chased her
+## up to the doorway and milled about there instead of coming through.
+## The link's ends sit just inside the navmesh on each side (half the wall
+## plus the navmesh's 0.45 m margin): ends further out made one standing in
+## the doorway turn back to the near end every time it re-pathed.
+const NAV_REACH := 0.75
 
 @export var kind: Kind = Kind.MANUAL
 @export var key_id := ""
@@ -33,6 +42,7 @@ var _holding: Dictionary = {}  # handle index -> peer_id
 var _hold_time: Dictionary = {}
 var _block_layer := 1
 var _wheels: Array[Node3D] = []
+var _nav_link: NavigationLink3D
 
 func _ready() -> void:
 	add_to_group("doors")
@@ -48,6 +58,14 @@ func _ready() -> void:
 	cs.position = Vector3(0, height / 2, 0)
 	_blocker.add_child(cs)
 	add_child(_blocker)
+	if _block_layer == 1:
+		_nav_link = NavigationLink3D.new()
+		_nav_link.name = "NavLink"
+		_nav_link.bidirectional = true
+		_nav_link.start_position = Vector3(0, 0, -NAV_REACH)
+		_nav_link.end_position = Vector3(0, 0, NAV_REACH)
+		_nav_link.enabled = false
+		add_child(_nav_link)
 	if kind == Kind.COOP:
 		for i in 2:
 			var x := (i * 2 - 1) * (width * 0.5 + 0.35)
@@ -124,6 +142,16 @@ func _wheel() -> Node3D:
 	stem.material_override = steel
 	n.add_child(stem)
 	return n
+
+## While the level bakes its navmesh, every solid door counts as shut, open
+## or not (the link across it is what lets the infected through).
+func bake_shut(on: bool) -> void:
+	if _block_layer == 1:
+		_blocker.collision_layer = 1 if on or not is_open else 0
+
+## Whether the infected can path through it right now.
+func nav_open() -> bool:
+	return _nav_link != null and _nav_link.enabled
 
 func _make_interact_area(pos: Vector3, size := Vector3.ZERO) -> Area3D:
 	var a := Area3D.new()
@@ -225,6 +253,8 @@ func _set_open(open: bool, away: Vector3, animate: bool) -> void:
 	if door_id != "" and kind != Kind.AUTOMATIC:
 		GameState.set_flag("door_open:" + door_id, open)
 	_blocker.collision_layer = 0 if open else _block_layer
+	if _nav_link:
+		_nav_link.enabled = open
 	var side := 1.0
 	if away != Vector3.ZERO:
 		side = sign(global_transform.basis.z.dot(away))

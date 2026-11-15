@@ -44,6 +44,14 @@ var pinned_by: Node = null
 var slowed_for := 0.0
 var _burn_t := 0.0
 var _struggle := 0
+## Taps to break out of a grab (INTERACT shows "Struggle free!" while she's
+## held, and ROLL counts too).
+const STRUGGLE_TAPS := 7
+const STRUGGLE_TEXT := "Struggle free!"
+## A blow inside this window after the last flinch still hurts and shoves,
+## but doesn't stun her again (ms): two infected can't chain her flinches.
+const FLINCH_GRACE_MS := 1000
+var _last_flinch_ms := -100000
 var _downed_t := 0.0
 const REVIVE_WINDOW := 30.0
 var rescue_area: Area3D
@@ -319,6 +327,11 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		sync_anim = "hit"
 		model.play("hit", false)
+		# Grabbed: the INTERACT button becomes the way out (mash it).
+		if _prompt_text != STRUGGLE_TEXT:
+			_prompt_text = STRUGGLE_TEXT
+			interact_prompt.emit(STRUGGLE_TEXT)
+		_tick_shake(delta)
 		return
 	if input_locked:
 		move_input = Vector2.ZERO
@@ -465,6 +478,9 @@ func _tag_self() -> void:
 
 ## Starts a dodge roll (the HUD's ROLL button, Space on a keyboard).
 func roll() -> void:
+	if pinned and not downed:
+		_struggle_tap()
+		return
 	if rolling or _roll_cd > 0.0 or downed or pinned or input_locked or cutscene_pose or dead:
 		return
 	if working != "":
@@ -1062,9 +1078,16 @@ func _feel_hit(amount: float, from: Node, blow: bool) -> void:
 	if from is Node3D and is_instance_valid(from):
 		src = (from as Node3D).global_position
 	var heavy := amount >= 30.0
+	# Flinches don't chain: a second blow right after the first (two infected
+	# on her at once) still hurts and shoves her clear, but doesn't stop her
+	# feet again, so she can always walk or roll out between them.
+	var now := Time.get_ticks_msec()
+	var fresh := now - _last_flinch_ms >= FLINCH_GRACE_MS
 	if blow:
-		model.flinch(heavy)
-		_hit_stun = 0.42 if heavy else 0.28
+		if fresh:
+			_last_flinch_ms = now
+			model.flinch(heavy)
+			_hit_stun = 0.42 if heavy else 0.28
 		if src != Vector3.INF:
 			var away := (global_position - src) * Vector3(1, 0, 1)
 			if away.length() > 0.01:
@@ -1158,6 +1181,15 @@ func set_pinned(on: bool, by: Node) -> void:
 		var hud := get_tree().get_first_node_in_group("hud")
 		if hud:
 			hud.toast("Grabbed! Tap INTERACT to struggle, or CALL your partner!")
+
+func _struggle_tap() -> void:
+	_struggle += 1
+	shake(0.3)
+	if WebPlatform.can_vibrate():
+		Input.vibrate_handheld(40, 0.5)
+	if _struggle >= STRUGGLE_TAPS and is_instance_valid(pinned_by):
+		_struggle = 0
+		_rpc_rescue.rpc()
 
 func set_burning(secs: float) -> void:
 	_burn_t = max(_burn_t, secs)
@@ -1267,9 +1299,7 @@ func _nearest_pickup() -> Node:
 
 func interact() -> void:
 	if pinned:
-		_struggle += 1
-		if _struggle >= 12 and is_instance_valid(pinned_by):
-			_rpc_rescue.rpc()
+		_struggle_tap()
 		return
 	if is_instance_valid(_focus) and _focus.has_method("interact"):
 		_focus.interact(self)
