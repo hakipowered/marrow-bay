@@ -266,10 +266,12 @@ func _rpc_key_request(by_peer: int) -> void:
 ## Every phone: the key goes in and turns to ON; with power on, the door
 ## goes up.
 @rpc("authority", "reliable", "call_local")
-func _rpc_key(by_peer: int) -> void:
+func _rpc_key(_by_peer: int) -> void:
 	GameState.set_flag(KEY_FLAG)
+	# Keys belong to both survivors (Pickup "party"): turned in the switch,
+	# it goes from both bags, each phone taking it from its own survivor's.
 	for p in get_tree().get_nodes_in_group("players"):
-		if p.peer_id == by_peer and p.is_multiplayer_authority():
+		if p.is_multiplayer_authority():
 			p.inventory.remove_key(KEY)
 	_key_vis.visible = true
 	_key_turn.rotation.z = 0.0
