@@ -178,8 +178,10 @@ func _main() -> void:
 	_check(z.inventory.key_items.has("qa_key") and o.inventory.key_items.has("qa_key"), "both bags show the key on the %s's phone" % role)
 
 	# 4. Drops. Both phones count drops the same, so they name them the same.
-	await _sync("drops")
+	# (Counted before the meeting point: the host's drops can reach her phone
+	# in the same moment as its "ready".)
 	var c0: int = level._pickup_counter
+	await _sync("drops")
 	var at := Vector3(2.0, 0.05, -21.0)
 	if role == "host":
 		level.spawn_pickup.rpc("ammo:shells", at, -1, 2)          # for her only
@@ -203,8 +205,8 @@ func _main() -> void:
 	await _wait(2.0)
 	_check(level.get_node_or_null("Drop_%d" % (c0 + 2)) == null, "the shared herb is gone on the %s's phone once Zegan took it" % role)
 	# The host's loot rolls: each survivor gets their own.
-	await _sync("loot")
 	var c1: int = level._pickup_counter
+	await _sync("loot")
 	if role == "host":
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 4242
