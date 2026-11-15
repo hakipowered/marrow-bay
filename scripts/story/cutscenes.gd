@@ -435,6 +435,7 @@ func _say(s: Dictionary, token: int) -> void:
 		var st: AudioStream = load(path)
 		dur = st.get_length()
 		_voice.stream = st
+		_voice.volume_db = float(s.get("vol", 0.0))
 		_voice.play()
 	else:
 		dur = max(2.0, String(s.get("text", "")).length() * 0.065)
@@ -444,6 +445,7 @@ func _say(s: Dictionary, token: int) -> void:
 func _play_voice_file(path: String) -> void:
 	if ResourceLoader.exists(path):
 		_voice.stream = load(path)
+		_voice.volume_db = 0.0
 		_voice.play()
 
 func _sfx(path: String, vol: float, looped := false) -> AudioStreamPlayer:

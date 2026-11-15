@@ -16,6 +16,7 @@ extends Node3D
 
 const VIDEO := "res://assets/story/video/%s.ogv"
 const SFX := "res://assets/story/sfx/%s.ogg"
+const GAME_SFX := "res://assets/audio/sfx/%s.ogg"
 
 const WRECK := Vector3(-8.0, 0.0, -27.6)
 const GATE := Vector3(0.0, 0.0, -14.0)
@@ -142,9 +143,9 @@ func on_cutscene_end(id: String) -> void:
 	match id:
 		"intro":
 			_face_players(GATE)
-			Cutscenes.set_objective("Get through the gates of the Civic Archive")
+			Cutscenes.set_objective("Take Nasri's package to the Civic Archive")
 		"gates":
-			Cutscenes.set_objective("Find the survivors inside the Archive")
+			Cutscenes.set_objective("Find Nasri inside the Archive")
 		"glass":
 			if is_instance_valid(_tally):
 				_tally.queue_free()
@@ -162,39 +163,76 @@ func on_cutscene_end(id: String) -> void:
 			_to_chapter2()
 
 ## Prologue: the narrated film, the crash film, then the street in the engine.
+## Film cue times come from tools/story/build_intro.py (it prints them): keep
+## the two in step when the edit changes.
 func _intro() -> Array:
 	var narr := func(at: float, n: int, text: String) -> Dictionary:
 		return {"at": at, "do": "say", "who": "narrator", "line": "n_intro_%d" % n, "text": text}
+	var line := func(at: float, who: String, id: String, text: String) -> Dictionary:
+		return {"at": at, "do": "say", "who": who, "line": id, "text": text}
+	var sub := func(at: float, who: String, text: String, t: float) -> Dictionary:
+		return {"at": at, "do": "sub", "who": who, "text": text, "t": t}
+	var sfx := func(at: float, file: String, vol: float) -> Dictionary:
+		return {"at": at, "do": "sfx", "file": file, "vol": vol}
 	return [
 		{"do": "fade", "to": 1.0, "t": 0.0},
 		{"do": "music", "track": "story_intro"},
 		{"do": "loop", "file": SFX % "rain", "vol": -16.0},
+		# The city, the tunnel worker waking (one shot), the blackout, the title,
+		# then Zegan's last call: the flatline, the sheet, the radio nobody
+		# answers, Obcera riding, the dead man sitting up and grabbing him.
 		{"do": "video", "file": VIDEO % "intro_a", "cues": [
 			{"at": 0.0, "do": "fade", "to": 0.0, "t": 0.2},
 			narr.call(1.5, 1, "Every city keeps a ledger. Births. Deaths. Debts."),
-			{"at": 11.8, "do": "sfx", "file": SFX % "tunnel", "vol": -9.0},
+			sfx.call(11.8, SFX % "tunnel", -9.0),
 			narr.call(12.0, 2, "Three weeks ago, the Deep Tunnel crews broke into something the city had buried in 1891."),
 			narr.call(22.05, 3, "The men came home with a fever. They slept for two days... and woke up hungry."),
 			narr.call(33.0, 4, "City Hall called it the flu. They locked the evidence in the Archive... and kept the river festival going."),
-			{"at": 43.3, "do": "sfx", "file": SFX % "blackout", "vol": -6.0},
+			sfx.call(43.3, SFX % "blackout", -6.0),
 			narr.call(43.5, 5, "Tonight, the quarantine failed. The lights went out across downtown. And the Archive, the city's storm shelter, stopped answering the radio."),
-			{"at": 57.1, "do": "sfx", "file": SFX % "ambulance", "vol": -12.0},
+			sfx.call(57.1, SFX % "ambulance", -12.0),
 			narr.call(57.35, 6, "That night, RaGoon City stopped counting the living."),
-			{"at": 63.45, "do": "sfx", "file": SFX % "title_hit", "vol": -3.0},
+			sfx.call(63.45, SFX % "title_hit", -3.0),
 			{"at": 63.5, "do": "title", "text": "RAGOON CITY", "t": 3.6},
 			narr.call(67.2, 7, "Two strangers drove into it at the same moment. A paramedic, finishing his last call..."),
-			narr.call(81.0, 8, "...and a courier, carrying a sealed package addressed to the Archive."),
+			sfx.call(74.09, SFX % "flatline", -10.0),
+			line.call(84.09, "zegan", "z_lc_radio", "Dispatch, Medic Twelve. No pulse, no response... I'm bringing him in."),
+			sfx.call(88.99, SFX % "radio_static", -6.0),
+			sub.call(91.16, "zegan", "...Dispatch?", 1.4),
+			narr.call(94.18, 8, "...and a courier, carrying a sealed package addressed to the Archive."),
+			sfx.call(100.84, SFX % "sheet_rise", -4.0),
+			sfx.call(105.64, GAME_SFX % "zombie_attack_1", -2.0),
+			line.call(105.84, "zegan", "z_lc_grab", "No... NO! GET OFF ME!"),
+			sfx.call(108.64, SFX % "skid", -6.0),
+			sfx.call(114.08, SFX % "ambulance", -6.0),
 		]},
+		# The crash, Obcera pulling him out of the dead man's hands, and the
+		# talk by the wreck: her brother's note, his reason to come, their names.
 		{"do": "video", "file": VIDEO % "intro_b", "hold": true, "cues": [
-			{"at": 0.0, "do": "sfx", "file": SFX % "crash", "vol": 0.0},
-			{"at": 0.8, "do": "loop", "file": SFX % "fire", "vol": -14.0},
-			{"at": 10.92, "do": "say", "who": "obcera", "line": "lc_1", "text": "You alive? Or are you gonna bite me too?"},
-			{"at": 14.92, "do": "say", "who": "zegan", "line": "lc_2", "text": "Ask me again in a minute."},
-			{"at": 17.95, "do": "sub", "who": "zegan", "text": "My patient... he was dead. He was dead, and he sat up.", "t": 5.4},
-			{"at": 23.46, "do": "say", "who": "obcera", "line": "lc_3", "text": "Yeah. The whole street's doing it."},
-			{"at": 26.73, "do": "sub", "who": "obcera", "text": "The Archive's at the end of this block. That's where I'm going. Stay close, paramedic.", "t": 5.0},
+			sfx.call(0.55, SFX % "crash", 0.0),
+			{"at": 1.4, "do": "loop", "file": SFX % "fire", "vol": -14.0},
+			{"at": 8.59, "do": "say", "who": "zegan", "line": "z_lc_help", "text": "HELP! SOMEBODY HELP ME!", "vol": -3.0},
+			sfx.call(16.12, GAME_SFX % "zombie_attack_3", -3.0),
+			line.call(16.72, "zegan", "z_lc_strain", "Get... OFF!"),
+			line.call(20.27, "obcera", "o_lc_off", "GET OFF HIM!"),
+			sfx.call(21.31, SFX % "door_hit", 0.0),
+			sfx.call(22.06, GAME_SFX % "melee_hit_1", 0.0),
+			line.call(28.8, "obcera", "lc_1", "You alive? Or are you gonna bite me too?"),
+			line.call(32.8, "zegan", "lc_2", "Ask me again in a minute."),
+			sub.call(35.83, "zegan", "My patient... he was dead. He was dead, and he sat up.", 5.4),
+			line.call(41.34, "obcera", "lc_3", "Yeah. The whole street's doing it."),
+			line.call(49.23, "zegan", "z_lc_that", "You nearly died... for that?"),
+			line.call(52.16, "obcera", "o_lc_brother", "My brother sent it. Nasri. First word from him in two years."),
+			sub.call(57.49, "obcera", "One line with it: \"Put it in my hands at the Archive. Tonight. Tell no one.\"", 6.3),
+			line.call(64.42, "zegan", "z_lc_shelter", "The Archive's the storm shelter. Half the district went there."),
+			line.call(68.42, "obcera", "o_lc_come", "Then they'll need a medic. And I need somebody watching my back. Come with me."),
+			line.call(73.49, "zegan", "z_lc_lost", "I couldn't save him. I'm not losing anybody else tonight."),
+			line.call(82.69, "obcera", "o_lc_name", "Obcera."),
+			line.call(83.79, "zegan", "z_lc_name", "Zegan."),
 		]},
-		# Into the engine: the wreck burning in the rain, the two of them, the gates.
+		{"do": "wait", "t": 0.6},
+		# Into the engine: the wreck burning in the rain, the two of them on
+		# their feet, then both turn to the Archive at the end of the street.
 		{"do": "fade", "to": 1.0, "t": 0.0},
 		{"do": "call", "fn": "_intro_stage"},
 		{"do": "bars", "on": true, "t": 0.0},
@@ -203,12 +241,12 @@ func _intro() -> Array:
 		{"do": "fade", "to": 0.0, "t": 1.6},
 		{"do": "shake", "amount": 0.015, "t": 2.5},
 		{"do": "wait", "t": 2.6},
-		{"do": "cam", "pos": Vector3(1.4, 1.2, -21.2), "look": Vector3(-2.0, 0.7, -23.4), "fov": 46.0},
-		{"do": "call", "fn": "_zegan_up"},
-		{"do": "cam", "pos": Vector3(1.0, 1.35, -21.6), "look": Vector3(-2.0, 1.1, -23.3), "t": 3.6, "block": false},
-		{"do": "wait", "t": 2.4},
+		{"do": "cam", "pos": Vector3(1.4, 1.5, -21.2), "look": Vector3(-1.75, 1.3, -23.2), "fov": 46.0},
+		{"do": "cam", "pos": Vector3(1.0, 1.55, -21.6), "look": Vector3(-1.75, 1.35, -23.1), "t": 3.6, "block": false},
+		{"do": "wait", "t": 0.5},
 		{"do": "call", "fn": "_gesture", "args": ["obcera", "call"]},
-		{"do": "wait", "t": 1.6},
+		{"do": "call", "fn": "_face_gates"},
+		{"do": "wait", "t": 2.6},
 		{"do": "cam", "pos": Vector3(-2.6, 1.6, -26.4), "look": Vector3(0.0, 2.4, -14.0), "fov": 55.0},
 		{"do": "cam", "pos": Vector3(-1.8, 3.6, -27.4), "look": Vector3(0.0, 3.2, -14.0), "t": 6.0, "block": false},
 		{"do": "chapter", "num": "PROLOGUE", "name": "LAST CALL", "t": 4.6},
@@ -234,7 +272,7 @@ func _gates() -> Array:
 		{"do": "say", "who": "zegan", "line": "z_gate_windows", "text": "It's not. Look at the windows."},
 		{"do": "wait", "t": 1.4},
 		{"do": "cam", "pos": Vector3(2.2, 1.62, -18.7), "look": Vector3(0.7, 1.5, -17.0), "fov": 45.0},
-		{"do": "say", "who": "obcera", "line": "o_gate_brother", "text": "My brother works in there. This package goes to him tonight."},
+		{"do": "say", "who": "obcera", "line": "o_gate_nasri", "text": "Nasri's in there. He has to be."},
 		{"do": "cam", "pos": Vector3(-2.3, 1.6, -18.6), "look": Vector3(-0.8, 1.55, -17.1), "fov": 45.0},
 		{"do": "call", "fn": "_gesture", "args": ["zegan", "call"]},
 		{"do": "say", "who": "zegan", "line": "z_gate_go", "text": "Then let's go find him."},
@@ -427,24 +465,23 @@ func _clear_scene_bits() -> void:
 	_scene_bits.clear()
 	_stand_in = null
 
+## The film ends with Obcera pulling Zegan to his feet by the wreck, so the
+## engine picks up with both of them standing there, facing each other.
 func _intro_stage() -> void:
-	var z := _place("zegan", Vector3(-2.4, 0.0, -23.7), Vector3(-1.4, 0.0, -22.8))
-	if z:
-		z.hold_end("knockdown")
-	_place("obcera", Vector3(-1.3, 0.0, -22.9), Vector3(-2.4, 0.0, -23.7))
+	_place("zegan", Vector3(-2.2, 0.0, -23.5), Vector3(-1.3, 0.0, -22.9))
+	_place("obcera", Vector3(-1.3, 0.0, -22.9), Vector3(-2.2, 0.0, -23.5))
 
-func _zegan_up() -> void:
-	var z := _model_of("zegan")
-	if z:
-		z.play_once("stand_up", 0.15, 0.9)
-	# Then both turn toward the gates.
-	get_tree().create_timer(2.4).timeout.connect(func():
+## Both turn toward the gates at the end of the street.
+func _face_gates() -> void:
+	get_tree().create_timer(0.6).timeout.connect(func():
 		for ch in ["zegan", "obcera"]:
 			var m := _model_of(ch)
 			if m:
-				var tw := create_tween()
 				var holder: Node3D = m.get_parent() if _player_of(ch) else m
-				tw.tween_property(holder, "rotation:y", _yaw_to(holder.global_position, GATE), 0.8).set_trans(Tween.TRANS_SINE))
+				var from := holder.rotation.y
+				var to := _yaw_to(holder.global_position, GATE)
+				create_tween().tween_method(func(k: float): holder.rotation.y = lerp_angle(from, to, k),
+						0.0, 1.0, 0.8).set_trans(Tween.TRANS_SINE))
 
 func _gates_stage() -> void:
 	_place("zegan", Vector3(-0.9, 0.0, -17.3), GATE + Vector3(-0.4, 0, 0))
