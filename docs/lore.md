@@ -145,19 +145,31 @@ ambulances. Rough voice, dry humour, bad knees, steady hands. Says little when
 it matters and makes a joke when it doesn't. Patches up everyone, including
 Obcera, who hates it.
 - **Tonight:** his last call was a tunnel worker found in a stairwell, no pulse.
-  The man sat up in the back of the ambulance and Zegan could not stop him. That
-  is the first thing he can't fix, and he wants to save one person before sunrise.
-- **His secret:** the patient scratched him. He doesn't tell anyone until Dr.
-  Atsa looks at him in Ch. 7 ("You've known since the ambulance.").
+  He did CPR in the back until the monitor read zero, called it, covered the
+  man's face and drove him in alone. Dispatch never answered the radio. The body
+  sat up under the sheet and came through the cab window at him; the ambulance
+  swerved across Ashgrove Street into Obcera's bike and rolled. Pinned in the
+  wreck with the dead man on top of him, he was a second from being bitten when
+  Obcera tore it off him with her bike lock. That patient is the first thing he
+  couldn't fix: "I couldn't save him. I'm not losing anybody else tonight."
+- **His secret:** the patient scratched him on the side of the neck in the cab.
+  The prologue only shows him touching the spot. He doesn't tell anyone until
+  Dr. Atsa looks at him in Ch. 7 ("You've known since the ambulance.").
 - **Pronunciation:** ZEH-gan.
 
 ### Obcera (playable)
 Motorcycle courier, 27. Fast, loud, fearless, the best shot in any room. Knows
 every alley in the city because she has ridden all of them at night. "Obi" to
 her brother and to nobody else.
-- **Tonight:** her estranged brother Nasri sent her a sealed package to deliver
-  to the Archive by midnight. They haven't spoken in two years. She wants to put
-  it in his hands and ask him why.
+- **Tonight:** two days ago her estranged brother Nasri sent her a sealed
+  package, the first word from him in two years, with one line: "Put it in my
+  hands at the Archive. Tonight. Tell no one." She doesn't know what's inside
+  and hasn't opened it. She wants to put it in his hands and ask him why. After
+  the crash she tells Zegan all of that and asks him to come: the Archive is the
+  storm shelter, so the people there will need a medic, and she needs somebody
+  watching her back. They only swap names once he has said yes.
+- **Carries:** a steel U-lock for the bike, which is what she hits the dead man
+  in the ambulance with. She rides without a helmet.
 - **The package:** a lead-lined film can holding microfilm copies of the 1891
   burial ledger, the depot ward's medical reports, and the memo in which Naghal
   orders the files sealed. Nasri sent it to her because she is the one person
@@ -249,7 +261,7 @@ The story's one motif. Use it, don't explain it.
 
 | # | Chapter | Cutscene id / file | State |
 |---|---|---|---|
-| 0 | **Last Call** (prologue) | `intro` in `scripts/story/chapter1_story.gd`: narrated film `assets/story/video/intro_a.ogv`, crash and dialogue `intro_b.ogv`, then the burning wreck in the engine | done |
+| 0 | **Last Call** (prologue) | `intro` in `scripts/story/chapter1_story.gd`. Film `assets/story/video/intro_a.ogv`: the narrated city, the tunnel worker opening his eyes (one shot), Zegan's CPR and flatline, the covered body, the radio nobody answers, Obcera riding, the body sitting up and grabbing Zegan, the swerve. Film `intro_b.ogv`: the crash, Obcera getting up and running to the overturned ambulance, the dead man pinning Zegan, her U-lock, getting him out, the package and her brother's note, her asking him to come, his reason, their names. Then the burning wreck in the engine. Both films are cut by `tools/story/build_intro.py` (sources in the project files under `story-film/`) | done |
 | 1 | **Shelter** | `gates`: the gates and banner, faces at the windows, chapter card | done |
 | 1 | | `warden`: Hardass in the office, gives the vault elevator key card (`vault_card`) | done |
 | 1 | | `glass`: the Tallyman behind the frosted pane | done |
