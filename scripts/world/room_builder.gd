@@ -13,6 +13,8 @@ class_name RoomBuilder
 ##   stretch of the side gets a wall), wall_inset: {"s": 0.25} (see below),
 ##   pilasters: {sides, spacing, width, depth, slot}, beams: {axis "x"|"z"|"both", spacing, depth, width, slot},
 ##   decals: {"blood": n, "stain": n, "scorch": n, "wall_blood": n}, papers: n, probe: bool,
+##   floor_holes: [[x, z, w, d]] (local; left open in the floor slab for a pit the level
+##                builds itself, like the pump room's sump; keep papers and decals off it)
 ##   ceiling_holes: [[x, z, w, d]] (local; a broken-through hole with a dark crawlspace above)
 ##                  [[x, z, w, d, {"vent": true}]]: an air vent instead, a metal duct
 ##                  with a grille that a ventling bursts out through (VentGrille)
@@ -43,7 +45,7 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 	# Floors and ceilings are split into chunks: the Mobile renderer caps how many
 	# lights and decals touch one mesh, so one giant slab would drop lights.
 	var floor_mat := Mats.surface(r["floor"], _merge(base, r.get("floor_look", {"tile_size": 2.0})))
-	_chunked(root, size, -0.1, floor_mat)
+	_chunked(root, size, -0.1, floor_mat, r.get("floor_holes", []))
 	if not r.get("outdoor", false):
 		var ceil_look := _merge(base, {"grime_amount": 0.0, "stain_amount": 0.0, "tile_size": 3.0})
 		var holes: Array = r.get("ceiling_holes", [])
@@ -408,6 +410,9 @@ static func _dress(root: Node3D, r: Dictionary, size: Vector3, base: Dictionary)
 			d.modulate = Color(1, 1, 1, 0.85 if kind == "blood" else 0.55)
 			d.position = Vector3(rng.randf_range(1.0, size.x - 1.0), 0.05, rng.randf_range(1.0, size.z - 1.0))
 			d.rotation.y = rng.randf() * TAU
+			if _over_hole(r, d.position):
+				d.free()
+				continue
 			root.add_child(d)
 	for i in dec.get("wall_blood", 0):
 		var side: String = ["n", "s", "e", "w"][rng.randi() % 4]
@@ -450,6 +455,9 @@ static func _dress(root: Node3D, r: Dictionary, size: Vector3, base: Dictionary)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mi.position = Vector3(rng.randf_range(0.6, size.x - 0.6), 0.006 + i * 0.0004, rng.randf_range(0.6, size.z - 0.6))
 			mi.rotation.y = rng.randf() * TAU
+			if _over_hole(r, mi.position):
+				mi.free()
+				continue
 			root.add_child(mi)
 	if r.get("probe", false):
 		var rp := ReflectionProbe.new()
@@ -459,6 +467,14 @@ static func _dress(root: Node3D, r: Dictionary, size: Vector3, base: Dictionary)
 		rp.interior = not r.get("outdoor", false)
 		rp.update_mode = ReflectionProbe.UPDATE_ONCE
 		root.add_child(rp)
+
+## Whether a point on the floor (local) is over one of the room's floor
+## holes, with a margin for the thing's own size.
+static func _over_hole(r: Dictionary, at: Vector3, margin := 0.5) -> bool:
+	for h in r.get("floor_holes", []):
+		if Rect2(h[0] - margin, h[1] - margin, h[2] + margin * 2.0, h[3] + margin * 2.0).has_point(Vector2(at.x, at.z)):
+			return true
+	return false
 
 static var _decal_cache: Dictionary = {}
 static func _decal_tex(kind: String, rng: RandomNumberGenerator) -> Texture2D:

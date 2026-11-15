@@ -56,7 +56,9 @@
   "yard_wall": "slumped_mortar_brick",
   "coal": "rocks_ground_09",
   "corrugated_rust": "rusty_corrugated_iron",
-  "flood_steel": "rusty_painted_metal"
+  "flood_steel": "rusty_painted_metal",
+  "cabinet_paint": "green_metal_rust",
+  "sump_wall": "concrete_wall_008"
  },
  "models": [
   "GothicCabinet_01",

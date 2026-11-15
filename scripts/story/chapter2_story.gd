@@ -5,35 +5,55 @@ extends Node3D
 ## The lift stops at the service level and its doors grind open ("c2_arrival").
 ## In the engine hall they find the way on, the flood door, dead on its motor,
 ## and the generator that runs it, dry, without its fuse or its starting
-## handle ("c2_hall"). The diesel is in the coal yard's fuel shed. The fuse
-## is locked in the master clock in the clock gallery; its winding key is in
-## the survey room. Taking the fuse wakes the Tallyman, who comes down the
-## back stair and hunts them through the tunnels ("c2_hunt"). With the diesel
-## and the fuse in, Warden Hardass comes on the tannoy: the starting handle
-## is on his belt, he's in the muster room, he's unbarred the door
-## ("c2_intercom"). He has turned by the time they get there ("c2_warden", the
-## boss fight, WardenBoss). With the handle off his body they crank the
-## generator under attack; it catches, the lights come on, the flood door
-## goes up, and in the deep stacks behind it they find Nasri's staff card and
-## his chalk on the wall ("c2_end").
+## handle ("c2_hall"). The keeper's note in its cabinet says where everything
+## went, and the objective lists each part with where it is:
+##   the diesel is in the coal yard's fuel shed;
+##   the fuse is locked in the master clock in the clock gallery, its winding
+##   key in the survey room (taking the fuse wakes the Tallyman, who comes
+##   down the back stair and hunts them through the tunnels, "c2_hunt");
+##   the starting handle is at the bottom of the flooded sump in the pump room
+##   (PumpRoom: three valves to drain it, a drowned man lying by the handle).
+## With all three in, the Tallyman gives up the hunt (he walks off and is gone
+## once nobody can see him). They crank the generator under attack; it
+## catches and the lights come on, but the flood door's control is locked
+## out. Warden Hardass comes on the tannoy: the key is on his belt, he's in the
+## muster room, he's unbarred the door ("c2_intercom"). He has turned by the
+## time they get there ("c2_warden", the boss fight, WardenBoss). His key in
+## the flood door's key switch raises it, and in the deep stacks behind it
+## they find Nasri's staff card and his chalk on the wall ("c2_end").
+##
+## Saves from before the pump room (update 0.13, where the Warden carried the
+## starting handle and the tannoy came after diesel and fuse) keep that order:
+## OLD_FLOW is set on load when the tannoy scene has played with the lights
+## still off. Then the Warden drops the handle and the door rises on power.
 ##
 ## Like Chapter1Story: Cutscenes asks cutscene(id) for a scene's steps and
 ## calls on_cutscene_end(id) on every phone when it ends or is skipped, and
 ## everything a scene changes for good happens there, so skipping is safe.
 ## The world calls back on every phone: generator_changed(part),
-## clock_opened(), warden_died(pos); and on the host: warden_phase_two(),
-## warden_kneels().
+## clock_opened(), warden_died(pos), item_taken(id), pump_line("dry"),
+## flood_key_turned(); and on the host: warden_phase_two(), warden_kneels(),
+## pump_line(way).
 
 const SFX := "res://assets/audio/sfx/%s.ogg"
 const VOICE := "res://assets/audio/voice/story/%s.ogg"
 
 const OBJ_OUT := "Find a way out of the service tunnels"
+const OBJ_CRANK := "Crank the generator in the engine hall. Keep the infected off whoever is cranking"
+const OBJ_POWER := "The lights are on. Raise the flood door in the engine hall"
+const OBJ_KEY := "The flood door is locked out. Get the Warden's key from Hardass\nin the muster room, off the service tunnel"
+const OBJ_WARDEN_KEY := "The Warden has turned. Put him down and take the flood door key off his belt"
+const OBJ_TURN_KEY := "Turn the Warden's key in the flood door's control box in the engine hall"
+const OBJ_FLOOD := "The flood door is up: go through to the deep stacks"
+const OBJ_END := "End of chapter 2. Chapter 3 is coming in a later build"
+## The 0.13 order (OLD_FLOW): the Warden had the starting handle.
 const OBJ_HANDLE := "Get the generator's starting handle from Hardass in the muster room, off the service tunnel"
 const OBJ_WARDEN := "The Warden has turned: take the starting handle off his belt"
 const OBJ_FIT := "Fit the starting handle to the generator in the engine hall"
-const OBJ_CRANK := "Crank the generator. Keep the infected off whoever is cranking"
-const OBJ_FLOOD := "The flood door is up: go through to the deep stacks"
-const OBJ_END := "End of chapter 2. Chapter 3 is coming in a later build"
+
+## Set on load for a save from before the pump room (see the top).
+const OLD_FLOW := "c2_old_flow"
+const KEY_ID := "c2_flood_key"
 
 const HUNT_FROM := Vector3(32.9, 0.0, -8.3)
 
@@ -52,6 +72,7 @@ var _tally: StoryActor
 var _boss: WardenBoss
 var _kneel_barked := false
 var _bark_player: AudioStreamPlayer
+var _hunt_check := 0.0
 
 func _ready() -> void:
 	add_to_group("story")
@@ -70,11 +91,16 @@ func _ready() -> void:
 ## A game loaded part way through: the boss back in his room, the handle
 ## where he dropped it, the objective on the banner.
 func _restore() -> void:
+	if GameState.has_flag("story_c2_intercom") and not GeneratorSet.running():
+		GameState.set_flag(OLD_FLOW)
 	if GameState.has_flag("story_c2_warden") and not GameState.has_flag("c2_warden_dead"):
 		_spawn_boss(true)
 		_lock_muster(true)
 	if GameState.has_flag("c2_warden_dead"):
-		_drop_handle(_handle_spot())
+		if GameState.has_flag(OLD_FLOW):
+			_drop_handle(_handle_spot())
+		else:
+			_drop_key(_handle_spot())
 	if GameState.has_flag("story_c2_arrival"):
 		# A load at the lift checkpoint puts them in the car: the doors were
 		# already open when they saved.
@@ -88,7 +114,7 @@ func _on_all_ready() -> void:
 		_fired["c2_arrival"] = true
 		Cutscenes.play("c2_arrival")
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if not multiplayer.is_server() or Cutscenes.active or not Cutscenes.all_ready():
 		return
 	# The fuse out of the clock: the Tallyman comes.
@@ -96,8 +122,12 @@ func _physics_process(_delta: float) -> void:
 		if _quiet_all():
 			_fire("c2_hunt")
 		return
-	# Diesel and fuse in: Hardass on the tannoy.
-	if GeneratorSet.fitted("fuel") and GeneratorSet.fitted("fuse") and not _done("c2_intercom"):
+	# Everything's in the generator: he gives up on them for now.
+	if GameState.has_flag("c2_hunt") and not GameState.has_flag("c2_hunt_over") and GeneratorSet.ready_to_crank():
+		_tick_hunt_end(delta)
+	# The lights come on: Hardass on the tannoy. (A save from before the
+	# pump room has heard him already: OLD_FLOW.)
+	if GeneratorSet.running() and not _done("c2_intercom"):
 		if _quiet_all("c2_intercom"):
 			_fire("c2_intercom")
 		return
@@ -149,42 +179,135 @@ func _quiet(at: Vector3, id := "") -> bool:
 
 # ================================================================== objectives
 
-## What the generator still needs, in words, with where to look once they
-## know.
+## What the generator still needs, one line each, with where it is (the
+## pause menu shows it too, so nobody has to remember the keeper's note).
 static func gen_objective() -> String:
-	var need: Array = []
+	var lines: Array = []
 	if not GeneratorSet.fitted("fuel"):
-		need.append("diesel (the coal yard)")
+		if GameState.has_flag("taken:c2_diesel"):
+			lines.append("Diesel: you have it. Pour it into the generator's tank")
+		else:
+			lines.append("Diesel: a can in the fuel shed, out in the coal yard")
 	if not GeneratorSet.fitted("fuse"):
-		need.append("its field fuse")
+		if GameState.has_flag("taken:" + MasterClock.FUSE_ID):
+			lines.append("Field fuse: you have it. Fit it in the generator's cabinet")
+		elif GameState.has_flag(MasterClock.FLAG):
+			lines.append("Field fuse: in the master clock's drawer, clock gallery")
+		elif GameState.has_flag("taken:c2_clock_key"):
+			lines.append("Field fuse: locked in the master clock, clock gallery. Wind it with the brass key")
+		else:
+			lines.append("Field fuse: locked in the master clock, clock gallery. Its winding key is in the survey room")
 	if not GeneratorSet.fitted("crank"):
-		need.append("the starting handle")
-	if need.is_empty():
+		if GameState.has_flag("taken:" + PumpRoom.HANDLE_ID):
+			lines.append("Starting handle: you have it. Fit it to the generator's crank")
+		elif PumpRoom.drained():
+			lines.append("Starting handle: in the drained sump, pump room off the service tunnel")
+		else:
+			lines.append("Starting handle: under the water in the sump, pump room off the service tunnel")
+	if lines.is_empty():
 		return OBJ_CRANK
-	var list: String = need[0] if need.size() == 1 else ", ".join(need.slice(0, need.size() - 1)) + " and " + need[-1]
-	return "Start the generator in the engine hall: it still needs " + list
+	return "Start the generator in the engine hall. Still needed:\n- " + "\n- ".join(lines)
+
+## The generator's list again after something changed (every phone).
+func _refresh_gen_objective() -> void:
+	if GameState.has_flag(OLD_FLOW) or not GameState.has_flag("story_c2_hall") or GeneratorSet.running():
+		return
+	Cutscenes.set_objective(gen_objective())
 
 ## generator_changed from GeneratorSet, on every phone.
 func generator_changed(part: String) -> void:
 	match part:
 		"running":
 			GameState.set_flag("c2_hunt_over")
-			Cutscenes.set_objective(OBJ_FLOOD)
+			# Before the pump room the door rose with the power; now it
+			# wants the Warden's key (the tannoy scene follows).
+			if GameState.has_flag(OLD_FLOW):
+				Cutscenes.set_objective(OBJ_FLOOD)
+			elif not GameState.has_flag(FloodDoor.FLAG):
+				Cutscenes.set_objective(OBJ_POWER)
 			if multiplayer.is_server():
 				_rpc_bark.rpc("obcera", "o_g_lights", "Lights! We've got lights!")
-		"crank":
-			Cutscenes.set_objective(OBJ_CRANK)
 		_:
-			# The tannoy scene follows once the second part is in; until
-			# then, say what's still missing.
-			if not (GeneratorSet.fitted("fuel") and GeneratorSet.fitted("fuse")) or GameState.has_flag("story_c2_intercom"):
-				Cutscenes.set_objective(gen_objective())
+			if GameState.has_flag(OLD_FLOW):
+				if part == "crank":
+					Cutscenes.set_objective(OBJ_CRANK)
+			else:
+				_refresh_gen_objective()
 
 ## The master clock struck and the drawer sprang open (every phone).
 func clock_opened() -> void:
 	var hud := get_tree().get_first_node_in_group("hud")
 	if hud:
 		hud.toast("The drawer in the clock's plinth sprang open.")
+	_refresh_gen_objective()
+
+## Pickup, on every phone, when anything with an id is picked up. (The fuse
+## brings the hunt scene, which says what's next itself.)
+func item_taken(id: String) -> void:
+	if id in ["c2_diesel", "c2_clock_key", PumpRoom.HANDLE_ID]:
+		_refresh_gen_objective()
+
+## PumpRoom: what the water in the sump is doing. Host, once each time it
+## starts going a new way; "dry" on every phone when it's empty.
+const PUMP_LINES := {
+	"backflow": ["obcera", "o_p_back", "It's coming back up the drain. Something's pushing it back."],
+	"holding": ["zegan", "z_p_feed", "It's draining. But the river's still pouring in."],
+	"draining": ["obcera", "o_p_drain", "That's it. It's going down."],
+	"dry": ["zegan", "z_p_body", "There's the handle. And whoever went in after it."],
+}
+
+func pump_line(way: String) -> void:
+	if way == "dry":
+		_refresh_gen_objective()
+		if GameState.has_flag(OLD_FLOW):
+			return   # nothing down there for them in that order
+	if multiplayer.is_server() and PUMP_LINES.has(way):
+		var l: Array = PUMP_LINES[way]
+		_rpc_bark.rpc(l[0], l[1], l[2])
+
+## FloodDoor, every phone: the Warden's key is in and turned.
+func flood_key_turned(powered: bool) -> void:
+	Cutscenes.set_objective(OBJ_FLOOD if powered else OBJ_POWER)
+	if multiplayer.is_server() and powered:
+		_rpc_bark.rpc("zegan", "z_k_turn", "Key's in. Stand clear of the door.")
+
+## Host: with everything in the generator the Tallyman stops hunting them.
+## If nobody can see him he's simply gone; if they can, he turns and walks
+## back the way he came until they can't.
+func _tick_hunt_end(delta: float) -> void:
+	_hunt_check -= delta
+	if _hunt_check > 0.0:
+		return
+	_hunt_check = 0.5
+	for s in get_tree().get_nodes_in_group("stalker"):
+		if not s.active:
+			continue
+		if _seen(s) and s.global_position.distance_to(HUNT_FROM) > 2.0:
+			if not s.leaving:
+				s.leave(HUNT_FROM)
+			return
+	_rpc_hunt_over.rpc()
+
+func _seen(s: Node3D) -> bool:
+	var space := get_world_3d().direct_space_state
+	for p in _players():
+		var eye: Vector3 = p.global_position + Vector3.UP * 1.5
+		var him := s.global_position + Vector3.UP * 1.8
+		if eye.distance_to(him) > 30.0:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(eye, him, 1, [p.get_rid(), s.get_rid()])
+		if space.intersect_ray(q).is_empty():
+			return true
+	return false
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_hunt_over() -> void:
+	GameState.set_flag("c2_hunt_over")
+	for s in get_tree().get_nodes_in_group("stalker"):
+		s.deactivate()
+	if multiplayer.is_server():
+		await get_tree().create_timer(1.5).timeout
+		_rpc_bark.rpc("obcera", "o_t_gone", "He stopped following us. For now.")
 
 ## The generator's first wave (GeneratorSet, host).
 func generator_wave(i: int) -> void:
@@ -203,15 +326,19 @@ func warden_kneels() -> void:
 		_kneel_barked = true
 		_rpc_bark.rpc("obcera", "o_w_down", "He's down! Hit the growth on his back!")
 
-## Every phone, from WardenBoss when he dies: the handle drops off his
-## belt, the door unbars.
+## Every phone, from WardenBoss when he dies: the flood door key (before
+## the pump room, the starting handle) drops off his belt, the door unbars.
 func warden_died(pos: Vector3) -> void:
 	GameState.set_flag("c2_warden_dead")
 	var at := pos + Vector3(0.0, 0.05, 0.0)
 	GameState.set_flag("c2_handle_at", [at.x, at.y, at.z])
-	_drop_handle(at)
 	_lock_muster(false)
-	Cutscenes.set_objective(OBJ_FIT)
+	if GameState.has_flag(OLD_FLOW):
+		_drop_handle(at)
+		Cutscenes.set_objective(OBJ_FIT)
+	else:
+		_drop_key(at)
+		Cutscenes.set_objective(OBJ_TURN_KEY)
 	if multiplayer.is_server():
 		_bark_pair()
 
@@ -226,6 +353,13 @@ func _handle_spot() -> Vector3:
 	if a is Array and a.size() == 3:
 		return Vector3(float(a[0]), float(a[1]), float(a[2]))
 	return Undercroft.WARDEN_SEAT + Vector3(0.0, 0.05, -1.2)
+
+func _drop_key(at: Vector3) -> void:
+	if GameState.has_flag("taken:" + KEY_ID) or GameState.has_flag(FloodDoor.KEY_FLAG):
+		return
+	var level := get_tree().get_first_node_in_group("level")
+	if level and not level.has_node("Pickup_" + KEY_ID):
+		level.place_pickup("key:flood_key", at, KEY_ID)
 
 func _drop_handle(at: Vector3) -> void:
 	if GameState.has_flag("taken:c2_crank") or GeneratorSet.fitted("crank"):
@@ -313,7 +447,7 @@ func on_cutscene_end(id: String) -> void:
 			Cutscenes.set_objective(gen_objective())
 		"c2_intercom":
 			GameState.set_flag("unlocked:muster_door")
-			Cutscenes.set_objective(OBJ_HANDLE)
+			Cutscenes.set_objective(OBJ_HANDLE if GameState.has_flag(OLD_FLOW) else OBJ_KEY)
 		"c2_warden":
 			# The Tallyman lost them down here; the Warden is enough.
 			GameState.set_flag("c2_hunt_over")
@@ -331,7 +465,7 @@ func on_cutscene_end(id: String) -> void:
 			for p in _players():
 				if p.global_position.z < 5.0 and p.global_position.x > 24.0 and p.global_position.x < 28.0:
 					p.global_position.z = 5.6
-			Cutscenes.set_objective(OBJ_WARDEN)
+			Cutscenes.set_objective(OBJ_WARDEN if GameState.has_flag(OLD_FLOW) else OBJ_WARDEN_KEY)
 		"c2_end":
 			GameState.set_flag("c2_complete")
 			Cutscenes.set_objective(OBJ_END)
@@ -456,7 +590,8 @@ func _hunt_door() -> void:
 func _tally_in() -> Signal:
 	return _tally.walk_to(HUNT_FROM, 0.95, "stalk")
 
-## Hardass on the tannoy: the handle is on his belt, he's in the muster room.
+## Hardass on the tannoy once the lights are on: the flood door is locked
+## out, the key is on his belt, he's in the muster room.
 func _intercom() -> Array:
 	return [
 		{"do": "call", "fn": "_intercom_stage"},
@@ -467,9 +602,12 @@ func _intercom() -> Array:
 		{"do": "wait", "t": 0.9},
 		{"do": "say", "who": "hardass", "line": "h_pa_1", "text": "...is this on. You two. From upstairs."},
 		{"do": "cam", "pos": Vector3(49.4, 1.4, 2.2), "look": Vector3(48.2, 1.1, 0.3), "fov": 42.0},
-		{"do": "say", "who": "hardass", "line": "h_pa_2", "text": "Fuel in. Fuse in. You're nearly there."},
+		{"do": "say", "who": "hardass", "line": "h_pa_2", "text": "You got the old engine running. I heard her from here."},
+		{"do": "cam", "pos": Vector3(47.3, 1.6, 9.4), "look": Undercroft.FLOOD_AT + FloodDoor.BOX_FROM_HALL, "fov": 40.0},
+		{"do": "cam", "pos": Vector3(47.5, 1.55, 9.9), "look": Undercroft.FLOOD_AT + FloodDoor.BOX_FROM_HALL, "fov": 36.0, "t": 4.5, "block": false},
+		{"do": "say", "who": "hardass", "line": "h_pa_3", "text": "But the flood door's locked out. It won't lift without my key."},
 		{"do": "cam", "pos": Vector3(44.2, 1.6, 3.4), "look": Undercroft.PA_HORN, "fov": 48.0},
-		{"do": "say", "who": "hardass", "line": "h_pa_3", "text": "The starting handle's on my belt. Muster room, off the tunnel. I've unbarred the door."},
+		{"do": "say", "who": "hardass", "line": "h_pa_5", "text": "It's on my belt. Muster room, off the tunnel. I've unbarred the door."},
 		{"do": "cam", "pos": Vector3(47.0, 1.6, 3.6), "look": Vector3(45.3, 1.5, 1.9), "fov": 46.0},
 		{"do": "say", "who": "obcera", "line": "o_pa_help", "text": "Warden? You sound hurt. Let us help you."},
 		{"do": "cam", "pos": Vector3(42.0, 1.55, 1.0), "look": Undercroft.PA_HORN, "fov": 34.0},
@@ -499,7 +637,7 @@ func _warden() -> Array:
 		{"do": "cam", "pos": S + Vector3(0.55, 1.08, -1.8), "look": S + Vector3(0.0, 1.2, 0.0), "fov": 36.0, "t": 9.0, "block": false},
 		{"do": "say", "who": "hardass", "line": "h_w_counted", "text": "Forty-one. I counted every one of them in."},
 		{"do": "say", "who": "hardass", "line": "h_w_out", "text": "Not one of them went out.", "gap": 0.6},
-		{"do": "say", "who": "hardass", "line": "h_w_take", "text": "The handle's on my belt. Take it... if you can."},
+		_take_line(),
 		{"do": "call", "fn": "_warden_turn"},
 		{"do": "shake", "amount": 0.02, "t": 2.6},
 		{"do": "sfx", "file": SFX % "warden_pain_1", "vol": 0.0},
@@ -515,6 +653,13 @@ func _warden() -> Array:
 		{"do": "title", "text": "THE LAST WARDEN", "sub": "Warden Jackson Hardass", "t": 3.0},
 		{"do": "fade", "to": 1.0, "t": 0.4},
 	]
+
+## What he says he's got on his belt: the key (before the pump room, the
+## handle).
+func _take_line() -> Dictionary:
+	if GameState.has_flag(OLD_FLOW):
+		return {"do": "say", "who": "hardass", "line": "h_w_take", "text": "The handle's on my belt. Take it... if you can."}
+	return {"do": "say", "who": "hardass", "line": "h_w_key", "text": "The key's on my belt. Take it... if you can."}
 
 func _warden_stage() -> void:
 	_place("zegan", Vector3(25.4, 0.0, 6.2), Undercroft.WARDEN_SEAT)

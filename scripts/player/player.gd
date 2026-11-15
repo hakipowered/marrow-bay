@@ -550,7 +550,9 @@ func _tick_roll(delta: float) -> void:
 		_roll_cd = 0.25
 
 ## The clips that are chores (Player.working): the weapon is put away.
-const WORK_CLIPS := ["crank"]
+## "valve" (turning a handwheel in the pump room) stands still while
+## HandsOnGrip pulls the hands round the wheel (CharacterModel.play).
+const WORK_CLIPS := ["crank", "valve"]
 
 func start_work(clip: String, face_yaw: float) -> void:
 	if downed or dead or rolling:

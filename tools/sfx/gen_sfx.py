@@ -113,6 +113,14 @@ SOUNDS = {
     "drawer_open": (1, 0.8, -17, "a spring-loaded wooden drawer in a clock's plinth snapping open"),
     "pa_crackle": (1, 1.6, -18, "an old public address loudspeaker crackling on with static and a short feedback whine"),
     "door_bang": (2, 1.2, -12, "something huge pounding a steel door from the other side: one heavy booming impact, the door rattling in its frame"),
+    # The pump room's sump (chapter 2)
+    "valve_turn": (3, 1.6, -16, "turning a big rusty cast iron gate valve handwheel by hand: a grinding metal squeal, the stem creaking, water knocking in the pipe"),
+    "sump_inlet": (1, 5.0, -20, "river water gushing hard out of a big pipe under the surface of a deep flooded concrete pit: churning bubbling roar, constant, loopable"),
+    "sump_drain": (1, 5.0, -19, "a deep flooded pit draining fast through a floor grating: a heavy swirling gurgle and sucking whirlpool roar in a concrete room, constant, loopable"),
+    "sump_backflow": (2, 2.4, -16, "dirty water forced back up through a floor drain from a sewer: deep belching gurgles and burbling bubbles"),
+    "sump_empty": (1, 3.0, -16, "the last water sucked down a floor drain: a long slurping gurgle that ends in drips echoing in an empty concrete pit"),
+    "gate_chain": (1, 1.4, -17, "unhooking a heavy chain from a steel railing gate and swinging the gate open: chain rattle and a creaking hinge"),
+    "key_switch": (1, 1.0, -16, "turning a heavy old key in an industrial key switch: a stiff metal click and a relay clunk"),
     # The Warden (chapter 2 boss): a big man, turned
     "warden_growl": (3, 2.2, -18, "a huge man turned into a monster: a deep wet rattling growl through clenched teeth, heavy breathing"),
     "warden_roar": (2, 2.6, -11, "a huge man turned into a monster roaring in rage, deep ragged human voice tearing, echoing"),

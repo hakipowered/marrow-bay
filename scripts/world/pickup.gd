@@ -88,9 +88,20 @@ static func item_string(id: String) -> String:
 func display_name() -> String:
 	return ItemInfo.display_name(bag_id())
 
+## Why it won't go in: every stack of it is already full and no slot is
+## free (a stack of 9 mm holds 100), or the bag is simply full.
+func _no_room_line(inv: Inventory) -> String:
+	var id := bag_id()
+	if item.begins_with("ammo:"):
+		id = Inventory.ammo_id(item.substr(5))
+	var have := inv.count(id)
+	if have > 0 and ItemInfo.stack(id) > 1:
+		return "Your %s are full (%d) and every bag slot is taken. Drop or combine something to make room." % [display_name(), have]
+	return "No room in your bag for %s. Open the bag to combine or drop something." % display_name()
+
 func interact_text(player: Node) -> String:
 	if player and player.get("inventory") and not player.inventory.can_take(item):
-		return "Bag full: " + display_name()
+		return "Can't carry more " + display_name()
 	return "Pick up " + display_name()
 
 func interact(player: Node) -> void:
@@ -99,7 +110,7 @@ func interact(player: Node) -> void:
 	if player.get("inventory") and not player.inventory.can_take(item):
 		var hud := get_tree().get_first_node_in_group("hud")
 		if hud:
-			hud.toast("No room in your bag for %s. Open the bag to combine or drop something." % display_name())
+			hud.toast(_no_room_line(player.inventory))
 		return
 	if share == "personal":
 		_take_own(player)
@@ -132,6 +143,10 @@ func _rpc_taken(player_path: NodePath) -> void:
 	_taken = true
 	if pickup_id != "":
 		GameState.set_flag("taken:" + pickup_id)
+		# The story can say where to go next (Chapter2Story.item_taken).
+		for s in get_tree().get_nodes_in_group("story"):
+			if s.has_method("item_taken"):
+				s.item_taken(pickup_id)
 	var p := get_node_or_null(player_path)
 	if share == "party":
 		# A key or a file: both survivors have it now, so either can open

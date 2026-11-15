@@ -4,8 +4,9 @@ extends LevelBase
 ## two floors under the vault, where the vault elevator stops. Brick
 ## tunnels from 1902, the keeper's lodge, the survey room, the clock gallery
 ## that ran every clock in the building, the shelter staff's muster room,
-## the engine hall with its dead diesel generator and the flood door, and a
-## sunken coal yard open to the rain. Original setting (docs/chapter2.md).
+## the river pump room with its flooded sump, the engine hall with its dead
+## diesel generator and the flood door, and a sunken coal yard open to the
+## rain. Original setting (docs/chapter2.md).
 ##
 ## World layout (x east, z south), each room's pos is its north-west floor
 ## corner:
@@ -16,6 +17,7 @@ extends LevelBase
 ##   ClockGallery   (21, 0, -9.5) 14 x 11    the master clock (the fuse)
 ##   BackStair      (31.5, 0, -12.5) 3 x 3   caved in: the Tallyman's way in
 ##   MusterRoom     (19, 0, 4.5) 14 x 10     barred; the Warden's arena
+##   PumpRoom       (33, 0, 4.5) 6 x 7.5     the flooded sump: the starting handle
 ##   EngineHall     (39, 0, -6)  16 x 18     the generator, the flood door
 ##   CoalYard       (55, 0, -6)  22 x 18     outdoors: the diesel in the shed
 ##   DeepStacks     (43, 0, 12)  8 x 8       behind the flood door: the end
@@ -39,6 +41,8 @@ const WARDEN_SEAT := Vector3(26.0, 0.0, 13.25)
 const WARDEN_STAND := Vector3(26.0, 0.0, 12.25)
 const PA_HORN := Vector3(39.35, 4.6, -1.6)
 const STAIR_DOOR := Vector3(32.9, 0.0, -9.5)
+## The pump room's floor corner (its sump: PumpRoom).
+const PUMP_AT := Vector3(33.0, 0.0, 4.5)
 const TALLY_IN := Vector3(33.0, 0.0, -11.4)
 const LANYARD_AT := Vector3(46.4, 0.0, 16.6)
 const CHALK_AT := Vector3(51.0 - RoomBuilder.WALL_T / 2.0, 1.6, 17.0)
@@ -67,6 +71,7 @@ func build() -> void:
 	_clock_gallery()
 	_back_stair()
 	_muster_room()
+	_pump_room()
 	_engine_hall()
 	_coal_yard()
 	_deep_stacks()
@@ -259,7 +264,7 @@ func _service_corridor() -> void:
 		# frames the doorway through both.
 		"openings": {
 			"n": [[4.4, 1.2, 2.3, {"frame": false}], [23.4, 1.4, 2.4, {"frame": false}]],
-			"s": [[3.4, 1.2, 2.3, {"frame": false}], [18.4, 1.4, 2.4, {"frame": false}]],
+			"s": [[3.4, 1.2, 2.3, {"frame": false}], [18.4, 1.4, 2.4, {"frame": false}], [27.0, 1.2, 2.3, {"frame": false}]],
 		},
 		"skip_walls": ["w", "e"],
 		"pilasters": {"sides": ["n", "s"], "spacing": 3.6, "width": 0.42, "depth": 0.12, "slot": "undercroft_brick", "cap": Color(0.24, 0.22, 0.2)},
@@ -286,7 +291,8 @@ func _service_corridor() -> void:
 	_stencil(r, "MUSTER ROOM  -  SHELTER STAFF", Vector3(19.1, 2.7, 2.85), 180, 26, paint)
 	_stencil(r, "<-  LIFT", Vector3(9.5, 1.9, 0.15), 0, 30, paint)
 	_stencil(r, "ENGINE HALL  ->", Vector3(14.5, 1.9, 0.15), 0, 30, paint)
-	_stencil(r, "ENGINE HALL  ->", Vector3(28.6, 1.9, 2.85), 180, 30, paint)
+	_stencil(r, "ENGINE HALL  ->", Vector3(30.4, 1.9, 2.85), 180, 30, paint)
+	_stencil(r, "PUMP ROOM  -  SUMP B", Vector3(27.6, 2.62, 2.85), 180, 26, paint)
 	# Things left behind in the dark.
 	RoomBuilder.prop(r, "wheelchair_01", Vector3(11.8, 0, 2.3), 140)
 	RoomBuilder.prop(r, "industrial_storage_cart", Vector3(27.2, 0, 0.75), 4)
@@ -555,6 +561,65 @@ func _muster_room() -> void:
 	place_pickup("ammo:9mm", Vector3(20.0, 0.1, 13.5), "c2_muster_ammo")
 	place_pickup("herb_green", Vector3(31.6, 0.1, 13.6), "c2_muster_herb")
 
+# ------------------------------------------------------------------ the pump room (the sump)
+
+## Off the service tunnel next to the engine hall: the river pump room, its
+## flooded sump with the starting handle at the bottom (PumpRoom has the
+## pit, the valves, the water and the puzzle). Dark but for the red battery
+## lamps; the drowned man under the water is "Z_c2_sump".
+func _pump_room() -> void:
+	var r := RoomBuilder.build(self, {
+		"id": "PumpRoomShell", "pos": PUMP_AT, "size": Vector3(6, 4.0, 7.5),
+		"floor": "undercroft_floor", "wall": "undercroft_brick", "ceiling": "undercroft_floor", "trim": Color(0.16, 0.15, 0.14),
+		"floor_look": {"tile_size": 1.8, "wetness": 0.9, "puddles": 0.9, "grime_amount": 0.9, "stain_amount": 0.6},
+		"wall_look": {"tile_size": 2.2, "grime_amount": 1.0, "grime_height": 1.8, "stain_amount": 0.9, "wall_wet": 0.7},
+		"ceiling_look": {"tint": Color(0.36, 0.35, 0.33)},
+		"openings": {"n": [[1.0, 1.2, 2.3]]},
+		# Back to back with the corridor (n), the muster room (w) and the
+		# engine hall (e).
+		"wall_inset": {"n": RoomBuilder.WALL_T, "w": RoomBuilder.WALL_T, "e": RoomBuilder.WALL_T},
+		"floor_holes": [[PumpRoom.PIT.position.x, PumpRoom.PIT.position.y, PumpRoom.PIT.size.x, PumpRoom.PIT.size.y]],
+		"decals": {"stain": 5, "blood": 1},
+		"papers": 2,
+		"probe": true,
+	})
+	place_door(Vector3(PUMP_AT.x + 1.6, 0, PUMP_AT.z + RoomBuilder.WALL_T / 2.0), 0, Door.Kind.MANUAL, "steel", 1.2, 2.3, "pump_door")
+	var pr := PumpRoom.new()
+	pr.name = "PumpRoom"
+	pr.position = PUMP_AT
+	add_child(pr)
+	_stencil(r, "SUMP  B", Vector3(4.2, 3.3, 0.39), 0, 90, Color(0.82, 0.78, 0.66), 0.0026)
+	_stencil(r, "RIVER  DISTRICT  PUMPING  STATION   -   1974", Vector3(4.2, 2.95, 0.39), 0, 26, Color(0.8, 0.76, 0.62))
+	# The drill card on a rack by the door, the tool chest, the extinguisher,
+	# a crate of stores at the end of the valve gallery.
+	RoomBuilder.prop(r, "worn_metal_rack", Vector3(0.6, 0, 1.45), 90)
+	RoomBuilder.prop(r, "vintage_flashlight", Vector3(0.6, 1.5, 1.2), 20, 1.0, false)
+	RoomBuilder.prop(r, "old_gas_mask", Vector3(0.6, 1.5, 1.7), 90, 1.0, false)
+	RoomBuilder.prop(r, "metal_tool_chest", Vector3(5.3, 0, 0.95), -90)
+	RoomBuilder.prop(r, "pipe_wrench", Vector3(1.6, 0.02, 2.2), 35, 1.0, false)
+	# On the north wall east of the pumps: behind them it pinched the way
+	# round them to the sump gate.
+	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(4.75, 0, 0.5), 0)
+	# Past the far end of the pit: at the head of the steps it squeezed the
+	# way down to less than a body's width for the infected.
+	RoomBuilder.prop(r, "WetFloorSign_01", Vector3(4.5, 0, 7.05), 160)
+	RoomBuilder.prop(r, "plastic_crate_01", Vector3(0.85, 0, 6.95), 10)
+	RoomBuilder.prop(r, "trashbag", Vector3(1.5, 0, 7.0), 60, 1.0, false)
+	UndercroftPower.emergency_light(r, Vector3(1.6, 2.75, 0.39), 0.0, 0.4, 5.5)
+	UndercroftPower.emergency_light(r, Vector3(5.61, 2.9, 4.2), -90.0, 0.45, 7.0)
+	UndercroftPower.emergency_light(r, Vector3(0.39, 2.7, 6.6), 90.0, 0.35, 5.0)
+	for at in [Vector3(1.6, 3.9, 2.4), Vector3(3.9, 3.9, 5.2)]:
+		UndercroftPower.work_light(r, at, 0.0, 0.6, 7.0)
+	# The drill card on a steel ledge beside the door, under its stencil.
+	var steel := Mats.trim(Color(0.22, 0.23, 0.22), 0.5, 0.7)
+	RoomBuilder._box(r, Vector3(0.55, 1.0, 0.495), Vector3(0.44, 0.025, 0.22), steel, true)
+	for bx in [0.38, 0.72]:
+		RoomBuilder._box(r, Vector3(bx, 0.93, 0.42), Vector3(0.02, 0.12, 0.07), steel, false)
+	UndercroftKit.label(r, "DRILL  -  SUMP B", Vector3(0.55, 1.2, RoomBuilder.WALL_T + 0.14), 26, Color(0.82, 0.78, 0.66), 0.0, 0.0012)
+	place_pickup("file:pump_drill", PUMP_AT + Vector3(0.55, 1.02, 0.5), "c2_pump_drill")
+	place_pickup("ammo:shells", PUMP_AT + Vector3(0.85, 0.36, 6.95), "c2_pump_shells")
+	place_zombie("Z_c2_sump", PUMP_AT + PumpRoom.BODY_AT, PumpRoom.BODY_YAW, "possum", false, "mechanic")
+
 # ------------------------------------------------------------------ the engine hall
 
 func _engine_hall() -> void:
@@ -653,6 +718,8 @@ func _engine_hall() -> void:
 	place_pickup("ammo:9mm", Vector3(40.2, 0.97, -4.7), "c2_hall_ammo")
 	place_pickup("gunpowder", Vector3(53.9, 0.1, 5.7), "c2_hall_powder")
 	place_pickup("ammo:fuel", Vector3(42.6, 0.1, -5.3), "c2_hall_fuel")
+	# The keeper's note in the generator's cabinet: where everything went.
+	place_pickup("file:gen_note", GENERATOR_AT + GeneratorSet.NOTE_AT, GeneratorSet.NOTE_ID)
 
 ## A heap of coal: a squashed dome with the coal surface, solid unless
 ## `flat` (a spill only ankle deep).

@@ -5,8 +5,10 @@ extends Node3D
 ##
 ## It needs three things, each a key item someone carries to it: diesel for
 ## the dry tank (the coal yard's fuel shed), a field fuse for its control
-## cabinet (locked in the master clock) and the starting handle (on the
-## Warden's belt). The cabinet's three lamps show what's still missing.
+## cabinet (locked in the master clock) and the starting handle (in the
+## flooded sump in the pump room, PumpRoom). The cabinet's FUEL, FIELD and
+## HANDLE lamps show what's still missing, and the keeper's note left in it
+## says where each went.
 ##
 ## Then it has to be cranked: one survivor heaves the handle round
 ## (Player.working "crank", HandsOnGrip keeps both hands on the turning grip)
@@ -28,6 +30,10 @@ const ARM := 0.3                           # crank radius
 const SPOT := Vector3(-2.06, 0.0, 0.0)     # where the cranker stands
 const FILLER := Vector3(0.24, 1.6, 0.0)    # tank filler cap
 const CABINET := Vector3(0.7, 0.0, 1.3)
+## The keeper's note in the cabinet's fuse compartment (Undercroft places
+## the pickup at NOTE_AT).
+const NOTE_ID := "c2_gen_note"
+const NOTE_AT := CABINET + Vector3(0.1, 0.13, 0.12)
 
 const PULL := 0.034              # compression one heave adds
 const DECAY := 0.006             # lost per second with nobody on the handle
@@ -128,91 +134,279 @@ func _build() -> void:
 	_build_cabinet()
 	# Reach areas: the filler, the cabinet, the crank end.
 	UndercroftKit.reach(self, self, Vector3(0.2, 1.0, 0.8), Vector3(1.2, 1.6, 0.7), 0)
-	UndercroftKit.reach(self, self, CABINET + Vector3(0, 1.1, 0.25), Vector3(0.8, 1.4, 0.6), 1)
+	UndercroftKit.reach(self, self, CABINET + Vector3(0, 1.0, CAB_D / 2 + 0.25), Vector3(0.9, 1.6, 0.5), 1)
 	UndercroftKit.reach(self, self, Vector3(-2.0, 0.9, 0), Vector3(0.9, 1.6, 1.3), 2)
 
-## The control cabinet on a stand: a steel case with its door hanging open,
-## the empty fuse clips inside, and three lamps across the top (FUEL, FIELD,
-## START) that turn from red to green as each part goes in.
+## The alternator control cubicle: a floor-standing steel cabinet in
+## chipped green paint (Poly Haven green_metal_rust), Rothwell's 1958 fit-out.
+## Up top the instrument panel: three moving-iron meters (volts, amperes,
+## frequency; dead until it runs, then on 415 V and 50 Hz with the current
+## swinging), four indicator lamps (FUEL, FIELD, HANDLE red until each part is
+## in, RUNNING), the excitation and governor switches and the hours counter.
+## Below, the fuse compartment, its louvred door hanging open: a galvanised
+## mounting plate with the porcelain field fuse base (empty clips until the
+## fuse goes in), copper busbars on their insulators, the field contactor,
+## a terminal rail and the cable looms. The main breaker's lever on its side.
+const CAB_W := 0.8
+const CAB_D := 0.45
+const CAB_H := 1.85
+## The meters: pivot height, value range, value when running, and where they
+## sit (x) on the panel. The faces are tools/undercroft/make_gen_dials.py.
+const DIALS := [[-0.25, 0.0, 500.0, 415.0], [0.0, 0.0, 300.0, 160.0], [0.25, 45.0, 55.0, 50.0]]
+const DIAL_Y := 1.56
+const DIAL_SIZE := 0.17
+var _needles: Array = []
+var _breaker: Node3D
+
 func _build_cabinet() -> void:
 	var c := Node3D.new()
 	c.name = "Cabinet"
 	c.position = CABINET
 	add_child(c)
-	var paint := Mats.trim(Color(0.17, 0.22, 0.19), 0.6, 0.45)
-	var dark := Mats.trim(Color(0.06, 0.06, 0.06), 0.8, 0.3)
-	var steel := Mats.trim(Color(0.36, 0.35, 0.33), 0.45, 0.8)
-	var enamel := Mats.trim(Color(0.8, 0.76, 0.64), 0.55, 0.0)
-	# Legs and case.
-	for x in [-0.28, 0.28]:
-		RoomBuilder._box(c, Vector3(x, 0.4, -0.05), Vector3(0.05, 0.8, 0.05), steel, false)
-	RoomBuilder._box(c, Vector3(0, 1.15, -0.05), Vector3(0.66, 0.72, 0.28), paint, true)
-	RoomBuilder._box(c, Vector3(0, 1.15, 0.092), Vector3(0.58, 0.62, 0.008), dark, false)
-	# The door, swung open on its left hinge.
-	var door := Node3D.new()
-	door.position = Vector3(-0.33, 1.15, 0.1)
-	door.rotation_degrees.y = -115
-	c.add_child(door)
-	RoomBuilder._box(door, Vector3(0.31, 0, 0), Vector3(0.62, 0.68, 0.02), paint, false)
-	RoomBuilder._box(door, Vector3(0.31, 0.05, -0.012), Vector3(0.3, 0.2, 0.004), enamel, false)
-	# Cable conduit from the case into the generator.
-	UndercroftKit.bar(c, Vector3(0, 0.62, -0.16), 0.03, 0.25, steel)
-	RoomBuilder._box(c, Vector3(0, 0.5, -0.65), Vector3(0.05, 0.05, 1.0), steel, false)
-	# Plate and lettering.
-	RoomBuilder._box(c, Vector3(0, 1.62, 0.1), Vector3(0.5, 0.1, 0.01), enamel, false)
-	UndercroftKit.label(c, "ALTERNATOR  CONTROL", Vector3(0, 1.62, 0.107), 24, Color(0.25, 0.08, 0.05))
-	# The fuse clips: two brass jaws, empty until the fuse goes in.
+	var paint := Mats.surface("cabinet_paint", {"tile_size": 0.9, "grime_amount": 0.75, "grime_height": 0.5, "stain_amount": 0.4, "variation": 0.25})
+	var paint_door := Mats.surface("cabinet_paint", {"tile_size": 0.7, "grime_amount": 0.5, "variation": 0.3, "tint": Color(0.92, 0.95, 0.92)})
+	var dark := Mats.trim(Color(0.035, 0.035, 0.035), 0.75, 0.2)
+	var zinc := Mats.surface("flood_steel", {"tile_size": 0.5, "grime_amount": 0.4, "tint": Color(0.62, 0.62, 0.6)})
+	var chrome := Mats.trim(Color(0.6, 0.6, 0.58), 0.25, 1.0)
 	var brass := Mats.trim(Color(0.62, 0.48, 0.24), 0.35, 0.9)
-	for x in [-0.09, 0.09]:
-		RoomBuilder._box(c, Vector3(x, 1.12, 0.07), Vector3(0.03, 0.06, 0.04), brass, false)
-	UndercroftKit.label(c, "FIELD FUSE 60A", Vector3(0, 1.03, 0.097), 18, Color(0.75, 0.72, 0.6))
-	_fuse_vis = Node3D.new()
-	_fuse_vis.position = Vector3(0, 1.12, 0.085)
-	c.add_child(_fuse_vis)
-	var fz := UndercroftKit.meshy(_fuse_vis, "fuse", Vector3.ZERO, 0.0, 0.2, false)
-	fz.rotation_degrees = Vector3(0, 0, 0)
-	fz.position.y = -0.03
-	_fuse_vis.visible = false
-	# The three lamps.
-	var names := {"fuel": "FUEL", "fuse": "FIELD", "crank": "START"}
+	var copper := Mats.trim(Color(0.72, 0.38, 0.22), 0.3, 0.95)
+	var porcelain := Mats.trim(Color(0.86, 0.84, 0.78), 0.2, 0.0)
+	var bakelite := Mats.trim(Color(0.05, 0.035, 0.03), 0.3, 0.0)
+	var ink := Color(0.86, 0.82, 0.7)
+	var w := CAB_W
+	var d := CAB_D
+	var h := CAB_H
+	var fz := d / 2.0   # the front face
+	# One collider for the lot; the shell is panels so the open compartment
+	# has an inside.
+	var sb := StaticBody3D.new()
+	sb.collision_layer = 1
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(w, h, d)
+	cs.shape = bs
+	cs.position = Vector3(0, h / 2, 0)
+	sb.add_child(cs)
+	c.add_child(sb)
+	RoomBuilder._box(c, Vector3(0, 0.04, -0.01), Vector3(w - 0.04, 0.08, d - 0.04), dark, false)
+	RoomBuilder._box(c, Vector3(0, (h + 0.08) / 2, -fz + 0.01), Vector3(w, h - 0.08, 0.02), paint, false)
+	for sx in [-1.0, 1.0]:
+		RoomBuilder._box(c, Vector3(sx * (w / 2 - 0.01), (h + 0.08) / 2, 0), Vector3(0.02, h - 0.08, d), paint, false)
+	RoomBuilder._box(c, Vector3(0, h + 0.015, 0.005), Vector3(w + 0.03, 0.03, d + 0.03), paint, false)
+	RoomBuilder._box(c, Vector3(0, 1.16, 0), Vector3(w - 0.04, 0.025, d - 0.04), paint, false)
+	RoomBuilder._box(c, Vector3(0, 0.09, 0), Vector3(w - 0.04, 0.02, d - 0.04), paint, false)
+	# ---- the instrument panel
+	RoomBuilder._box(c, Vector3(0, 1.51, fz - 0.01), Vector3(w - 0.04, 0.69, 0.02), paint, false)
+	for corner in [Vector2(-0.36, 1.82), Vector2(0.36, 1.82), Vector2(-0.36, 1.2), Vector2(0.36, 1.2)]:
+		UndercroftKit.bar(c, Vector3(corner.x, corner.y, fz + 0.002), 0.009, 0.008, chrome, "z", 8)
+	_plate(c, "ROTHWELL  &  SONS   -   ALTERNATOR  CONTROL", Vector3(0, 1.78, fz + 0.003), Vector2(0.56, 0.045), 18)
+	var dial_mat := StandardMaterial3D.new()
+	dial_mat.albedo_texture = load("res://assets/textures/undercroft/gen_dials.png")
+	dial_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	dial_mat.alpha_scissor_threshold = 0.5
+	dial_mat.roughness = 0.55
+	dial_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	for i in DIALS.size():
+		var x: float = DIALS[i][0]
+		var face := MeshInstance3D.new()
+		var q := QuadMesh.new()
+		q.size = Vector2(DIAL_SIZE, DIAL_SIZE)
+		face.mesh = q
+		var m: StandardMaterial3D = dial_mat.duplicate()
+		m.uv1_scale = Vector3(1.0 / 3.0, 1, 1)
+		m.uv1_offset = Vector3(i / 3.0, 0, 0)
+		face.material_override = m
+		face.position = Vector3(x, DIAL_Y, fz + 0.0065)
+		c.add_child(face)
+		# A black square case behind the round chrome bezel, the way panel
+		# meters were mounted.
+		RoomBuilder._box(c, Vector3(x, DIAL_Y, fz + 0.002), Vector3(DIAL_SIZE + 0.03, DIAL_SIZE + 0.03, 0.006), bakelite, false)
+		var ring := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = DIAL_SIZE / 2 - 0.006
+		tm.outer_radius = DIAL_SIZE / 2 + 0.008
+		tm.rings = 32
+		ring.mesh = tm
+		ring.material_override = chrome
+		ring.rotation.x = PI / 2
+		ring.position = Vector3(x, DIAL_Y, fz + 0.009)
+		c.add_child(ring)
+		# The needle turns about the pivot low on the face (256, 400 of 512).
+		var pivot := Node3D.new()
+		pivot.position = Vector3(x, DIAL_Y - DIAL_SIZE * (400.0 - 256.0) / 512.0, fz + 0.0105)
+		c.add_child(pivot)
+		var needle := MeshInstance3D.new()
+		var nm := BoxMesh.new()
+		nm.size = Vector3(0.0022, DIAL_SIZE * 0.56, 0.001)
+		needle.mesh = nm
+		needle.material_override = Mats.trim(Color(0.04, 0.03, 0.03), 0.5, 0.2)
+		needle.position = Vector3(0, DIAL_SIZE * 0.28, 0)
+		pivot.add_child(needle)
+		_needles.append(pivot)
+	_point_needles(0.0, false)
+	# The indicator lamps.
+	var names := {"fuel": "FUEL", "fuse": "FIELD", "crank": "HANDLE", "run": "RUNNING"}
 	var i := 0
-	for part in PARTS:
-		var x := -0.2 + i * 0.2
-		RoomBuilder._box(c, Vector3(x, 1.4, 0.095), Vector3(0.07, 0.07, 0.015), steel, false)
+	for part in ["fuel", "fuse", "crank", "run"]:
+		var x := -0.27 + i * 0.18
+		var bezel := MeshInstance3D.new()
+		var bt := TorusMesh.new()
+		bt.inner_radius = 0.016
+		bt.outer_radius = 0.026
+		bezel.mesh = bt
+		bezel.material_override = chrome
+		bezel.rotation.x = PI / 2
+		bezel.position = Vector3(x, 1.37, fz + 0.004)
+		c.add_child(bezel)
 		var bulb := MeshInstance3D.new()
 		var sm := SphereMesh.new()
-		sm.radius = 0.024
-		sm.height = 0.03
+		sm.radius = 0.019
+		sm.height = 0.022
 		bulb.mesh = sm
 		var mat := StandardMaterial3D.new()
 		mat.emission_enabled = true
+		mat.roughness = 0.15
 		bulb.material_override = mat
-		bulb.position = Vector3(x, 1.4, 0.108)
+		bulb.position = Vector3(x, 1.37, fz + 0.006)
 		c.add_child(bulb)
-		UndercroftKit.label(c, names[part], Vector3(x, 1.33, 0.104), 16, Color(0.75, 0.72, 0.6))
-		var glow := OmniLight3D.new()
-		glow.omni_range = 0.9
-		glow.light_energy = 0.35
-		glow.position = Vector3(x, 1.42, 0.25)
-		c.add_child(glow)
-		_lamps[part] = [mat, glow]
+		_plate(c, names[part], Vector3(x, 1.325, fz + 0.003), Vector2(0.11, 0.026), 13)
+		# No light of its own: four lamps lighting the panel washed the
+		# whole cabinet green. The lens glows; the room lights the steel.
+		_lamps[part] = mat
 		i += 1
+	# Excitation and governor switches either side of the hours counter.
+	for sw in [[-0.22, "EXCITATION"], [0.22, "GOVERNOR"]]:
+		UndercroftKit.bar(c, Vector3(sw[0], 1.25, fz + 0.008), 0.026, 0.016, bakelite, "z", 16)
+		_piece(c, Vector3(sw[0], 1.25, fz + 0.022), Vector3(0.012, 0.05, 0.016), bakelite, Vector3(0, 0, -0.6))
+		_plate(c, sw[1], Vector3(sw[0], 1.21, fz + 0.003), Vector2(0.12, 0.022), 12)
+	RoomBuilder._box(c, Vector3(0, 1.25, fz + 0.006), Vector3(0.12, 0.045, 0.012), bakelite, false)
+	RoomBuilder._box(c, Vector3(0, 1.25, fz + 0.0125), Vector3(0.1, 0.026, 0.002), Mats.trim(Color(0.06, 0.06, 0.06), 0.1, 0.0), false)
+	UndercroftKit.label(c, "0 4 1 7 2", Vector3(0, 1.25, fz + 0.0145), 18, Color(0.86, 0.84, 0.78), 0.0, 0.00085)
+	_plate(c, "HOURS RUN", Vector3(0, 1.21, fz + 0.003), Vector2(0.09, 0.022), 12)
+	# ---- the fuse compartment, its door hanging open
+	var plate_mat := Mats.trim(Color(0.4, 0.41, 0.4), 0.55, 0.75)
+	RoomBuilder._box(c, Vector3(0, 0.63, -fz + 0.035), Vector3(w - 0.1, 0.98, 0.01), plate_mat, false)
+	# The porcelain field fuse base: brass clips either side, the fuse sits
+	# across them (shown once fitted).
+	var fb := Vector3(-0.15, 0.9, -fz + 0.065)
+	RoomBuilder._box(c, fb, Vector3(0.3, 0.09, 0.05), porcelain, false)
+	for sx in [-1.0, 1.0]:
+		RoomBuilder._box(c, fb + Vector3(sx * 0.09, 0.0, 0.03), Vector3(0.03, 0.065, 0.025), brass, false)
+		UndercroftKit.bar(c, fb + Vector3(sx * 0.13, 0.0, 0.03), 0.009, 0.02, brass, "z", 8)
+	_plate(c, "FIELD  FUSE   60 A", Vector3(-0.15, 0.99, -fz + 0.042), Vector2(0.2, 0.03), 14)
+	_fuse_vis = Node3D.new()
+	_fuse_vis.position = fb + Vector3(0, -0.03, 0.045)
+	c.add_child(_fuse_vis)
+	UndercroftKit.meshy(_fuse_vis, "fuse", Vector3.ZERO, 0.0, 0.2, false)
+	_fuse_vis.visible = false
+	# Copper busbars on porcelain standoffs, right of the fuse.
+	for k in 3:
+		var bx := 0.1 + k * 0.08
+		RoomBuilder._box(c, Vector3(bx, 0.68, -fz + 0.075), Vector3(0.025, 0.72, 0.006), copper, false)
+		for by in [0.4, 0.96]:
+			UndercroftKit.bar(c, Vector3(bx, by, -fz + 0.055), 0.012, 0.035, porcelain, "z", 10)
+	# The field contactor, a terminal rail and the looms down to the gland.
+	RoomBuilder._box(c, Vector3(-0.15, 0.62, -fz + 0.08), Vector3(0.16, 0.2, 0.09), bakelite, false)
+	RoomBuilder._box(c, Vector3(-0.15, 0.62, -fz + 0.126), Vector3(0.1, 0.06, 0.004), Mats.trim(Color(0.7, 0.66, 0.56), 0.5), false)
+	RoomBuilder._box(c, Vector3(0, 0.3, -fz + 0.05), Vector3(w - 0.16, 0.035, 0.02), zinc, false)
+	for k in 12:
+		RoomBuilder._box(c, Vector3(-0.3 + k * 0.05, 0.3, -fz + 0.07), Vector3(0.04, 0.05, 0.03), bakelite if k % 4 else Mats.trim(Color(0.6, 0.06, 0.04), 0.4), false)
+	for k in 5:
+		var cx := -0.28 + k * 0.035
+		UndercroftKit.bar(c, Vector3(cx, 0.2, -fz + 0.07 + (k % 2) * 0.02), 0.01, 0.2, dark, "y", 6)
+	# The door, swung open on its left hinge: louvres and the danger plate on
+	# the outside, the wiring diagram on the inside.
+	var door := Node3D.new()
+	door.position = Vector3(-w / 2 + 0.01, 0.63, fz)
+	door.rotation_degrees.y = -118.0
+	c.add_child(door)
+	RoomBuilder._box(door, Vector3(w / 2 - 0.02, 0, 0.0), Vector3(w - 0.04, 1.0, 0.02), paint_door, false)
+	for k in 6:
+		_piece(door, Vector3(w / 2 - 0.02, -0.4 + k * 0.025, 0.012), Vector3(0.36, 0.008, 0.012), paint_door, Vector3(-0.6, 0, 0))
+	var danger := Node3D.new()
+	danger.position = Vector3(w / 2 - 0.02, 0.22, 0.012)
+	door.add_child(danger)
+	RoomBuilder._box(danger, Vector3.ZERO, Vector3(0.22, 0.1, 0.003), Mats.trim(Color(0.85, 0.66, 0.08), 0.5), false)
+	UndercroftKit.label(danger, "DANGER\n415  VOLTS", Vector3(0, 0, 0.002), 22, Color(0.06, 0.05, 0.04), 0.0, 0.00085)
+	UndercroftKit.bar(door, Vector3(w - 0.07, 0.0, 0.02), 0.01, 0.1, chrome, "y", 8)
+	var diagram := Node3D.new()
+	diagram.position = Vector3(w / 2 - 0.02, 0.1, -0.012)
+	diagram.rotation_degrees.y = 180.0
+	door.add_child(diagram)
+	RoomBuilder._box(diagram, Vector3.ZERO, Vector3(0.4, 0.3, 0.003), Mats.trim(Color(0.78, 0.74, 0.62), 0.6), false)
+	UndercroftKit.label(diagram, "No. 2 STANDBY SET\nFIELD CIRCUIT\n\nEXCITER - FUSE F1 60A - FIELD\nCONTACTOR K1 - AVR\n\nISOLATE BEFORE OPENING", Vector3(0, 0, 0.002), 16, Color(0.12, 0.1, 0.08), 0.0, 0.00085)
+	# The main breaker on the right side: a cast case and its red lever,
+	# down (OFF) until the set runs.
+	var brk := Node3D.new()
+	brk.position = Vector3(w / 2 + 0.05, 1.05, 0.05)
+	c.add_child(brk)
+	RoomBuilder._box(brk, Vector3.ZERO, Vector3(0.1, 0.26, 0.22), Mats.surface("flood_steel", {"tile_size": 0.4, "grime_amount": 0.6, "tint": Color(0.3, 0.3, 0.28)}), false)
+	_breaker = Node3D.new()
+	_breaker.position = Vector3(0.06, 0.0, 0.0)
+	brk.add_child(_breaker)
+	UndercroftKit.bar(_breaker, Vector3(0.03, 0, 0), 0.03, 0.06, chrome, "x", 12)
+	var lever := UndercroftKit.bar(_breaker, Vector3(0.05, -0.1, 0), 0.012, 0.2, chrome, "y", 8)
+	lever.name = "Lever"
+	UndercroftKit.bar(_breaker, Vector3(0.05, -0.21, 0), 0.022, 0.08, Mats.trim(Color(0.6, 0.06, 0.04), 0.35, 0.1), "y", 12)
+	_plate(brk, "MAIN", Vector3(0.0, 0.16, 0.112), Vector2(0.07, 0.022), 12)
+	_breaker.rotation.x = 0.0
+	# Cable conduit from the cabinet's back into the floor trench and on to
+	# the generator.
+	UndercroftKit.bar(c, Vector3(0, 0.5, -fz - 0.05), 0.035, 1.0, Mats.trim(Color(0.3, 0.3, 0.28), 0.45, 0.8), "y", 10)
+	RoomBuilder._box(c, Vector3(0, 0.02, -0.65), Vector3(0.12, 0.04, 0.85), Mats.trim(Color(0.2, 0.2, 0.19), 0.6, 0.7), false)
+
+## A box turned to an angle (RoomBuilder._box only lays them square).
+func _piece(parent: Node3D, at: Vector3, ext: Vector3, mat: Material, rot: Vector3) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = ext
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = at
+	mi.rotation = rot
+	parent.add_child(mi)
+	return mi
+
+## An engraved black plate with cream letters.
+func _plate(parent: Node3D, text: String, at: Vector3, size: Vector2, px: int) -> void:
+	RoomBuilder._box(parent, at, Vector3(size.x, size.y, 0.003), Mats.trim(Color(0.04, 0.04, 0.04), 0.35, 0.2), false)
+	UndercroftKit.label(parent, text, at + Vector3(0, 0, 0.002), px, Color(0.86, 0.82, 0.7), 0.0, 0.00085)
+
+## The meters: dead at the pin, or on their running values with a little
+## life in them.
+func _point_needles(t: float, live: bool) -> void:
+	for i in _needles.size():
+		var spec: Array = DIALS[i]
+		var v: float = spec[1]
+		if live:
+			v = spec[3]
+			match i:
+				0: v += sin(t * 1.3) * 4.0 + randf_range(-1.5, 1.5)
+				1: v += sin(t * 0.7) * 25.0 + sin(t * 2.9) * 8.0
+				2: v += sin(t * 0.9) * 0.15
+		var a := deg_to_rad(-50.0 + 100.0 * (v - spec[1]) / (spec[2] - spec[1]))
+		(_needles[i] as Node3D).rotation.z = -a
 
 func _show_parts() -> void:
 	_crank.visible = fitted("crank") and not running()
 	_fuse_vis.visible = fitted("fuse")
 	for part in PARTS:
 		var on := fitted(part)
-		var mat: StandardMaterial3D = _lamps[part][0]
-		var glow: OmniLight3D = _lamps[part][1]
 		var col := Color(0.25, 1.0, 0.35) if on else Color(1.0, 0.12, 0.06)
-		mat.albedo_color = col * 0.3
-		mat.emission = col
-		mat.emission_energy_multiplier = 2.5
-		glow.light_color = col
+		_set_lamp(part, col, 1.6)
+	_set_lamp("run", Color(0.25, 1.0, 0.35), 1.9 if running() else 0.0)
+	_breaker.rotation.x = -1.1 if running() else 0.0
+	if not running():
+		_point_needles(0.0, false)
 	if fitted("fuel") and _can == null:
 		# The empty can left on the plinth.
 		_can = RoomBuilder.prop(self, "metal_jerrycan_green", Vector3(0.95, 0.02, 0.85), 25.0, 1.0, false)
+
+func _set_lamp(part: String, col: Color, energy: float) -> void:
+	var mat: StandardMaterial3D = _lamps[part]
+	mat.albedo_color = col * (0.3 if energy > 0.0 else 0.12)
+	mat.emission = col
+	mat.emission_energy_multiplier = energy
 
 # ------------------------------------------------------------------ using it
 
@@ -250,13 +444,13 @@ func interact(player: Node, handle := -1) -> void:
 			if _has(player, "fuse"):
 				_rpc_fit.rpc_id(1, "fuse", player.peer_id)
 			elif hud:
-				hud.toast("The field fuse has been pulled. The clips are empty.")
+				hud.toast("The field fuse has been pulled. The clips are empty." + _note_hint())
 		2:
 			if not fitted("crank"):
 				if _has(player, "crank"):
 					_rpc_fit.rpc_id(1, "crank", player.peer_id)
 				elif hud:
-					hud.toast("No starting handle. The crank stub is bare.")
+					hud.toast("No starting handle. The crank stub is bare." + _note_hint())
 			elif not ready_to_crank():
 				if hud:
 					var need: Array = []
@@ -267,6 +461,10 @@ func interact(player: Node, handle := -1) -> void:
 					hud.toast("It won't start without %s." % " and ".join(need))
 			elif _cranker == null:
 				_start_cranking(player)
+
+## Points at the keeper's note in the cabinet until somebody has read it.
+func _note_hint() -> String:
+	return "" if GameState.has_flag("taken:" + NOTE_ID) else " There's a note tucked in the control cabinet."
 
 func _has(player: Node, part: String) -> bool:
 	return Cheats.on("unlock_doors") or player.inventory.key_items.has(KEYS[part])
@@ -506,6 +704,7 @@ func _set_running(animate: bool) -> void:
 			_run_snd.position = Vector3(0, 1.0, 0)
 
 func _tick_running(delta: float) -> void:
+	_point_needles(Time.get_ticks_msec() / 1000.0, true)
 	# The whole set judders on its mounts.
 	_shake_t = maxf(_shake_t - delta, 0.0)
 	var amp := 0.004 + _shake_t * 0.006

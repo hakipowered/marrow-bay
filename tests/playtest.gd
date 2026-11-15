@@ -74,7 +74,7 @@ const AREAS2 := {
 	"lift": Rect2(0, 0, 7, 6), "corridor": Rect2(7, 1.5, 32, 3),
 	"lodge": Rect2(8, 4.5, 7, 6), "survey": Rect2(9, -9.5, 12, 11),
 	"gallery": Rect2(21, -9.5, 14, 11), "stair": Rect2(31.5, -12.5, 3, 3),
-	"muster": Rect2(19, 4.5, 14, 10), "hall": Rect2(39, -6, 16, 18),
+	"muster": Rect2(19, 4.5, 14, 10), "pump": Rect2(33, 4.5, 6, 7.5), "hall": Rect2(39, -6, 16, 18),
 	"yard": Rect2(55, -6, 22, 18), "stacks": Rect2(43, 12, 8, 8),
 }
 const UNDERCROFT := "res://scenes/levels/undercroft.tscn"
@@ -170,6 +170,12 @@ func _bug(area: String, what: String, key := "") -> void:
 func _note(what: String) -> void:
 	notes.append(what)
 	print("PLAYTEST NOTE ", what)
+
+var _noted := {}
+func _note_once(key: String, what: String) -> void:
+	if not _noted.has(key):
+		_noted[key] = true
+		_note(what)
 
 func _wait(sec: float) -> void:
 	var end := sim_t + sec
@@ -279,6 +285,13 @@ func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 	while sim_t < end:
 		if p.downed:
 			return false
+		if p.hp <= 46.0 and _hunted() and p.working == "":
+			_heal()   # one swing of his takes 45: a player heals first
+		if i < path.size() and _tallyman_in_way(path[i]):
+			await _fend_tallyman()
+			path = _path(target)
+			i = 0
+			continue
 		var z := _threat()
 		if z and not _busy_fighting:
 			await fight(z)
@@ -295,7 +308,7 @@ func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 				# Straight-on leg (through a doorway): re-path once past it.
 				pass
 			continue
-		_steer(to, run)
+		_steer(_skirt_tallyman(to.normalized()), run)
 		await physics_frame
 	_stop()
 	var off := Vector2(p.global_position.x - target.x, p.global_position.z - target.z).length()
@@ -502,7 +515,8 @@ func _stand_spot(stand: Vector3, dir: Vector3) -> Vector3:
 	return stand + dir * 0.7
 
 func pick_up_node(node: Node) -> bool:
-	var tag: String = node.pickup_id if node.pickup_id != "" else str(node.name)
+	var pid: String = node.pickup_id
+	var tag: String = pid if pid != "" else str(node.name)
 	for attempt in 3:
 		if not is_instance_valid(node) or node._taken:
 			return true
@@ -517,17 +531,21 @@ func pick_up_node(node: Node) -> bool:
 			await _warp(spot, "to item " + tag)
 		await face(pos)
 		await physics_frame
+		if not is_instance_valid(node):
+			# She died on the way and the checkpoint came back: the same item,
+			# as it is now.
+			return await pick_up(pid) if pid != "" else false
 		var prompt: String = p._prompt_text
 		# No room for it: the prompt says so, or (beside a door, the crank)
 		# gives way to the thing she's looking at.
 		if not prompt.begins_with("Pick up") and not p.inventory.can_take(node.item):
 			_note("bag full, left %s" % tag)
 			return false
-		if prompt == "" or not (prompt.begins_with("Pick up") or prompt.begins_with("Bag full")):
+		if prompt == "" or not (prompt.begins_with("Pick up") or prompt.begins_with("Can't carry")):
 			if attempt == 2:
 				_bug("pickups", "no 'Pick up' prompt next to %s at %s (prompt '%s', item %.1f m above her feet)" % [tag, _v(pos), prompt, pos.y - p.global_position.y], "noprompt:" + tag)
 			continue
-		if prompt.begins_with("Bag full"):
+		if prompt.begins_with("Can't carry"):
 			_note("bag full, left %s" % tag)
 			return false
 		var target: Node = p._focus
@@ -593,6 +611,119 @@ func _best_gun() -> String:
 	return "knife" if p.inventory.has_weapon("knife") else ""
 
 ## Fight one infected until it's down (or we give up), with real damage.
+## The Tallyman close and coming (chapter 2's hunt): back away from him
+## shooting him in the chest until he drops to one knee, as a player would,
+## then get on with it while he's down.
+var _fending := false
+var _tally_fends := 0
+var _tally_knees := 0
+var _tally_time := 0.0
+var _tally_dmg := 0.0
+func _tallyman_close(radius := 4.5) -> Node:
+	for st in get_nodes_in_group("stalker"):
+		if st.active and not st.leaving and st._stagger <= 0.0 and st.global_position.distance_to(p.global_position) < radius:
+			if _los(p.global_position + Vector3.UP * 1.3, st.global_position + Vector3.UP * 1.5, [p.get_rid(), st.get_rid()]):
+				return st
+	return null
+
+## He's on top of her, or close and between her and where she's going
+## (behind her she just keeps going: she runs at 4 m/s, he walks at 1.55).
+func _tallyman_in_way(next: Vector3) -> bool:
+	var st := _tallyman_close(6.0)
+	if st == null:
+		return false
+	var to_st: Vector3 = st.global_position - p.global_position
+	to_st.y = 0.0
+	if to_st.length() < 3.0:
+		return true
+	var way: Vector3 = next - p.global_position
+	way.y = 0.0
+	return way.length() > 0.1 and way.normalized().dot(to_st.normalized()) > 0.5
+
+## The Tallyman is out after her.
+func _hunted() -> bool:
+	for st in get_nodes_in_group("stalker"):
+		if st.active and not st.leaving:
+			return true
+	return false
+
+## Her way on goes through the Tallyman (down on his knee, or just there):
+## the navmesh doesn't know about him, so she steps round him, on the side
+## nearer where she's going, as a player would.
+## She keeps to the side she picked until she's past him (picked afresh
+## each frame, a goal straight behind him flipped it every step and she
+## jittered on the spot): the open side, else the one toward the goal.
+var _skirt_side := 0.0
+
+func _skirt_tallyman(dir: Vector3) -> Vector3:
+	for st in get_nodes_in_group("stalker"):
+		if not st.active:
+			continue
+		var off: Vector3 = st.global_position - p.global_position
+		off.y = 0.0
+		var d := off.length()
+		if d > 2.2 or d < 0.01:
+			continue
+		var n := off / d
+		if dir.dot(n) < 0.15:
+			continue
+		var side := n.cross(Vector3.UP)
+		if _skirt_side == 0.0:
+			var chest: Vector3 = p.global_position + Vector3.UP * 1.0
+			var open_r: bool = _los(chest, chest + side * 1.6, [p.get_rid(), st.get_rid()])
+			var open_l: bool = _los(chest, chest - side * 1.6, [p.get_rid(), st.get_rid()])
+			if open_r != open_l:
+				_skirt_side = 1.0 if open_r else -1.0
+			else:
+				_skirt_side = 1.0 if side.dot(dir) >= 0.0 else -1.0
+		return (side * _skirt_side + dir * 0.25 - n * clampf(2.2 - d, 0.0, 1.0)).normalized()
+	_skirt_side = 0.0
+	return dir
+
+func _fend_tallyman() -> void:
+	var st := _tallyman_close(6.0)
+	if st == null or _fending or p.downed:
+		return
+	_fending = true
+	var use := _best_gun()
+	if use != "" and use != "knife" and p.inventory.equipped != use:
+		p.equip(use)
+	_note_once("tallyman", "the Tallyman caught up with her at %s; shooting him down to his knee" % _v(p.global_position))
+	var t0 := sim_t
+	var hp0: float = p.hp
+	var end := sim_t + 8.0
+	while sim_t < end and is_instance_valid(st) and st.active and st._stagger <= 0.0 and not p.downed:
+		var to: Vector3 = st.global_position - p.global_position
+		to.y = 0.0
+		if to.length() > 7.0:
+			break
+		if p.hp <= 46.0:
+			_heal()   # one swing of his takes 45
+		var err := _aim_at(st.global_position + Vector3.UP * 1.55)
+		p.aiming = true
+		_steer(-to, false, false)
+		p.fire_held = err < 4.0 and p._reloading <= 0.0
+		await physics_frame
+	# Down on his knee: out of his reach first (he's up and swinging again
+	# in four seconds), then on her way past him.
+	var clear_end := sim_t + 1.0
+	while sim_t < clear_end and is_instance_valid(st) and st._stagger > 0.0 and not p.downed:
+		var away: Vector3 = p.global_position - st.global_position
+		away.y = 0.0
+		if away.length() > 2.5:
+			break
+		p.aiming = false
+		p.fire_held = false
+		_steer(_skirt_tallyman(away.normalized()), true)
+		await physics_frame
+	_stop()
+	_fending = false
+	_tally_fends += 1
+	if is_instance_valid(st) and st._stagger > 0.0:
+		_tally_knees += 1
+	_tally_time += sim_t - t0
+	_tally_dmg += maxf(hp0 - p.hp, 0.0)
+
 func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 	if _busy_fighting or not is_instance_valid(z):
 		return false
@@ -610,6 +741,9 @@ func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 	var last_hp: float = z.hp
 	var progress_t := sim_t
 	while sim_t < end and is_instance_valid(z) and z.state != ZS.DEAD and not p.downed:
+		if _tallyman_close(5.0):
+			await _fend_tallyman()
+			continue
 		if p.hp < 40.0:
 			_heal()
 		var melee: bool = WeaponDB.WEAPONS.get(p.inventory.equipped, {}).get("kind", "") == "melee"
@@ -788,6 +922,12 @@ func _monitor() -> void:
 	# 3. Damage taken and stun lock (0.9 feedback: locked when next to an object).
 	if p.hp < _prev_hp - 0.5:
 		_damage_taken += _prev_hp - p.hp
+		if OS.has_environment("PT_DEBUG"):
+			var who := ""
+			for n in get_nodes_in_group("zombies") + get_nodes_in_group("stalker"):
+				if is_instance_valid(n) and n.global_position.distance_to(p.global_position) < 3.0:
+					who += " %s(%.1f m)" % [n.name, n.global_position.distance_to(p.global_position)]
+			print("PTDBG hit -%.0f hp %.0f at %s t=%.1f fending=%s fighting=%s near:%s" % [_prev_hp - p.hp, p.hp, _v(p.global_position), sim_t, _fending, _fight_kind, who])
 	if p._hit_stun > 0.2 and _prev_stun <= 0.0:
 		var back: Vector3 = p.body.global_transform.basis.z
 		var wall := not _los(p.global_position + Vector3.UP, p.global_position + Vector3.UP + back * 0.8, [p.get_rid()])
@@ -816,11 +956,16 @@ func _monitor() -> void:
 		if _stuck_t > 1.5:
 			if p.global_position.distance_to(_stuck_ref) < 0.2:
 				_bug("movement", "stuck at %s pushing toward %s%s" % [_v(p.global_position), _v(p.global_position + Basis(Vector3.UP, p.yaw) * Vector3(p.move_input.x, 0, p.move_input.y)), _blocked_by(p)], "stuck:%d:%d" % [roundi(p.global_position.x), roundi(p.global_position.z)])
+				if OS.has_environment("PT_DEBUG"):
+					var hud := _hud()
+					print("PTDBG stuck: vel %s floor %s working '%s' anim '%s' fending %s fighting '%s' tally %s paused %s physics %s cutscene %s bag %s pause_menu %s" % [p.velocity, p.is_on_floor(), p.working, p.model._current if p.model else "", _fending, _fight_kind, _stalker_where(), paused, p.is_physics_processing(), CUTS.active,
+						hud._inventory.visible if hud and hud.get("_inventory") else "?", hud._pause.visible if hud and hud.get("_pause") else "?"])
 			_stuck_ref = p.global_position
 			_stuck_t = 0.0
 	else:
 		_stuck_ref = Vector3.INF
-	if p.global_position.y < -1.5:
+	# The lowest floor anywhere is the bottom of chapter 2's sump (-1.5).
+	if p.global_position.y < -1.8:
 		_bug("movement", "fell through the floor at %s" % _v(p.global_position), "pfall")
 	# 5. Sounds: infected voices fade with distance and don't overlap
 	#    non-stop (0.9 feedback).
@@ -1163,7 +1308,8 @@ func probe_level() -> void:
 		while z < bounds.end.y:
 			# A hair off the grid: a ray exactly on the seam between two
 			# floor slabs (x = -20.0) slips between them and reads as void.
-			var q := PhysicsRayQueryParameters3D.create(Vector3(x + 0.013, 0.6, z + 0.017), Vector3(x + 0.013, -0.6, z + 0.017), 1)
+			# Down to 1.8 m: a pit with a floor (chapter 2's sump) isn't void.
+			var q := PhysicsRayQueryParameters3D.create(Vector3(x + 0.013, 0.6, z + 0.017), Vector3(x + 0.013, -1.8, z + 0.017), 1)
 			floor_at[Vector2i(roundi(x / step), roundi(z / step))] = not space.intersect_ray(q).is_empty()
 			z += step
 		x += step
@@ -1187,7 +1333,9 @@ func probe_level() -> void:
 			var there := Vector3(n.x * step, 0.0, n.y * step)
 			var blocked := false
 			for h in [0.3, 1.0, 1.6]:
-				var q2 := PhysicsRayQueryParameters3D.create(here + Vector3.UP * h, there + Vector3.UP * h, 1)
+				# Railings and gates (Door.BARS_LAYER, 32) stop her as well as walls
+				# do. (Naming Door here would compile door.gd before the autoloads.)
+				var q2 := PhysicsRayQueryParameters3D.create(here + Vector3.UP * h, there + Vector3.UP * h, 1 | 32)
 				if not space.intersect_ray(q2).is_empty():
 					blocked = true
 			if not blocked:
@@ -1216,7 +1364,9 @@ func probe_level() -> void:
 				for o in over:
 					what.append(str(o.collider.get_parent().name if o.collider.get_parent() else o.collider.name))
 				_bug("level", "%s (%s) is placed inside %s at %s" % [zz.name, zz.variant, ", ".join(what), _v(zz.global_position)], "spawnin:" + str(zz.name))
-		if zz.global_position.y < -0.3:
+		# Below the floor, unless it lies on one (the bottom of the sump).
+		var under := space.intersect_ray(PhysicsRayQueryParameters3D.create(zz.global_position + Vector3.UP * 0.5, zz.global_position + Vector3.DOWN * 0.3, 1, [zz.get_rid()]))
+		if zz.global_position.y < -0.3 and (under.is_empty() or under.position.y < zz.global_position.y - 0.15):
 			_bug("level", "%s (%s) is below the floor right after the level loads, at %s" % [zz.name, zz.variant, _v(zz.global_position)], "spawnfall:" + str(zz.name))
 	# Items sunk into a prop (a crate, a jerrycan) get no 'Pick up' prompt
 	# from any side: something blocks her line of sight well short of them
@@ -1624,9 +1774,11 @@ func _run_probe2() -> void:
 	CHEATS.set_cheat("god_mode", false)
 
 ## Chapter 2 played through like a person: the arrival, every room cleared
-## and picked over, the master clock, the Tallyman's hunt, the diesel, the
-## tannoy, the Warden, cranking the generator through its waves, the flood
-## door and the deep stacks. After the first area's route it carries on in
+## and picked over, the keeper's note in the generator cabinet, the master
+## clock, the Tallyman's hunt, the diesel, the pump room (the valves, the
+## sump drained, the starting handle at the bottom), cranking the generator
+## through its waves, the tannoy, the Warden and his key, the flood door and
+## the deep stacks. After the first area's route it carries on in
 ## the same run (her bag from chapter 1); on its own (`only route2`) she
 ## starts at the lift with what a player usually has by then.
 func _run_route2() -> void:
@@ -1679,66 +1831,74 @@ func _run_route2() -> void:
 	elif not GS.has_flag("story_c2_hall"):
 		_bug("chapter2", "walking into the engine hall didn't start its scene")
 	await clear_area("hall", 90.0)
-	for id in ["c2_hall_ammo", "c2_hall_powder", "c2_hall_fuel"]:
+	# The keeper's note in the cabinet says where the three parts went.
+	for id in ["c2_hall_ammo", "c2_hall_powder", "c2_hall_fuel", "c2_gen_note"]:
 		await pick_up(id)
-	var gen: Node = _level().find_child("GeneratorSet", true, false)
+	# ---- the pump room next door: the starting handle at the bottom of the
+	# sump (before the fuse, so before the Tallyman: the note's nearest part)
+	await _pump_room()
+	if not p.inventory.key_items.has("crank_handle"):
+		_bug("chapter2", "no starting handle out of the pump room")
+	await _gen_use(_gen(), Vector3(-2.0, 0, 0), Vector3(-1, 0, 0), 1.1, "Fit the starting handle")
+	if not _gen().fitted("crank"):
+		_bug("chapter2", "the starting handle didn't go in")
 	# ---- the keeper's lodge (the safe room)
 	await open_door("lodge_door", Vector3(11.0, 0, 3.4), Vector3(11.0, 1, 4.6))
 	await cross(Vector3(11.0, 0, 3.4), Vector3(11.0, 0, 6.0), "the lodge door")
 	_shot("c2_lodge")
 	for id in ["c2_ledger", "c2_lodge_ribbon", "c2_lodge_herb", "c2_lodge_shells"]:
 		await pick_up(id)
-	# ---- the survey room: the winding key
-	await cross(Vector3(11.0, 0, 6.0), Vector3(11.0, 0, 3.0), "the lodge door (out)")
-	await open_door("survey_door", Vector3(12.0, 0, 2.7), Vector3(12.0, 1, 1.4))
-	await cross(Vector3(12.0, 0, 2.7), Vector3(12.0, 0, 0.0), "the survey room door")
-	_shot("c2_survey")
-	await clear_area("survey", 90.0)
-	for id in ["c2_clock_key", "c2_survey_note", "c2_survey_ammo"]:
-		await pick_up(id)
-	if not p.inventory.key_items.has("clock_key"):
-		_bug("chapter2", "no winding key after the survey room")
-	# ---- the clock gallery and the master clock
-	await open_door("gallery_west_door", Vector3(20.1, 0, -4.4), Vector3(21.0, 1, -4.4))
-	await cross(Vector3(20.1, 0, -4.4), Vector3(22.2, 0, -4.4), "the gallery door")
-	_shot("c2_gallery")
-	await clear_area("gallery", 90.0)
-	for id in ["c2_gallery_shells", "c2_gallery_red"]:
-		await pick_up(id)
-	var clock: Node = _level().find_child("MasterClock", true, false)
-	var front: Vector3 = clock.global_position + clock.global_basis.z * 1.5
-	if not await go_to(front, 30.0, true, "master clock "):
-		await _warp(front, "to the master clock")
-	await face(clock.global_position + Vector3.UP * 1.1)
-	if await use_thing("Wind the master clock", "the master clock"):
-		await _wait(9.0)
-		if not GS.has_flag("c2_clock_open"):
-			_bug("chapter2", "wound the master clock and its drawer didn't open")
-	_shot("c2_clock")
-	await pick_up("c2_fuse")
-	if not p.inventory.key_items.has("fuse"):
-		_bug("chapter2", "no fuse after the master clock")
+	await _clock_fuse()
 	# ---- the hunt
 	if await _until_t(func(): return CUTS.active, 12.0):
 		await _wait_cutscene_end(3.0)
 	if not GS.has_flag("story_c2_hunt"):
 		_bug("chapter2", "taking the fuse didn't bring the Tallyman")
-	# ---- the coal yard: the diesel (he follows; she keeps moving)
-	await go_to(Vector3(57.0, 0, 2.0), 60.0, true, "the coal yard ")
-	_shot("c2_yard")
-	await clear_area("yard", 150.0)
-	for id in ["c2_diesel", "c2_yard_ammo", "c2_yard_shells", "c2_yard_herb"]:
-		await pick_up(id)
-	if not p.inventory.key_items.has("diesel_can"):
-		_bug("chapter2", "no diesel after the coal yard")
-	# ---- diesel and fuse in
-	await _gen_use(gen, Vector3(-0.1, 0, 0), Vector3(0, 0, 1), 1.0, "Pour in the diesel")
-	await _gen_use(gen, Vector3(0.7, 0, 0), Vector3(0, 0, 1), 1.9, "Fit the fuse")
-	if not (gen.fitted("fuel") and gen.fitted("fuse")):
+	# ---- the coal yard: the diesel. He follows her out there, so she does
+	# what a hunted player does: the can first, only what comes at her
+	# fought, no sweeping the yard. If he kills her, Continue puts her back
+	# at the last checkpoint without what she took since: she goes back.
+	for tries in 3:
+		await _recover()
+		var gen := _gen()
+		if not (p.inventory.key_items.has("diesel_can") or gen.fitted("fuel")):
+			await go_to(Vector3(57.0, 0, 2.0), 60.0, true, "the coal yard ")
+			_shot("c2_yard")
+			if not GS.has_flag("story_c2_hunt") or GS.has_flag("c2_hunt_over"):
+				await clear_area("yard", 150.0)
+			for id in ["c2_diesel", "c2_yard_herb", "c2_yard_ammo", "c2_yard_shells"]:
+				if id == "c2_yard_shells" and _hunted():
+					continue   # the far corner, with him behind her: leave it
+				await pick_up(id)
+			await _recover()
+		if not (p.inventory.key_items.has("fuse") or _gen().fitted("fuse")):
+			# Back at a checkpoint from before the fuse: the clock again.
+			await _clock_fuse()
+		await _recover()
+		# ---- diesel and fuse in
+		if p.inventory.key_items.has("diesel_can") and not _gen().fitted("fuel"):
+			await _gen_use(_gen(), Vector3(-0.1, 0, 0), Vector3(0, 0, 1), 1.0, "Pour in the diesel")
+		if p.inventory.key_items.has("fuse") and not _gen().fitted("fuse"):
+			await _gen_use(_gen(), Vector3(0.7, 0, 0), Vector3(0, 0, 1), 1.9, "Fit the fuse")
+		await _recover()
+		if _gen().fitted("fuel") and _gen().fitted("fuse"):
+			break
+	if not (_gen().fitted("fuel") and _gen().fitted("fuse")):
 		_bug("chapter2", "diesel and fuse not both in the generator")
-	# ---- Hardass on the tannoy: it waits until she's clear of the Tallyman
+	# ---- all three in: the Tallyman gives up. Crank it, seeing off the waves
+	if not await _until_t(func(): return GS.has_flag("c2_hunt_over"), 45.0):
+		_bug("chapter2", "the Tallyman kept hunting with all three parts in (%s)" % _stalker_where())
+	await _crank(_gen(), 300.0)
+	if not _gen().running():
+		_bug("chapter2", "the generator never caught (progress %.2f)" % _gen().progress)
+		return
+	_shot("c2_power")
+	await _wait(6.0)
+	if GS.has_flag("c2_flood_open"):
+		_bug("chapter2", "the flood door went up on the power alone (it needs the Warden's key)")
+	# ---- Hardass on the tannoy: the flood door is locked out, his key
 	if not await _evade_until(func(): return CUTS.active or GS.has_flag("story_c2_intercom"), 90.0):
-		_bug("chapter2", "the tannoy scene never started after the diesel and fuse (Tallyman %s)" % _stalker_where())
+		_bug("chapter2", "the tannoy scene never started after the lights came on (%s)" % _scene_blockers())
 	if CUTS.active:
 		await _wait_cutscene_end(3.0)
 	# ---- the muster room and the Warden
@@ -1769,22 +1929,23 @@ func _run_route2() -> void:
 		await _wait(2.0)
 		CHEATS.set_cheat("one_hit_kills", false)
 	await _wait(2.0)
-	for id in ["c2_crank", "c2_muster_shells", "c2_muster_ammo", "c2_muster_herb"]:
+	for id in ["c2_flood_key", "c2_muster_shells", "c2_muster_ammo", "c2_muster_herb"]:
 		await pick_up(id)
-	if not p.inventory.key_items.has("crank_handle") and not gen.fitted("crank"):
-		_bug("chapter2", "no starting handle after the Warden")
+	if not p.inventory.key_items.has("flood_key"):
+		_bug("chapter2", "no flood door key after the Warden")
 	# Back out through the muster door (doors are walls to the navmesh).
 	await cross(Vector3(26.1, 0, 6.4), Vector3(26.1, 0, 3.0), "the muster room door (out)")
-	# ---- crank it, seeing off the waves
-	await _gen_use(gen, Vector3(-2.0, 0, 0), Vector3(-1, 0, 0), 1.1, "Fit the starting handle")
-	await _crank(gen, 300.0)
-	if not gen.running():
-		_bug("chapter2", "the generator never caught (progress %.2f)" % gen.progress)
-		return
-	_shot("c2_power")
-	await _wait(6.0)
+	# ---- his key in the flood door's control box
+	var fd: Node = _level().find_child("FloodDoor", true, false)
+	var box: Vector3 = fd.global_transform * fd.get_script().BOX
+	var stand := Vector3(box.x, 0, box.z) + Vector3(0, 0, -0.8)
+	if not await go_to(stand, 60.0, true, "the flood door's box "):
+		await _warp(stand, "to the flood door's box")
+	await face(box)
+	await use_thing("Turn the Warden's key", "the flood door's box")
+	await _wait(8.0)
 	if not GS.has_flag("c2_flood_open"):
-		_bug("chapter2", "the generator runs and the flood door stayed down")
+		_bug("chapter2", "turned the Warden's key and the flood door stayed down")
 	# ---- the deep stacks
 	await clear_area("hall", 60.0)
 	await go_to(Vector3(46.0, 0, 14.5), 40.0, true, "the deep stacks ")
@@ -1794,6 +1955,7 @@ func _run_route2() -> void:
 	if not GS.has_flag("c2_complete"):
 		_bug("chapter2", "reached the deep stacks and chapter 2 didn't finish (%s)" % _scene_blockers())
 	_note("chapter 2 done in %.0fs, hp %.0f, bag %s" % [sim_t - t0, p.hp, JSON.stringify(p.inventory.to_dict().get("slots", []))])
+	_note("the Tallyman's hunt: she turned on him %d times (%d dropped him to his knee), %.0f s, %.0f damage taken doing it" % [_tally_fends, _tally_knees, _tally_time, _tally_dmg])
 
 ## Why a story scene isn't starting where she stands (what
 ## Chapter2Story._quiet waits on): infected after her within 12 m, the
@@ -1815,7 +1977,7 @@ func _stalker_where() -> String:
 	var st = get_first_node_in_group("stalker")
 	if st == null or not st.active:
 		return "gone"
-	return "%.1f m away" % st.global_position.distance_to(p.global_position)
+	return "%.1f m away, stagger %.1f, at %s" % [st.global_position.distance_to(p.global_position), st._stagger, _v(st.global_position)]
 
 ## Away from the Tallyman until `cond` holds: to whichever of a few far-off
 ## spots is furthest from him, again and again (he walks slower than she runs).
@@ -1847,6 +2009,107 @@ func _evade_until(cond: Callable, max_t: float) -> bool:
 		await _recover()
 	return cond.call()
 
+## The pump room the way the drill card says: the card by the door, the
+## valves in its order (inlet shut, bypass shut, then the suction open), the
+## sump running down, the chained gate, down the steps to whatever is down
+## there, and the starting handle off the bottom. Then back out.
+func _pump_room() -> void:
+	var pr: Node = _level().find_child("PumpRoom", true, false)
+	var cls: Script = pr.get_script()
+	var o: Vector3 = pr.global_position
+	var out := o + Vector3(1.6, 0, -1.1)
+	var inside := o + Vector3(1.6, 0, 1.2)
+	await open_door("pump_door", out, o + Vector3(1.6, 1, 0.1))
+	await cross(out, inside, "the pump room door")
+	# Shut it behind her: the Tallyman follows through an open door.
+	await face(o + Vector3(1.6, 1.1, 0.0))
+	if p._prompt_text == "Close":
+		await use_thing("Close", "the pump room door (inside)")
+	_shot("c2_pump")
+	for id in ["c2_pump_drill", "c2_pump_shells"]:
+		await pick_up(id)
+	for i in [0, 2, 1]:
+		if cls.valve_open(i) == (i == 1):
+			continue
+		var wheel: Vector3 = o + Vector3(cls.WHEEL_X, cls.WHEEL_Y, cls.VALVE_Z[i])
+		var spot := Vector3(wheel.x + 0.5, 0, wheel.z)
+		if not await go_to(spot, 30.0, true, "valve V%d " % (i + 1)):
+			await _warp(spot, "to valve V%d" % (i + 1))
+		await face(wheel)
+		await use_thing("valve V%d" % (i + 1), "valve V%d" % (i + 1))
+		await _until_t(func(): return p.working == "" and not pr._busy[i], 6.0)
+		if cls.valve_open(i) != (i == 1):
+			_bug("chapter2", "turning valve V%d didn't change it (prompt '%s')" % [i + 1, p._prompt_text])
+	_shot("c2_pump_valves")
+	if not await _until_t(func(): return cls.drained(), 60.0):
+		_bug("chapter2", "the sump never drained with the valves set (level %.2f, way %s)" % [pr.level, pr._way()])
+		return
+	var gate := o + Vector3(cls.STAIR.get_center().x, 0, cls.PIT.position.y)
+	var gate_stand := gate + Vector3(0, 0, -0.75)
+	if not await go_to(gate_stand, 30.0, true, "the sump gate "):
+		await _warp(gate_stand, "to the sump gate")
+	await face(gate + Vector3(0, 0.9, 0))
+	await use_thing("Unhook the sump gate", "the sump gate")
+	await _wait(1.5)
+	if not GS.has_flag(cls.FLAG_GATE):
+		_bug("chapter2", "the sump gate didn't open (prompt '%s')" % p._prompt_text)
+	# Down the steps (the gate was shut when the navmesh was baked).
+	var bottom := o + Vector3(cls.STAIR.get_center().x, cls.FLOOR_Y, cls.STAIR.end.y + 0.5)
+	await cross(gate_stand, bottom, "the sump steps")
+	if p.global_position.y > cls.FLOOR_Y + 0.4:
+		_bug("chapter2", "went down the sump steps and she isn't at the bottom (y %.2f)" % p.global_position.y)
+	_shot("c2_sump")
+	# The man at the bottom gets up.
+	await _wait(1.5)
+	await clear_area("pump", 45.0)
+	await pick_up("c2_crank")
+	await cross(bottom, gate_stand, "the sump steps (up)")
+	await open_door("pump_door", inside, o + Vector3(1.6, 1, 0.0))
+	await cross(inside, out, "the pump room door (out)")
+
+## The winding key from the survey room (if she hasn't it), the master
+## clock, and the fuse out of its drawer. Again after a death that put her
+## back at a checkpoint from before the fuse.
+func _clock_fuse() -> void:
+	if not (p.inventory.key_items.has("clock_key") or GS.has_flag("c2_clock_open")):
+		# ---- the survey room: the winding key
+		if _area_of(p.global_position) == "lodge":
+			await cross(Vector3(11.0, 0, 6.0), Vector3(11.0, 0, 3.0), "the lodge door (out)")
+		await open_door("survey_door", Vector3(12.0, 0, 2.7), Vector3(12.0, 1, 1.4))
+		await cross(Vector3(12.0, 0, 2.7), Vector3(12.0, 0, 0.0), "the survey room door")
+		_shot("c2_survey")
+		await clear_area("survey", 90.0)
+		for id in ["c2_clock_key", "c2_survey_note", "c2_survey_ammo"]:
+			await pick_up(id)
+		if not p.inventory.key_items.has("clock_key"):
+			_bug("chapter2", "no winding key after the survey room")
+	# ---- the clock gallery and the master clock
+	await open_door("gallery_west_door", Vector3(20.1, 0, -4.4), Vector3(21.0, 1, -4.4))
+	await cross(Vector3(20.1, 0, -4.4), Vector3(22.2, 0, -4.4), "the gallery door")
+	_shot("c2_gallery")
+	await clear_area("gallery", 90.0)
+	for id in ["c2_gallery_shells", "c2_gallery_red"]:
+		await pick_up(id)
+	var clock: Node = _level().find_child("MasterClock", true, false)
+	var front: Vector3 = clock.global_position + clock.global_basis.z * 1.5
+	if not await go_to(front, 30.0, true, "master clock "):
+		await _warp(front, "to the master clock")
+	await face(clock.global_position + Vector3.UP * 1.1)
+	if GS.has_flag("c2_clock_open"):
+		pass
+	elif await use_thing("Wind the master clock", "the master clock"):
+		await _wait(9.0)
+		if not GS.has_flag("c2_clock_open"):
+			_bug("chapter2", "wound the master clock and its drawer didn't open")
+	_shot("c2_clock")
+	await pick_up("c2_fuse")
+	if not p.inventory.key_items.has("fuse"):
+		_bug("chapter2", "no fuse after the master clock")
+
+## The generator as the level has it now (a death reloads the level).
+func _gen() -> Node:
+	return _level().find_child("GeneratorSet", true, false)
+
 ## One of the generator's parts, through its real prompt.
 func _gen_use(gen: Node, local: Vector3, n: Vector3, dist: float, expect: String) -> bool:
 	var at: Vector3 = gen.global_transform * local
@@ -1858,6 +2121,9 @@ func _gen_use(gen: Node, local: Vector3, n: Vector3, dist: float, expect: String
 			await pick_up_node(pk)
 	if not await go_to(stand, 40.0, true, expect + " "):
 		await _warp(stand, "to the generator (" + expect + ")")
+	if _tallyman_close(5.0):
+		await _fend_tallyman()
+		await go_to(stand, 20.0, true, expect + " ")
 	await face(Vector3(at.x, 1.0, at.z))
 	_stop()
 	await _wait(0.2)
@@ -1875,8 +2141,12 @@ func _gen_use(gen: Node, local: Vector3, n: Vector3, dist: float, expect: String
 func _crank(gen: Node, max_t: float) -> void:
 	var end := sim_t + max_t
 	var lets_go := 0
-	while sim_t < end and not gen.running():
+	while sim_t < end:
 		await _recover()
+		if not is_instance_valid(gen):
+			gen = _gen()
+		if gen.running():
+			break
 		var z := _threat(7.0)
 		if z:
 			if p.working == "crank":

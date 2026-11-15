@@ -1,11 +1,14 @@
 extends SceneTree
 ## Chapter 2 (the Undercroft), end to end, solo, through the real prompts:
 ## the arrival in the lift, the engine hall scene, the generator's three
-## missing parts, the master clock (winding key, the dials, the drawer and
-## the fuse), the Tallyman's hunt, the diesel, Hardass on the tannoy, the
-## muster room door, the Warden scene and fight, the starting handle, a
-## reload part way, cranking with the waves of infected coming in out of
-## sight, the lights and the flood door, and the last scene in the deep
+## missing parts and the keeper's note, the master clock (winding key, the
+## dials, the drawer and the fuse), the Tallyman's hunt, the diesel, the pump
+## room (the drill card, the chained gate, the three valves turned in the
+## wrong order first, the sump draining, a reload, the starting handle at the
+## bottom), the Tallyman giving up, cranking with the waves of infected
+## coming in out of sight, the lights, the flood door locked out, Hardass on
+## the tannoy, the muster room door, the Warden scene and fight, his key, a
+## reload, the key switch and the flood door, and the last scene in the deep
 ## stacks. The infected are cleared out of the way (the bot's chapter 2 route
 ## fights them: tests/playtest.gd -- only route2).
 ## Prints CHAPTER 2 FLOW OK or CHAPTER 2 FLOW FAIL.
@@ -42,10 +45,10 @@ func _on_node_added(n: Node) -> void:
 
 ## Stands her `dist` m out from a point (n points from it towards her),
 ## facing it, and returns the prompt she gets.
-func _prompt_at(target: Vector3, n: Vector3, dist: float) -> String:
+func _prompt_at(target: Vector3, n: Vector3, dist: float, floor_y := 0.0) -> String:
 	n.y = 0.0
 	n = n.normalized()
-	p.global_position = Vector3(target.x, 0.0, target.z) + n * dist
+	p.global_position = Vector3(target.x, floor_y, target.z) + n * dist
 	p.velocity = Vector3.ZERO
 	var face := atan2(n.x, n.z)
 	p.body.global_rotation.y = face
@@ -67,6 +70,8 @@ func _take(pid: String) -> bool:
 		_check(false, "item %s is in the level" % pid)
 		return false
 	var at: Vector3 = node.global_position
+	# Down in the drained sump she stands on its floor.
+	var fy := -1.5 if at.y < -1.0 else 0.0
 	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
 	var shape := CapsuleShape3D.new()
 	shape.radius = 0.36
@@ -79,10 +84,10 @@ func _take(pid: String) -> bool:
 		for k in 16:
 			var dir := Vector3(sin(k * TAU / 16.0), 0.0, cos(k * TAU / 16.0))
 			var c: Vector3 = Vector3(at.x, 0.0, at.z) + dir * r
-			q.transform = Transform3D(Basis(), c + Vector3.UP * 0.83)
+			q.transform = Transform3D(Basis(), c + Vector3.UP * (fy + 0.83))
 			if not space.intersect_shape(q, 1).is_empty():
 				continue
-			var t: String = _prompt_at(at, dir, r)
+			var t: String = _prompt_at(at, dir, r, fy)
 			if t.begins_with("Pick up"):
 				p.interact()
 				_check(gs.item_taken(pid), "picked up %s (%s)" % [pid, t])
@@ -99,6 +104,23 @@ func _door(id: String) -> Node:
 			return d
 	return null
 
+func _pump() -> Node:
+	return current_scene.find_child("PumpRoom", true, false)
+
+## Stands her at valve i's wheel (in the gallery between the wall and the
+## sump railing) and returns the prompt.
+func _valve_prompt(i: int) -> String:
+	var pr := _pump()
+	var cls: Script = pr.get_script()
+	var at: Vector3 = pr.global_position + Vector3(cls.WHEEL_X, 0.0, cls.VALVE_Z[i])
+	return _prompt_at(at, Vector3(1, 0, 0), 0.5)
+
+func _gate_prompt() -> String:
+	var pr := _pump()
+	var cls: Script = pr.get_script()
+	var at: Vector3 = pr.global_position + Vector3(cls.STAIR.get_center().x, 0.0, cls.PIT.position.y)
+	return _prompt_at(at, Vector3(0, 0, -1), 0.75)
+
 func _clear_infected() -> void:
 	for z in get_nodes_in_group("zombies"):
 		if z is CharacterBody3D and str(z.name).begins_with("Z_"):
@@ -113,7 +135,7 @@ func _cutscene_over(id: String, limit_ms: int) -> bool:
 
 func _process(_d: float) -> bool:
 	frames += 1
-	if Time.get_ticks_msec() > 420000:
+	if Time.get_ticks_msec() > 540000:
 		print("TIMEOUT at step %d" % step)
 		print("CHAPTER 2 FLOW FAIL: timeout")
 		quit(1)
@@ -153,6 +175,8 @@ func _process(_d: float) -> bool:
 			var lift = get_first_node_in_group("vault_elevator")
 			_check(lift != null and lift.in_car(p.global_position), "she starts in the lift car")
 			_check(cs.active and cs.current == "c2_arrival", "the arrival scene plays (%s)" % str(cs.current))
+			var body: Node = current_scene.get_node_or_null("Z_c2_sump")
+			_check(body != null and body.variant == "possum" and body.global_position.y < -1.3, "a drowned man lies at the bottom of the sump")
 			wall_to = Time.get_ticks_msec() + 90000
 			step = 1
 		1:
@@ -177,10 +201,18 @@ func _process(_d: float) -> bool:
 			if not _cutscene_over("c2_hall", 90000):
 				return false
 			var o := _obj()
-			_check(o.contains("diesel") and o.contains("fuse") and o.contains("starting handle"), "objective lists what the generator needs: %s" % o)
-			# The generator with nothing: three prompts, three answers.
+			var lo := o.to_lower()
+			_check(lo.contains("diesel") and lo.contains("fuse") and lo.contains("starting handle"), "objective lists what the generator needs: %s" % o)
+			_check(lo.contains("coal yard") and lo.contains("clock gallery") and lo.contains("survey room") and lo.contains("pump room"), "and where each one is: %s" % o)
+			# The keeper's note in the generator's cabinet comes first (its
+			# prompt is the one she gets at the cabinet until she has it).
 			var g: Vector3 = gen.global_position
-			var t := _prompt_at(g + Vector3(-0.1, 0, 0.0), Vector3(0, 0, 1), 1.0)
+			var t := _prompt_at(g + Vector3(0.7, 0, 0.0), Vector3(0, 0, 1), 1.9)
+			_check(t.begins_with("Pick up") and t.contains("Note"), "the keeper's note at the cabinet: \"%s\"" % t)
+			_take("c2_gen_note")
+			_check(p.inventory.files.has("gen_note"), "the keeper's note is in Files")
+			# The generator with nothing: three prompts, three answers.
+			t = _prompt_at(g + Vector3(-0.1, 0, 0.0), Vector3(0, 0, 1), 1.0)
 			_check(t == "Check the fuel tank", "fuel tank prompt: \"%s\"" % t)
 			t = _prompt_at(g + Vector3(0.7, 0, 0.0), Vector3(0, 0, 1), 1.9)
 			_check(t == "Check the control box", "control box prompt: \"%s\"" % t)
@@ -253,6 +285,7 @@ func _process(_d: float) -> bool:
 			# Out to the coal yard shed: the diesel.
 			_take("c2_diesel")
 			_check(p.inventory.key_items.has("diesel_can"), "the diesel is in her bag")
+			_check(_obj().contains("Diesel: you have it"), "objective says she has the diesel: %s" % _obj())
 			st.global_position = Vector3(20.0, 0.0, -30.0)   # far off while she works
 			st.set_physics_process(false)
 			var g: Vector3 = gen.global_position
@@ -270,77 +303,111 @@ func _process(_d: float) -> bool:
 			_check(gen.fitted("fuel") and gen.fitted("fuse"), "diesel and fuse in")
 			_check(not p.inventory.key_items.has("diesel_can") and not p.inventory.key_items.has("fuse"), "both used up")
 			st_park()
-			_check(cs.active and cs.current == "c2_intercom", "Hardass comes on the tannoy (%s)" % str(cs.current))
-			wall_to = Time.get_ticks_msec() + 90000
-			step = 10
-		10:
-			if not _cutscene_over("c2_intercom", 90000):
-				return false
-			_check(gs.has_flag("unlocked:muster_door"), "he unbars the muster room door")
-			_check(_obj() == _story_cls.OBJ_HANDLE, "objective: %s" % _obj())
-			var md := _door("muster_door")
-			var t := _prompt_at(md.global_position, Vector3(0, 0, -1), 1.0)
-			_check(t != "" and not t.to_lower().contains("locked"), "muster door prompt: \"%s\"" % t)
+			_check(not cs.active, "no tannoy yet: the generator still needs its handle (%s)" % str(cs.current))
+			var o := _obj()
+			_check(o.contains("Starting handle") and o.contains("pump room") and not o.contains("Diesel") and not o.contains("Field fuse"), "objective points at the pump room: %s" % o)
+			# The pump room, off the service tunnel.
+			var pd := _door("pump_door")
+			_check(pd != null, "the pump room has a door")
+			var t := _prompt_at(pd.global_position, Vector3(0, 0, -1), 1.0)
+			_check(t != "" and not t.to_lower().contains("locked"), "pump room door prompt: \"%s\"" % t)
 			p.interact()
-			step = 11
+			step = 10
 			wait_to = frames + 90
+		10:
+			if frames < wait_to:
+				return false
+			_check(_door("pump_door").is_open, "the pump room door opens")
+			_take("c2_pump_drill")
+			_check(p.inventory.files.has("pump_drill"), "the drill card is in Files")
+			var pr := _pump()
+			_check(pr != null and pr.level >= 1.0, "the sump is full")
+			var t := _gate_prompt()
+			_check(t == "Check the sump gate", "gate prompt while it's flooded: \"%s\"" % t)
+			p.interact()
+			_check(not gs.has_flag("c2_sump_gate"), "the gate stays chained while it holds water")
+			# Wrong first: open the suction with the bypass still open.
+			t = _valve_prompt(1)
+			_check(t == "Open valve V2 (sump suction)", "V2 prompt: \"%s\"" % t)
+			p.interact()
+			_check(p.working == "valve", "she takes the wheel, gun away")
+			step = 11
+			wait_to = frames + 150
 		11:
 			if frames < wait_to:
 				return false
-			var md := _door("muster_door")
-			_check(md.is_open, "the muster room door opens")
-			p.global_position = Vector3(26.1, 0.0, 6.2)
+			var pr := _pump()
+			_check(p.working == "", "she lets go of the wheel")
+			_check(pr._open[1] and pr._way() == "backflow", "suction open with the bypass open: it backs up (%s)" % pr._way())
+			step = 110
+			wait_to = frames + 60 * 4
+		110:
+			if frames < wait_to:
+				return false
+			var pr := _pump()
+			_check(pr.level >= 0.999 and pr._said.has("backflow"), "the water comes back up the drain and they say so (level %.2f)" % pr.level)
+			var t := _valve_prompt(2)
+			_check(t == "Shut valve V3 (sewer bypass)", "V3 prompt: \"%s\"" % t)
+			p.interact()
 			step = 12
-			wait_to = frames + 30
+			wait_to = frames + 150
 		12:
 			if frames < wait_to:
 				return false
-			_check(cs.active and cs.current == "c2_warden", "walking in starts the Warden scene (%s)" % str(cs.current))
-			wall_to = Time.get_ticks_msec() + 120000
-			step = 13
-		13:
-			if not _cutscene_over("c2_warden", 120000):
-				return false
-			var b: Node = current_scene.get_node_or_null("Warden")
-			_check(b != null and b.awake and b.is_in_group("zombies"), "the Warden is up and fighting")
-			var st = get_first_node_in_group("stalker")
-			_check(st == null or not st.active, "the Tallyman has lost them")
-			var md := _door("muster_door")
-			_check(md != null and not md.is_open and not gs.has_flag("unlocked:muster_door"), "the door is barred behind them for the fight")
-			_check(_obj() == _story_cls.OBJ_WARDEN, "objective: %s" % _obj())
-			_check(p.global_position.z > 5.0, "she is inside the room, not in the doorway")
-			# The fight itself is tests/warden_fight.gd; here he goes down.
-			cheats.set_cheat("god_mode", true)
-			b.take_hit(5000.0, "p9", "torso", -b.global_basis.z)   # from behind
-			step = 14
+			var pr := _pump()
+			_check(not pr._open[2] and pr._way() == "holding", "bypass shut, river still running in: it holds (%s)" % pr._way())
+			step = 120
 			wait_to = frames + 60 * 4
-		14:
+		120:
 			if frames < wait_to:
 				return false
-			_check(gs.has_flag("c2_warden_dead"), "the Warden is dead")
-			_check(current_scene.has_node("Pickup_c2_crank"), "the starting handle drops where he fell")
-			var md := _door("muster_door")
-			_check(md.is_open and gs.has_flag("unlocked:muster_door"), "the door opens again after the fight")
-			_check(_obj() == _story_cls.OBJ_FIT, "objective: %s" % _obj())
-			# Reload here: he stays dead, the handle stays on the floor.
+			var pr := _pump()
+			_check(pr.level >= 0.99 and pr._said.has("holding"), "the level holds while the river feeds it (%.2f)" % pr.level)
+			var t := _valve_prompt(0)
+			_check(t == "Shut valve V1 (river inlet)", "V1 prompt: \"%s\"" % t)
+			p.interact()
+			step = 13
+			wait_to = frames + 150
+			wall_to = Time.get_ticks_msec() + 60000
+		13:
+			var pr := _pump()
+			if frames < wait_to or (not pr.drained() and Time.get_ticks_msec() < wall_to):
+				return false
+			_check(pr._said.has("draining"), "they see it going down")
+			_check(pr.drained(), "the sump drains (level %.2f)" % pr.level)
+			_check(current_scene.has_node("Pickup_c2_crank"), "the starting handle is lying at the bottom")
+			_check(_obj().contains("drained sump"), "objective: %s" % _obj())
+			for i in 3:
+				_check(_valve_prompt(i) == "", "no valve prompt once it's dry (V%d)" % (i + 1))
+			var t := _gate_prompt()
+			_check(t == "Unhook the sump gate", "gate prompt once it's dry: \"%s\"" % t)
+			p.interact()
+			_check(gs.has_flag("c2_sump_gate") and pr._gate_body.collision_layer == 0, "the gate swings open")
+			# The steps down are solid all the way.
+			var cls: Script = pr.get_script()
+			var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+			for f in [0.2, 0.5, 0.8]:
+				var at: Vector3 = pr.global_position + Vector3(cls.STAIR.get_center().x, 1.0, cls.STAIR.position.y + cls.STAIR.size.y * f)
+				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(at, at + Vector3.DOWN * 3.0, 1, [p.get_rid()]))
+				_check(not hit.is_empty() and hit.position.y < -0.05 and hit.position.y > cls.FLOOR_Y, "steps underfoot %.0f%% of the way down (%s)" % [f * 100.0, str(hit.get("position", "nothing"))])
+			# Reload here: it stays drained, the gate open, the handle down there.
 			reload_current_scene()
-			step = 15
+			step = 14
 			wait_to = frames + 60
-		15:
+		14:
 			if frames < wait_to:
 				return false
 			p = get_first_node_in_group("players")
 			gen = current_scene.find_child("GeneratorSet", true, false)
-			_check(not cs.active, "no scene replays after a reload")
-			var b: Node = current_scene.get_node_or_null("Warden")
-			_check(b == null, "no Warden after a reload")
-			_check(current_scene.has_node("Pickup_c2_crank"), "the handle is still on the floor after a reload")
+			var pr := _pump()
+			_check(pr.drained() and pr.level <= 0.0 and not pr._water.visible, "still drained after a reload")
+			_check(gs.has_flag("c2_sump_gate") and pr._gate_body.collision_layer == 0, "the gate is still open after a reload")
+			_check(current_scene.has_node("Pickup_c2_crank"), "the handle is still at the bottom after a reload")
+			_check(not pr._open[0] and pr._open[1] and not pr._open[2], "the valves stay as she left them")
 			_check(gen.fitted("fuel") and gen.fitted("fuse") and not gen.fitted("crank"), "the generator keeps its parts after a reload")
-			var fd: Node = current_scene.find_child("FloodDoor", true, false)
-			_check(not gs.has_flag("c2_flood_open"), "the flood door is still shut")
-			_check(_obj() == _story_cls.OBJ_FIT, "objective after a reload: %s" % _obj())
 			_clear_infected()
 			_take("c2_crank")
+			_check(_obj().contains("Starting handle: you have it"), "objective: %s" % _obj())
 			var g: Vector3 = gen.global_position
 			var t := _prompt_at(g + Vector3(-2.0, 0, 0), Vector3(-1, 0, 0), 1.1)
 			_check(t == "Fit the starting handle", "crank prompt with the handle: \"%s\"" % t)
@@ -352,6 +419,8 @@ func _process(_d: float) -> bool:
 				return false
 			_check(gen.fitted("crank"), "the starting handle is on")
 			_check(_obj() == _story_cls.OBJ_CRANK, "objective: %s" % _obj())
+			var st = get_first_node_in_group("stalker")
+			_check(gs.has_flag("c2_hunt_over") and (st == null or not st.active), "with everything in, the Tallyman gives up the hunt")
 			var g: Vector3 = gen.global_position
 			var t := _prompt_at(g + Vector3(-2.0, 0, 0), Vector3(-1, 0, 0), 1.1)
 			_check(t == "Crank the engine", "crank prompt: \"%s\"" % t)
@@ -382,35 +451,120 @@ func _process(_d: float) -> bool:
 					if s[2]:
 						seen.append("%s at %s" % [s[0], str(s[1].snapped(Vector3.ONE * 0.1))])
 				_check(seen.is_empty(), "none of them appeared in her view: %s" % ", ".join(seen))
+				_check(p.working == "", "she lets go of the handle when it catches")
+				_check(gs.has_flag("power:undercroft"), "the Undercroft has power")
+				_check(not gs.has_flag("c2_flood_open"), "the flood door stays down: it's locked out")
+				var fd: Node = current_scene.find_child("FloodDoor", true, false)
+				_check(fd._lamps["supply"][0].emission_energy_multiplier > 0.0 and fd._lamps["locked"][0].emission_energy_multiplier > 0.0, "its control box shows SUPPLY and LOCKED OUT")
+				_clear_infected()
 				step = 18
 				wait_to = frames + 60 * 8
 		18:
 			if frames < wait_to:
 				return false
-			_check(p.working == "", "she lets go of the handle when it catches")
-			_check(gs.has_flag("power:undercroft"), "the Undercroft has power")
-			var pw: Node = current_scene.find_child("UndercroftPower", true, false)
 			var lit := 0
 			var all := 0
 			for l in get_nodes_in_group("uc_work_light"):
 				all += 1
 				lit += 1 if l.visible and l.light_energy > 0.0 else 0
 			_check(all > 0 and lit == all, "the work lights are on (%d of %d)" % [lit, all])
+			_check(cs.active and cs.current == "c2_intercom", "with the lights on, Hardass comes on the tannoy (%s)" % str(cs.current))
+			wall_to = Time.get_ticks_msec() + 90000
+			step = 19
+		19:
+			if not _cutscene_over("c2_intercom", 90000):
+				return false
+			_check(gs.has_flag("unlocked:muster_door"), "he unbars the muster room door")
+			_check(_obj() == _story_cls.OBJ_KEY, "objective: %s" % _obj())
+			var fd: Node = current_scene.find_child("FloodDoor", true, false)
+			var t := _prompt_at(fd.global_transform * fd.get_script().BOX, Vector3(0, 0, -1), 0.8)
+			_check(t == "Check the control box", "flood door control box without the key: \"%s\"" % t)
+			var md := _door("muster_door")
+			t = _prompt_at(md.global_position, Vector3(0, 0, -1), 1.0)
+			_check(t != "" and not t.to_lower().contains("locked"), "muster door prompt: \"%s\"" % t)
+			p.interact()
+			step = 20
+			wait_to = frames + 90
+		20:
+			if frames < wait_to:
+				return false
+			var md := _door("muster_door")
+			_check(md.is_open, "the muster room door opens")
+			p.global_position = Vector3(26.1, 0.0, 6.2)
+			step = 21
+			wait_to = frames + 30
+		21:
+			if frames < wait_to:
+				return false
+			_check(cs.active and cs.current == "c2_warden", "walking in starts the Warden scene (%s)" % str(cs.current))
+			wall_to = Time.get_ticks_msec() + 120000
+			step = 22
+		22:
+			if not _cutscene_over("c2_warden", 120000):
+				return false
+			var b: Node = current_scene.get_node_or_null("Warden")
+			_check(b != null and b.awake and b.is_in_group("zombies"), "the Warden is up and fighting")
+			var md := _door("muster_door")
+			_check(md != null and not md.is_open and not gs.has_flag("unlocked:muster_door"), "the door is barred behind them for the fight")
+			_check(_obj() == _story_cls.OBJ_WARDEN_KEY, "objective: %s" % _obj())
+			_check(p.global_position.z > 5.0, "she is inside the room, not in the doorway")
+			# The fight itself is tests/warden_fight.gd; here he goes down.
+			cheats.set_cheat("god_mode", true)
+			b.take_hit(5000.0, "p9", "torso", -b.global_basis.z)   # from behind
+			step = 23
+			wait_to = frames + 60 * 4
+		23:
+			if frames < wait_to:
+				return false
+			_check(gs.has_flag("c2_warden_dead"), "the Warden is dead")
+			_check(current_scene.has_node("Pickup_c2_flood_key"), "the flood door key drops where he fell")
+			_check(not current_scene.has_node("Pickup_c2_crank"), "and no second handle")
+			var md := _door("muster_door")
+			_check(md.is_open and gs.has_flag("unlocked:muster_door"), "the door opens again after the fight")
+			_check(_obj() == _story_cls.OBJ_TURN_KEY, "objective: %s" % _obj())
+			# Reload here: he stays dead, the key stays on the floor.
+			reload_current_scene()
+			step = 24
+			wait_to = frames + 60
+		24:
+			if frames < wait_to:
+				return false
+			p = get_first_node_in_group("players")
+			gen = current_scene.find_child("GeneratorSet", true, false)
+			_check(not cs.active, "no scene replays after a reload")
+			_check(current_scene.get_node_or_null("Warden") == null, "no Warden after a reload")
+			_check(current_scene.has_node("Pickup_c2_flood_key"), "the key is still on the floor after a reload")
+			_check(gen.running() and not gs.has_flag("c2_flood_open"), "power on, flood door still down after a reload")
+			_check(not gs.has_flag(_story_cls.OLD_FLOW), "a new game is not taken for an old save")
+			_check(_obj() == _story_cls.OBJ_TURN_KEY, "objective after a reload: %s" % _obj())
+			_clear_infected()
+			_take("c2_flood_key")
+			_check(p.inventory.key_items.has("flood_key"), "the Warden's key is in her bag")
+			var fd: Node = current_scene.find_child("FloodDoor", true, false)
+			var t := _prompt_at(fd.global_transform * fd.get_script().BOX, Vector3(0, 0, -1), 0.8)
+			_check(t == "Turn the Warden's key", "key switch prompt: \"%s\"" % t)
+			p.interact()
+			step = 25
+			wait_to = frames + 60 * 14
+		25:
+			if frames < wait_to:
+				return false
+			_check(gs.has_flag("c2_flood_key_in") and not p.inventory.key_items.has("flood_key"), "the key stays in the switch")
 			_check(gs.has_flag("c2_flood_open"), "the flood door goes up")
 			_check(_obj() == _story_cls.OBJ_FLOOD, "objective: %s" % _obj())
 			var fd: Node = current_scene.find_child("FloodDoor", true, false)
 			_check(fd._slab.position.y > 2.0, "the flood door's slab is up (%.2f)" % fd._slab.position.y)
 			# Through it, into the deep stacks.
 			p.global_position = Vector3(46.0, 0.0, 14.0)
-			step = 19
+			step = 26
 			wait_to = frames + 40
-		19:
+		26:
 			if frames < wait_to:
 				return false
 			_check(cs.active and cs.current == "c2_end", "the deep stacks scene plays (%s)" % str(cs.current))
 			wall_to = Time.get_ticks_msec() + 90000
-			step = 20
-		20:
+			step = 27
+		27:
 			if not _cutscene_over("c2_end", 90000):
 				return false
 			_check(gs.has_flag("c2_complete"), "chapter 2 complete")

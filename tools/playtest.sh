@@ -93,7 +93,8 @@ run extra_infected   300 --fixed-fps 60 --script tests/extra_infected.gd
 run level_probe_hard_coop 180 --fixed-fps 60 --script tests/playtest.gd -- only probe difficulty hard pressure 3
 run bot_scares_hard  300 --fixed-fps 60 --script tests/playtest.gd -- only scares difficulty hard pressure 2
 # Chapter 2, the Undercroft: walls, the level probe, the whole story through
-# its prompts, the Warden's rules, and the bot fighting him its own way.
+# its prompts, the Warden's rules, the bot fighting him its own way, and
+# the hunting Tallyman at a shut door, and the pump room walked on foot.
 run wall_overlap_ch2 120 --script tests/wall_overlap.gd -- res://scenes/levels/undercroft.tscn
 run level_probe_ch2  180 --fixed-fps 60 --script tests/playtest.gd -- only probe2
 run level_probe_ch2_hard_coop 180 --fixed-fps 60 --script tests/playtest.gd -- only probe2 difficulty hard pressure 3
@@ -105,6 +106,8 @@ run bot_warden       300 --fixed-fps 60 --script tests/playtest.gd -- only warde
 run web_probe        180 --fixed-fps 60 --script tests/playtest.gd -- web only probe
 run web_probe_ch2    180 --fixed-fps 60 --script tests/playtest.gd -- web only probe2
 run web_adapt         60 --script tests/web_quality_adapt_test.gd
+run stalker_doors    300 --fixed-fps 60 --script tests/stalker_doors.gd
+run pump_walk        200 --fixed-fps 60 --script tests/pump_walk.gd
 
 # Co-op: two copies of the game through a local relay.
 coop() {

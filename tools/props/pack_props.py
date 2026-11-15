@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import pack_weapons as pw
 
 # id: (albedo px, normal / metal-roughness px)
-SIZES = {"generator": (2048, 1024), "fuse": (512, 256), "crank_handle": (512, 256), "clock_key": (512, 256)}
+SIZES = {"generator": (2048, 1024), "fuse": (512, 256), "crank_handle": (512, 256), "clock_key": (512, 256), "flood_key": (512, 256)}
 DEFAULT = (1024, 512)
 
 if __name__ == "__main__":

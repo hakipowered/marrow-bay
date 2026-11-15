@@ -11,7 +11,7 @@ const MODEL_FOR := {
 ## see tools/props/README.md): the model and its longest side in metres.
 const PROP_FOR := {
 	"key:fuse": ["fuse", 0.16], "key:clock_key": ["clock_key", 0.12],
-	"key:crank_handle": ["crank_handle", 0.5],
+	"key:crank_handle": ["crank_handle", 0.5], "key:flood_key": ["flood_key", 0.16],
 }
 
 static func build(item: String) -> Node3D:
