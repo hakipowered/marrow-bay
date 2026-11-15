@@ -33,7 +33,7 @@ func _process(delta: float) -> void:
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.downed or p.dead:
 			continue
-		var left := maxi(0, int(ceil(p.REVIVE_WINDOW - p._downed_t)))
+		var left := maxi(0, int(ceil(p.revive_window() - p._downed_t)))
 		var clock := "0:%02d" % left
 		if p.is_multiplayer_authority():
 			text = "BLEEDING OUT  %s\nCall %s!" % [clock, GameState.partner_character(p.character).capitalize()]

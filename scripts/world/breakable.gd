@@ -281,10 +281,9 @@ func host_damage(dmg: float, how: String, at: Vector3, dir: Vector3) -> void:
 	if hp <= 0.0:
 		Combat.breakable_event(breakable_id, "break", at, dir, 0.0)
 		if drop_table != "":
-			var drop := WeaponDB.roll_drop(drop_table, RandomNumberGenerator.new())
 			var level := get_tree().get_first_node_in_group("level")
-			if drop != "none" and level and level.has_method("spawn_pickup"):
-				level.spawn_pickup.rpc(drop, global_transform * Vector3(0, 0.08, 0), -1)
+			if level and level.has_method("drop_loot"):
+				level.drop_loot(drop_table, global_transform * Vector3(0, 0.08, 0), RandomNumberGenerator.new())
 
 func _physics_process(delta: float) -> void:
 	if broken or _fuse < 0.0:

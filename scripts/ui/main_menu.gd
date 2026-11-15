@@ -294,11 +294,64 @@ func _character_select(next: String) -> void:
 	}[_char]
 	_panel.add_child(bio)
 	_btn("Outfit & Body:  %s" % Outfits.display_name(_char, _custom.get("outfit", Outfits.DEFAULT)), func(): _customize(next))
-	var go_text := {"solo": "Start", "host": "Create Room", "host_new": "Create Room", "join": "Next", "solo_or_host_resume": "Resume Solo"}.get(next, "Start")
-	_btn(go_text, func(): _go(next))
+	var go_text := {"solo": "Next", "host": "Create Room", "host_new": "Next", "join": "Next", "solo_or_host_resume": "Resume Solo"}.get(next, "Start")
+	# A new game picks how hard it is next; a loaded save keeps its own.
+	_btn(go_text, func(): _difficulty_select(next) if next in ["solo", "host_new"] else _go(next))
 	if next == "solo_or_host_resume":
 		_btn("Resume as Co-op Host", func(): _go("host"))
 	_btn("Back", _home)
+
+## The difficulty, last picked one first. Easy / Normal / Hard side by side
+## like the two survivors, what each changes underneath, and in co-op a word
+## on what two players change. The run keeps it, and so do its saves.
+var _difficulty := ""
+
+func _difficulty_select(next: String) -> void:
+	if _difficulty == "":
+		_difficulty = _saved_difficulty()
+	_clear()
+	_title("CHOOSE DIFFICULTY", 56)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 20)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_panel.add_child(row)
+	for d in GameState.DIFFICULTIES:
+		var b := Button.new()
+		b.text = GameState.difficulty_name(d)
+		b.custom_minimum_size = Vector2(240, 150)
+		b.toggle_mode = true
+		b.button_pressed = d == _difficulty
+		b.pressed.connect(func(): _difficulty = d; _difficulty_select(next))
+		row.add_child(b)
+	var blurb := Label.new()
+	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD
+	blurb.custom_minimum_size = Vector2(0, 150)
+	blurb.text = str(GameState.DIFFICULTY[_difficulty]["blurb"])
+	_panel.add_child(blurb)
+	if next == "host_new":
+		var co := Label.new()
+		co.autowrap_mode = TextServer.AUTOWRAP_WORD
+		co.add_theme_font_size_override("font_size", 26)
+		co.add_theme_color_override("font_color", Color(0.75, 0.7, 0.64))
+		co.text = "Co-op: each of you finds your own ammo, herbs and guns, and keys and files are found for both of you. More infected come for two." if _difficulty != "easy" \
+			else "Co-op: each of you finds your own ammo, herbs and guns, and keys and files are found for both of you."
+		_panel.add_child(co)
+	_btn("Start" if next == "solo" else "Create Room", func():
+		_save_difficulty(_difficulty)
+		_go(next))
+	_btn("Back", func(): _character_select(next))
+
+func _saved_difficulty() -> String:
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")
+	var d := str(cfg.get_value("game", "difficulty", "normal"))
+	return d if GameState.DIFFICULTY.has(d) else "normal"
+
+func _save_difficulty(d: String) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")   # keeps what else is there (the relay)
+	cfg.set_value("game", "difficulty", d)
+	cfg.save("user://settings.cfg")
 
 func _customize(next: String) -> void:
 	# Full-screen outfit and body screen with a live 3D preview.
@@ -321,6 +374,7 @@ func _go(next: String) -> void:
 		"solo", "solo_or_host_resume":
 			if next == "solo":
 				GameState.reset_run()
+				GameState.set_difficulty(_difficulty if _difficulty != "" else _saved_difficulty())
 			Net.start_solo(_char)
 			GameState.customization_by_peer[1] = _custom
 		"host", "host_new":
@@ -328,6 +382,7 @@ func _go(next: String) -> void:
 			# save just loaded.
 			if next == "host_new":
 				GameState.reset_run()
+				GameState.set_difficulty(_difficulty if _difficulty != "" else _saved_difficulty())
 			var code := Net.host_online(_char)
 			_lobby_host(code)
 		"join":
@@ -337,6 +392,11 @@ func _lobby_host(code: String) -> void:
 	WebPlatform.note("room", code)
 	_clear()
 	_title("ROOM %s" % code, 72)
+	var diff := Label.new()
+	diff.text = "Difficulty: %s" % GameState.difficulty_name()
+	diff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	diff.add_theme_color_override("font_color", Color(0.75, 0.7, 0.64))
+	_panel.add_child(diff)
 	_status = Label.new()
 	_status.text = "Send this code or the invite link to your friend.\nWaiting for them to join..."
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -410,15 +470,17 @@ func _on_partner_joined(_id: int) -> void:
 	_set_status("Your partner is here!")
 	WebPlatform.note("partner", true)
 	if _panel.get_child_count() > 0:
-		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags, GameState.inventories))
+		_btn("START", func(): _start_coop.rpc(GameState.level_path, GameState.shared_checkpoint, GameState.world_flags, GameState.inventories, GameState.difficulty))
 
 ## The host's save (or new run) for both phones. The bags ride along too:
 ## each survivor's bag lives on its own player's phone, so without them a
 ## resumed co-op run gave the partner a fresh starting kit (and the next save
 ## wrote that over their saved bag).
 @rpc("authority", "reliable", "call_local")
-func _start_coop(level: String, checkpoint: String, flags: Dictionary, bags: Dictionary = {}) -> void:
+func _start_coop(level: String, checkpoint: String, flags: Dictionary, bags: Dictionary = {}, difficulty := "") -> void:
 	GameState.level_path = level
+	if difficulty != "":
+		GameState.set_difficulty(difficulty)
 	GameState.shared_checkpoint = checkpoint
 	GameState.world_flags = flags
 	GameState.inventories = bags.duplicate(true)

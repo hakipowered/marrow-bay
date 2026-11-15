@@ -54,6 +54,11 @@ const FLINCH_GRACE_MS := 1000
 var _last_flinch_ms := -100000
 var _downed_t := 0.0
 const REVIVE_WINDOW := 30.0
+
+## How long a downed survivor lasts before the partner must have reached
+## her: REVIVE_WINDOW on Normal, longer on Easy, shorter on Hard.
+func revive_window() -> float:
+	return GameState.tuning("revive")
 var rescue_area: Area3D
 ## Set by Cutscenes while a scene plays: no moving, aiming or shooting.
 var input_locked := false
@@ -269,6 +274,19 @@ func _ready() -> void:
 
 	_setup_sync()
 	inventory.from_dict(GameState.inventories.get(character, {}))
+	# Keys and files belong to both survivors (Pickup "party"): a partner
+	# joining a game saved before, or with a fresh bag, carries them too.
+	if Net.is_coop():
+		for who in GameState.inventories:
+			var bag: Variant = GameState.inventories[who]
+			if who == character or not bag is Dictionary:
+				continue
+			for k in bag.get("keys", []):
+				if not inventory.key_items.has(str(k)):
+					inventory.key_items.append(str(k))
+			for f in bag.get("files", []):
+				if not inventory.files.has(str(f)):
+					inventory.files.append(str(f))
 	inventory.changed.connect(func(): _inv_dirty = true; inventory_changed.emit())
 	if not inventory.has_weapon(inventory.equipped):
 		inventory.equipped = _fallback_weapon()
@@ -320,7 +338,7 @@ func _physics_process(delta: float) -> void:
 		sync_speed = 0.0
 		model.play("downed", false)
 		_tick_death_cam(delta)
-		if not dead and _downed_t > REVIVE_WINDOW:
+		if not dead and _downed_t > revive_window():
 			_die()
 		return
 	if pinned:
@@ -823,7 +841,7 @@ func _hip_assist(origin: Vector3, dir: Vector3) -> Vector3:
 	var dot := _dot_hit(origin, dir)
 	var on_enemy: bool = not dot.is_empty() and dot.collider.has_meta("hit_zone")
 	var best := dir
-	var best_ang := deg_to_rad(7.0)
+	var best_ang := deg_to_rad(7.0 * GameState.tuning("aim_assist"))
 	for b in get_tree().get_nodes_in_group("breakables"):
 		if on_enemy or b.broken or not b.explosive():
 			continue
@@ -1032,7 +1050,10 @@ func receive_item(id: String, n: int, rounds: int, from_name: String) -> void:
 
 # ---------- Health ----------
 
-func apply_damage(amount: float, from: Node = null) -> void:
+## `from`: what hurt her (an infected, a boss, acid, a gas or fire pool).
+## Those scale with the difficulty (GameState "enemy_damage"), as does a
+## grab's squeeze (`hostile`); a partner's blast and her own burning don't.
+func apply_damage(amount: float, from: Node = null, hostile := false) -> void:
 	if Cheats.on("god_mode") or downed:
 		return
 	if dodging and (amount >= 9.0 or from is Zombie):
@@ -1040,11 +1061,14 @@ func apply_damage(amount: float, from: Node = null) -> void:
 	var lvl := get_tree().get_first_node_in_group("level")
 	if lvl and lvl.get("game_over"):
 		return
-	hp = max(hp - amount, 0.0)
-	health_changed.emit(hp, max_hp)
 	# A real blow (a bite, a swipe, acid, a blast) staggers; burn and gas
 	# ticks only sting, or the survivor would be stuck flinching in a fire.
+	# Judged on the blow as dealt, so the feel is the same at every difficulty.
 	var blow := amount >= 9.0 or from is Zombie
+	if from != null or hostile:
+		amount *= GameState.tuning("enemy_damage")
+	hp = max(hp - amount, 0.0)
+	health_changed.emit(hp, max_hp)
 	if blow:
 		stop_work()
 	_feel_hit(amount, from, blow)
@@ -1065,7 +1089,7 @@ func apply_damage(amount: float, from: Node = null) -> void:
 			# Down, not out: the partner has REVIVE_WINDOW seconds to reach her.
 			var hud := get_tree().get_first_node_in_group("hud")
 			if hud:
-				hud.toast("You're down! Call %s, they have %d seconds to reach you." % [GameState.partner_character(character).capitalize(), int(REVIVE_WINDOW)])
+				hud.toast("You're down! Call %s, they have %d seconds to reach you." % [GameState.partner_character(character).capitalize(), int(revive_window())])
 			_rpc_down_notice.rpc()
 		else:
 			_die()

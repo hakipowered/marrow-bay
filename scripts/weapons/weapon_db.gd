@@ -55,14 +55,36 @@ const DROPS := {
 	"brute": [["ammo:50cal", 30], ["ammo:grenades", 30], ["medkit", 25], ["herb_mix", 15]],
 }
 
-static func roll_drop(table: String, rng: RandomNumberGenerator) -> String:
+## `chance` scales how likely anything drops at all (difficulty, co-op);
+## at 1.0 it is the table as written, drawn exactly as it always was.
+static func roll_drop(table: String, rng: RandomNumberGenerator, chance := 1.0) -> String:
 	var entries: Array = DROPS.get(table, [])
-	var total := 0
+	if is_equal_approx(chance, 1.0):
+		var total := 0
+		for e in entries:
+			total += e[1]
+		var r := rng.randi_range(1, max(total, 1))
+		for e in entries:
+			r -= e[1]
+			if r <= 0:
+				return e[0]
+		return "none"
+	var some := 0.0
+	var none := 0.0
 	for e in entries:
-		total += e[1]
-	var r := rng.randi_range(1, max(total, 1))
+		if e[0] == "none":
+			none += e[1]
+		else:
+			some += e[1]
+	if some <= 0.0 or rng.randf() >= minf(1.0, some / (some + none) * chance):
+		return "none"
+	var pick := rng.randf() * some
+	var last := "none"
 	for e in entries:
-		r -= e[1]
-		if r <= 0:
+		if e[0] == "none":
+			continue
+		last = e[0]
+		pick -= e[1]
+		if pick <= 0.0:
 			return e[0]
-	return "none"
+	return last
