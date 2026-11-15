@@ -15,8 +15,11 @@
 # drum), chapter 2 (its walls and level probe, the whole story through its
 # prompts, the Warden fight's rules), the
 # bot's weapon / bag / save / death sections, the save slots (old saves, the
-# save and load screens, the autosave rules), and the co-op tests with two
-# copies of the game through a local relay (needs node and the ws package:
+# save and load screens, the autosave rules), the difficulty numbers and the
+# extra infected that Hard and co-op bring (the level probes again with every
+# one of them in, the scares with Hard's bigger groups), and the co-op tests
+# with two copies of the game through a local relay (needs node and the ws
+# package:
 # `npm i ws` anywhere and point NODE_PATH at its node_modules, or install it
 # in relay/).
 #
@@ -82,10 +85,16 @@ run bot_bag          300 --fixed-fps 60 --script tests/playtest.gd -- only bag
 run bot_save         300 --fixed-fps 60 --script tests/playtest.gd -- only save
 run save_slots       300 --script tests/save_slots.gd
 run bot_death        300 --fixed-fps 60 --script tests/playtest.gd -- only death
+# Difficulty: the numbers, every extra infected standing where it should, the
+# level probe with all of them in (Hard co-op), the scares on Hard solo.
+run extra_infected   300 --fixed-fps 60 --script tests/extra_infected.gd
+run level_probe_hard_coop 180 --fixed-fps 60 --script tests/playtest.gd -- only probe difficulty hard pressure 3
+run bot_scares_hard  300 --fixed-fps 60 --script tests/playtest.gd -- only scares difficulty hard pressure 2
 # Chapter 2, the Undercroft: walls, the level probe, the whole story through
 # its prompts, the Warden's rules, and the bot fighting him its own way.
 run wall_overlap_ch2 120 --script tests/wall_overlap.gd -- res://scenes/levels/undercroft.tscn
 run level_probe_ch2  180 --fixed-fps 60 --script tests/playtest.gd -- only probe2
+run level_probe_ch2_hard_coop 180 --fixed-fps 60 --script tests/playtest.gd -- only probe2 difficulty hard pressure 3
 run chapter2_flow    600 --fixed-fps 60 --script tests/chapter2_flow.gd
 run warden_fight     300 --fixed-fps 60 --script tests/warden_fight.gd
 run bot_warden       300 --fixed-fps 60 --script tests/playtest.gd -- only warden2
@@ -118,6 +127,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	coop coop_death tests/coop_death.gd
 	coop coop_playtest tests/playtest_coop.gd
 	coop coop_saves tests/coop_saves.gd
+	coop coop_pickups tests/coop_pickups.gd
 	kill $RELAY 2>/dev/null
 else
 	echo "  skip  co-op tests (needs node with the ws package; see the top of this file)"

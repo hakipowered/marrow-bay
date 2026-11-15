@@ -163,6 +163,7 @@ func build_snapshot() -> Dictionary:
 		"host_character": GameState.character_by_peer.get(1, party[0] if not party.is_empty() else "zegan"),
 		"objective": GameState.world_flags.get("objective", ""),
 		"game_version": PackMount.version_name,
+		"difficulty": GameState.difficulty,
 	}
 
 func mark_checkpoint() -> void:
@@ -393,6 +394,10 @@ func describe(d: Dictionary) -> Dictionary:
 	var party_text := ""
 	if not names.is_empty():
 		party_text = ("Co-op: " if coop else "Solo: ") + " & ".join(names)
+	# Saves from before difficulty levels were played on Normal.
+	var diff := str(d.get("difficulty", "normal"))
+	if not GameState.DIFFICULTY.has(diff):
+		diff = "normal"
 	return {
 		"chapter": chapter_label(str(d.get("level", "")), flags),
 		"place": PLACES.get(cp, cp.capitalize().replace("_", " ")),
@@ -405,6 +410,7 @@ func describe(d: Dictionary) -> Dictionary:
 		"host_character": str(d.get("host_character", party[0] if not party.is_empty() else "")),
 		"objective": str(d.get("objective", flags.get("objective", ""))),
 		"run_id": str(d.get("run_id", "")),
+		"difficulty": diff,
 	}
 
 static func chapter_label(level: String, flags: Dictionary) -> String:
@@ -468,6 +474,7 @@ func apply_snapshot(data: Dictionary) -> void:
 	GameState.world_flags = (data.get("flags", {}) as Dictionary).duplicate(true)
 	GameState.inventories = (data.get("inventories", {}) as Dictionary).duplicate(true)
 	GameState.play_time_sec = data.get("play_time", 0.0)
+	GameState.set_difficulty(str(data.get("difficulty", "normal")))
 	autosave_on_arrival = false
 	# Older saves have no run id: this run gets a new one from here on.
 	GameState.run_id = str(data.get("run_id", ""))

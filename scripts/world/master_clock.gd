@@ -170,10 +170,12 @@ func _rpc_request(by_peer: int) -> void:
 	_rpc_open.rpc(by_peer)
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_open(by_peer: int) -> void:
+func _rpc_open(_by_peer: int) -> void:
 	GameState.set_flag(FLAG)
+	# Keys belong to both survivors (Pickup "party"): used up, it goes
+	# from both bags, each phone taking it from its own survivor's.
 	for p in get_tree().get_nodes_in_group("players"):
-		if p.peer_id == by_peer and p.is_multiplayer_authority():
+		if p.is_multiplayer_authority():
 			p.inventory.remove_key(KEY)
 	Sfx.play_at("clock_unlock", global_transform * Vector3(0, 0.6, 0.6), "breaker_throw", -2.0, 5.0)
 	_running = true

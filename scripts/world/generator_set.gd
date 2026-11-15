@@ -278,10 +278,12 @@ func _rpc_fit(part: String, by_peer: int) -> void:
 	_rpc_fitted.rpc(part, by_peer)
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_fitted(part: String, by_peer: int) -> void:
+func _rpc_fitted(part: String, _by_peer: int) -> void:
 	GameState.set_flag(FLAGS[part])
+	# Keys belong to both survivors (Pickup "party"): used up, it goes
+	# from both bags, each phone taking it from its own survivor's.
 	for p in get_tree().get_nodes_in_group("players"):
-		if p.peer_id == by_peer and p.is_multiplayer_authority():
+		if p.is_multiplayer_authority():
 			p.inventory.remove_key(KEYS[part])
 	match part:
 		"fuel":
@@ -411,7 +413,7 @@ func _send_wave(i: int) -> void:
 		return
 	Music.force_action(45.0)
 	get_tree().call_group("story", "generator_wave", i)
-	var mix: Array = WAVE_MIX[i]
+	var mix: Array = GameState.grown_mix(WAVE_MIX[i])   # bigger in co-op and on Hard
 	for k in mix.size():
 		_spawned += 1
 		_spawn_later(level, "Z_crank_%d" % _spawned, mix[k], 0.6 + k * 1.4)

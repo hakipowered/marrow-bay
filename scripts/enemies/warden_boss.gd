@@ -94,6 +94,9 @@ var _k := 1.0
 func _ready() -> void:
 	add_to_group("zombies")
 	add_to_group("boss")
+	# Tougher on Hard and with two survivors shooting (GameState.boss_health).
+	max_hp = HP * GameState.boss_health()
+	hp = max_hp
 	_rng.seed = 1891
 	collision_layer = 4
 	collision_mask = 1 | 2 | 4

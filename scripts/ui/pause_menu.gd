@@ -70,7 +70,7 @@ func _on_cheat_changed(n: String, v: bool) -> void:
 func refresh() -> void:
 	var goal: String = GameState.world_flags.get("objective", "")
 	var place: String = SaveSystem.PLACES.get(GameState.shared_checkpoint, GameState.shared_checkpoint.capitalize().replace("_", " "))
-	_info.text = ("Objective: %s\n\n" % goal if goal != "" else "") + "Save point: %s\nPlay time: %s" % [place, SaveSystem.play_time_text(GameState.play_time_sec)]
+	_info.text = ("Objective: %s\n\n" % goal if goal != "" else "") + "Save point: %s\nPlay time: %s\nDifficulty: %s" % [place, SaveSystem.play_time_text(GameState.play_time_sec), GameState.difficulty_name()]
 
 var _slots: Control
 

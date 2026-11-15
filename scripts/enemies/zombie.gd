@@ -117,8 +117,10 @@ func _ready() -> void:
 		look = data["looks"][_rng.randi() % data["looks"].size()]
 	collision_layer = 4
 	collision_mask = 1 | 2 | 4 | Door.BARS_LAYER
-	max_hp = data["hp"] * _rng.randf_range(0.94, 1.04)
-	_shield_hp = data.get("shield_hp", 0.0)
+	# Tougher on Hard, softer on Easy (the same draw, so each one's pace and
+	# look don't change with the difficulty).
+	max_hp = data["hp"] * _rng.randf_range(0.94, 1.04) * GameState.tuning("enemy_health")
+	_shield_hp = data.get("shield_hp", 0.0) * GameState.tuning("enemy_health")
 	_speed_f = _rng.randf_range(0.9, 1.06)
 	hp = max_hp
 	drop_table = data["drop"]
@@ -721,7 +723,7 @@ func _rpc_hurt_player(path: NodePath, dmg: float) -> void:
 func _rpc_squeeze(path: NodePath, dmg: float) -> void:
 	var p := get_node_or_null(path)
 	if p and p.is_multiplayer_authority():
-		p.apply_damage(minf(dmg, 8.5), null)
+		p.apply_damage(minf(dmg, 8.5), null, true)
 
 @rpc("authority", "reliable", "call_local")
 func _ignite(path: NodePath) -> void:
@@ -757,7 +759,7 @@ func take_hit(dmg: float, weapon_id: String, zone: String, dir: Vector3) -> void
 			_set_stagger(1.3)
 			_poise_t = POISE
 		else:
-			_shield_block.rpc(1.0 - _shield_hp / float(data.get("shield_hp", 100.0)))
+			_shield_block.rpc(1.0 - _shield_hp / (float(data.get("shield_hp", 100.0)) * GameState.tuning("enemy_health")))
 			if w.get("stagger", 0.0) > 0 and state == S.ATTACK:
 				_set_stagger(0.5)   # a heavy blow on the shield knocks his swing off
 		return
@@ -839,9 +841,8 @@ func _die() -> void:
 		h.collision_layer = 0
 	GameState.set_flag("dead:" + str(name))
 	_rpc_die.rpc(_death_plan())
-	var drop := WeaponDB.roll_drop(drop_table, _rng)
-	if drop != "none":
-		get_parent().spawn_pickup.rpc(drop, global_position + Vector3(0, 0.05, 0), -1)
+	if get_parent().has_method("drop_loot"):
+		get_parent().drop_loot(drop_table, global_position + Vector3(0, 0.05, 0), _rng)
 	if data.get("death_gas"):
 		get_parent().spawn_hazard.rpc("acid_gas", global_position, 3.2, 6.0)
 
@@ -1072,6 +1073,8 @@ func _death_blocked(plan: Dictionary) -> int:
 	var chest := global_position + Vector3.UP * 0.9
 	var blocked := 0
 	var floor_dy := 0.0
+	var floors: Array = []
+	var limbs: Array = []
 	for i in pts.size():
 		var at: Vector3 = global_transform * pts[i]
 		var q := PhysicsRayQueryParameters3D.create(chest, at + Vector3.UP * 0.22, 1 | Door.BARS_LAYER)
@@ -1079,14 +1082,29 @@ func _death_blocked(plan: Dictionary) -> int:
 		if not space.intersect_ray(q).is_empty():
 			blocked += 1
 			continue
+		var down := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.6, at + Vector3.DOWN * 1.2, 1)
+		down.exclude = [get_rid()]
+		var hit := space.intersect_ray(down)
 		if i < 2:   # head and hips: is there floor under them, not a drop?
-			var down := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.6, at + Vector3.DOWN * 1.2, 1)
-			down.exclude = [get_rid()]
-			var hit := space.intersect_ray(down)
 			if hit.is_empty() or (hit.position as Vector3).y < global_position.y - 0.55:
 				blocked += 2
-			elif i == 1:
-				floor_dy = clampf((hit.position as Vector3).y - global_position.y, -0.5, 0.5)
+			else:
+				floors.append((hit.position as Vector3).y)
+				if i == 1:
+					floor_dy = clampf((hit.position as Vector3).y - global_position.y, -0.5, 0.5)
+		elif not hit.is_empty():
+			limbs.append((hit.position as Vector3).y)
+	# Lying across a step (the street's kerb): the body settles to the floor
+	# under its hips, so a head, hand or foot over the higher side would sink
+	# into it. Another way down if there is one.
+	if floors.size() == 2:
+		var rest: float = floors[1]
+		var across := absf(float(floors[0]) - rest) > 0.06
+		for y in limbs:
+			if float(y) > rest + 0.06:
+				across = true
+		if across:
+			blocked += 1
 	plan["f"] = floor_dy
 	return blocked
 

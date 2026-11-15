@@ -85,8 +85,8 @@ func _take(pid: String) -> bool:
 			var t: String = _prompt_at(at, dir, r)
 			if t.begins_with("Pick up"):
 				p.interact()
-				_check(gs.has_flag("taken:" + pid), "picked up %s (%s)" % [pid, t])
-				return gs.has_flag("taken:" + pid)
+				_check(gs.item_taken(pid), "picked up %s (%s)" % [pid, t])
+				return gs.item_taken(pid)
 	_check(false, "a 'Pick up' prompt next to %s at %s" % [pid, str(at)])
 	return false
 

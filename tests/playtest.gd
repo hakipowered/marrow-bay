@@ -52,6 +52,11 @@ var notes: Array = []
 var shots_dir := ""
 var character := "obcera"
 var only := ""          # run one section: route, weapons, death, save, bag, outfits
+## `difficulty hard` / `pressure 3`: the run at that difficulty, with the
+## infected a co-op game would have (GameState.pressure), e.g. the level
+## probe and the scares with every extra infected in place.
+var force_difficulty := ""
+var force_pressure := -1
 var stop_at := 0.0      # end the run after this much game time (frames runs)
 var _shot_n := 0
 var _busy_fighting := false
@@ -126,6 +131,12 @@ func _initialize() -> void:
 				i += 1
 			"stop_at":
 				stop_at = float(a[i + 1])
+				i += 1
+			"difficulty":
+				force_difficulty = a[i + 1]
+				i += 1
+			"pressure":
+				force_pressure = int(a[i + 1])
 				i += 1
 		i += 1
 	if shots_dir != "":
@@ -458,9 +469,11 @@ func pick_up(pid: String) -> bool:
 		if x.pickup_id == pid:
 			node = x
 	if node == null:
-		if not GS.has_flag("taken:" + pid):
+		# Supplies are each survivor's own ("taken:<id>:<who>"), keys and
+		# files the pair's ("taken:<id>"): GameState.item_taken reads both.
+		if not GS.item_taken(pid):
 			_bug("pickups", "item %s missing from the level" % pid)
-		return GS.has_flag("taken:" + pid)
+		return GS.item_taken(pid)
 	return await pick_up_node(node)
 
 ## Where she stands to take an item: 0.7 m out from it on her side if that's
@@ -555,6 +568,17 @@ func _line_of_fire(z: Node, head: bool) -> bool:
 		return true
 	return hit.collider is Area3D and hit.collider.get_meta("enemy", null) == z
 
+## What a shot at `z` would hit first (for the "no clear shot" reports).
+func _in_the_way(z: Node) -> String:
+	var q := PhysicsRayQueryParameters3D.create(p.camera.global_position, _aim_point(z, false), 1 | 8, [p.get_rid()])
+	q.collide_with_areas = true
+	var hit: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return "nothing"
+	var c: Object = hit.collider
+	var who: Variant = c.get_meta("enemy", null) if c is Area3D else null
+	return str(who.name) if who is Node else str(c.get_parent().name if c is Node and c.get_parent() else c)
+
 func _best_gun() -> String:
 	var order := ["m12", "p9", "vk18", "longshot", "hornet", "carbine", "bastion", "breacher", "gl", "bolt", "flamer"]
 	for id in order:
@@ -639,7 +663,7 @@ func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 	if is_instance_valid(z) and not p.downed:
 		var gw: Dictionary = WeaponDB.WEAPONS.get(p.inventory.equipped, {})
 		var why := "mag %d, %d in the bag, %.1f m off, %s" % [p.inventory.mag.get(p.inventory.equipped, 0), p.inventory.ammo_count(gw.get("ammo", "")) if gw.has("ammo") else 0,
-			z.global_position.distance_to(p.global_position), "clear shot" if _line_of_fire(z, false) else "no clear shot"]
+			z.global_position.distance_to(p.global_position), "clear shot" if _line_of_fire(z, false) else "no clear shot: %s in the way" % _in_the_way(z)]
 		_bug("combat", "couldn't put down a %s (%s) in %.0fs: hp %.0f -> %.0f, state %s, weapon %s (%s)" % [kind, z.look, max_t, hp0, z.hp, ZS.keys()[z.state], p.inventory.equipped, why], "nokill:" + kind)
 	return false
 
@@ -907,18 +931,26 @@ func _floor_checks() -> void:
 		if dead and sim_t - float(b.get_meta("dead_since")) < 4.0:
 			continue
 		_floor_checked[key] = sim_t
-		var low := _lowest_skin_y(model)
+		var lowest := _lowest_skin(model)
+		var low := lowest.y
+		# Or the floor under that lowest bit of skin, if lower: a body that
+		# fell off the kerb lies on the road though it died on the sidewalk.
+		# (Never the higher one: the kerb's collision has a ramp the drawn
+		# kerb doesn't, so a hand on the road beside it is not in it.)
+		var under := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(lowest.x, b.global_position.y + 0.6, lowest.z), Vector3(lowest.x, b.global_position.y - 3.0, lowest.z), 1, excl))
+		if not under.is_empty():
+			floor_y = minf(floor_y, under.position.y)
 		if floor_y - low > 0.08:
 			_sunk += int(not bugs.has("sunk:" + str(b.name)))
-			_bug("enemies", "%s lies %.0f cm into the floor at %s in the %s (%s)" % [b.name, (floor_y - low) * 100.0, _v(b.global_position), _area_of(b.global_position), "dead" if dead else "alive"], "sunk:" + str(b.name))
+			_bug("enemies", "%s lies %.0f cm into the floor at %s in the %s (%s; lowest skin at %s over %s)" % [b.name, (floor_y - low) * 100.0, _v(b.global_position), _area_of(b.global_position), "dead" if dead else "alive", _v(lowest), str(under.collider.get_parent().name) if not under.is_empty() and under.collider.get_parent() else "?"], "sunk:" + str(b.name))
 
 func _skeleton(model: Node) -> Skeleton3D:
 	var s := model.find_children("*", "Skeleton3D", true, false)
 	return s[0] if not s.is_empty() else null
 
 ## Lowest point of a rigged model's skin in its current pose.
-func _lowest_skin_y(model: Node) -> float:
-	var low := INF
+func _lowest_skin(model: Node) -> Vector3:
+	var low := Vector3(0, INF, 0)
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
 		if mi.mesh == null or mi.skin == null or not mi.is_visible_in_tree():
 			continue
@@ -937,7 +969,9 @@ func _lowest_skin_y(model: Node) -> float:
 			var acc := Vector3.ZERO
 			for bw in v[1]:
 				acc += (xf[bw[0]] * v[0]) * bw[1]
-			low = minf(low, (g * acc).y)
+			var at: Vector3 = g * acc
+			if at.y < low.y:
+				low = at
 	return low
 
 ## About 1500 vertices of a skinned mesh with their bone weights (cached).
@@ -1094,6 +1128,9 @@ func _finish() -> void:
 
 func _start_solo() -> void:
 	NET.start_solo(character)
+	if force_difficulty != "":
+		GS.set_difficulty(force_difficulty)
+	GS.test_pressure = force_pressure
 	change_scene_to_file(GS.level_path)
 	await _frames(4)
 	var end := sim_t + 20.0

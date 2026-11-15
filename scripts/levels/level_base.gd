@@ -5,11 +5,13 @@ extends Node3D
 
 var _pickup_counter := 0
 var hud: Node
+const ExtraInfected := preload("res://scripts/levels/extra_infected.gd")
 
 func _ready() -> void:
 	add_to_group("level")
 	Music.enter_game()
 	build()
+	_place_extra_infected()
 	_bake_navigation()
 	_spawn_players()
 	var director := HorrorDirector.new()
@@ -78,15 +80,39 @@ func _checkpoint(id: String) -> Checkpoint:
 	var all := get_tree().get_nodes_in_group("checkpoints")
 	return all[0] if not all.is_empty() else null
 
+## A pickup on the floor. for_peer 0: one copy for anyone (a survivor's
+## drop). Otherwise it lies there only on that survivor's phone, for them
+## (what an infected or crate left them, see drop_loot). The counter moves on
+## every phone either way, so shared drops keep the same names on both.
 @rpc("authority", "reliable", "call_local")
-func spawn_pickup(item: String, pos: Vector3, amount: int) -> void:
+func spawn_pickup(item: String, pos: Vector3, amount: int, for_peer := 0) -> void:
 	_pickup_counter += 1
+	if for_peer != 0 and for_peer != multiplayer.get_unique_id():
+		return
 	var p := Pickup.new()
 	p.name = "Drop_%d" % _pickup_counter
 	p.item = item
 	p.amount = max(amount, 0)
+	p.share = "personal" if for_peer != 0 else "shared"
 	add_child(p)
 	p.global_position = pos
+
+## Host: what a killed infected or a broken crate leaves. Each survivor gets
+## their own roll (GameState.drop_chance), and sees only their own find.
+func drop_loot(table: String, pos: Vector3, rng: RandomNumberGenerator) -> void:
+	if table == "" or (multiplayer.has_multiplayer_peer() and not multiplayer.is_server()):
+		return
+	var ids: Array = GameState.character_by_peer.keys()
+	ids.sort()
+	if ids.is_empty():
+		ids = [multiplayer.get_unique_id()]
+	var chance := GameState.drop_chance()
+	for i in ids.size():
+		var drop := WeaponDB.roll_drop(table, rng, chance)
+		if drop != "none":
+			# Side by side when both got something, not one inside the other.
+			var off := Vector3(0.35 * (i - (ids.size() - 1) * 0.5), 0.0, 0.0) if ids.size() > 1 else Vector3.ZERO
+			spawn_pickup.rpc(drop, pos + off, -1, int(ids[i]) if ids.size() > 1 else 0)
 
 ## Anyone can ask for something to be put on the floor (a dropped item, a
 ## gift the partner had no room for); the host spawns it for everyone.
@@ -292,6 +318,14 @@ func place_pickup(item: String, at: Vector3, id: String, amount := 0) -> void:
 	p.name = "Pickup_" + id
 	p.position = at
 	add_child(p)
+
+## The extra infected this level gets at the current pressure (difficulty,
+## plus co-op): scripts/levels/extra_infected.gd lists them by level and tier.
+func _place_extra_infected() -> void:
+	var at := GameState.pressure()
+	for e in ExtraInfected.for_level(scene_file_path):
+		if int(e["tier"]) <= at:
+			place_zombie(e["name"], e["at"], e.get("rot", 0.0), e.get("variant", "shambler"), e.get("asleep", false), e.get("look", ""))
 
 func place_zombie(name_: String, at: Vector3, rot_deg := 0.0, variant := "shambler", asleep := false, look := "") -> void:
 	if GameState.has_flag("dead:" + name_):

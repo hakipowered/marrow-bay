@@ -206,8 +206,12 @@ func _shutter_burst(t: ScareTrigger) -> void:
 		push_warning("shutter_burst: no shutter " + t.room)
 		return
 	if multiplayer.is_server():
-		for i in t.spots.size():
-			get_parent().spawn_zombie_synced.rpc("%s_w%d" % [t.scare_id, i], t.spots[i])
+		# More of them at a higher pressure (co-op, Hard): the newcomers wait
+		# beside the others, in the same dark room behind the shutter.
+		for i in GameState.group_size(t.spots.size()):
+			var at: Variant = t.spots[i] if i < t.spots.size() else free_spot_near(t.spots[i % t.spots.size()], i)
+			if at != null:
+				get_parent().spawn_zombie_synced.rpc("%s_w%d" % [t.scare_id, i], at)
 	post_fx.spike(0.4)
 	await sh.burst()
 	_stinger()
@@ -218,11 +222,12 @@ func _window_break(t: ScareTrigger) -> void:
 	Sfx.play_at("glass_break", t.target, "", 6.0, 14.0)
 	Effects.impact(t.target, Vector3.UP, null)
 	post_fx.spike(0.8)
-	if t.spawn_count >= 5:   # a real horde, not two or three through a window
-		Music.force_action(20.0 + t.spawn_count * 4.0)
+	var count := GameState.group_size(t.spawn_count)
+	if count >= 5:   # a real horde, not two or three through a window
+		Music.force_action(20.0 + count * 4.0)
 	if multiplayer.is_server():
 		var level := get_parent()
-		for i in t.spawn_count:
+		for i in count:
 			await get_tree().create_timer(0.8 + i * 1.2).timeout
 			level.spawn_zombie_synced.rpc("%s_w%d" % [t.scare_id, i], t.target + Vector3(_rng.randf_range(-0.5, 0.5), 0, _rng.randf_range(-0.5, 0.5)))
 
@@ -231,3 +236,30 @@ func _door_bang(at: Vector3) -> void:
 		Sfx.play_at("door_bang", at, "metal_bang", 4.0, 14.0)
 		post_fx.spike(0.15)
 		await get_tree().create_timer(_rng.randf_range(0.3, 0.9)).timeout
+
+## A spot about a metre from `base` with floor under it and room for an
+## infected to stand (nothing solid in the way from `base` either), the
+## k-th one tried first so newcomers spread out; null if there's none.
+func free_spot_near(base: Vector3, k := 0) -> Variant:
+	var space := get_viewport().get_world_3d().direct_space_state
+	var shape := CapsuleShape3D.new()
+	shape.radius = 0.34
+	shape.height = 1.7
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape
+	q.collision_mask = 1
+	for ring in [1.1, 1.6]:
+		for j in 8:
+			var a := (k + j) * TAU / 8.0
+			var at: Vector3 = base + Vector3(cos(a), 0.0, sin(a)) * ring
+			q.transform = Transform3D(Basis(), at + Vector3.UP * 0.95)
+			if not space.intersect_shape(q, 1).is_empty():
+				continue
+			var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.6, at + Vector3.DOWN * 0.6, 1))
+			if down.is_empty():
+				continue
+			var across := space.intersect_ray(PhysicsRayQueryParameters3D.create(base + Vector3.UP, at + Vector3.UP, 1))
+			if not across.is_empty():
+				continue
+			return Vector3(at.x, base.y, at.z)
+	return null
