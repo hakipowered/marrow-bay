@@ -158,7 +158,7 @@ func _ready() -> void:
 	add_child(_pause)
 
 	CallOuts.callout_played.connect(_on_callout)
-	SaveSystem.saved.connect(func(slot): toast("Autosaved" if slot == SaveSystem.AUTOSAVE_SLOT else "Game saved"))
+	SaveSystem.saved.connect(_on_saved)
 
 func _build_theme() -> void:
 	var sb := StyleBoxFlat.new()
@@ -283,6 +283,14 @@ func _quick_heal() -> void:
 
 func show_file_hint(_id: String) -> void:
 	toast("New file. Read it in the bag under Files.")
+
+## A method, not a lambda: SaveSystem outlives this HUD, and the connection
+## goes with it when the level is freed.
+func _on_saved(slot: String) -> void:
+	var text := "Autosaved" if slot == SaveSystem.AUTOSAVE_SLOT else ("Saved to " + SaveSystem.slot_title(slot) if slot != "" else "Not saved on this phone")
+	if SaveSystem.last_note != "":
+		text += "\n" + SaveSystem.last_note
+	toast(text)
 
 func toast(text: String) -> void:
 	_toast.text = text

@@ -223,7 +223,7 @@ func _retry_everyone() -> void:
 	_rpc_retry.rpc(SaveSystem.checkpoint_snapshot)
 
 ## Back to the last checkpoint reached together, with the run as it stood
-## then. Not the autosave or slot 1: those can be minutes older than the
+## then. Not the autosave or a save slot: those can be minutes older than the
 ## checkpoint, or left over from another run entirely.
 @rpc("authority", "reliable", "call_local")
 func _rpc_retry(snapshot: Dictionary = {}) -> void:
@@ -235,7 +235,7 @@ func _rpc_retry(snapshot: Dictionary = {}) -> void:
 	if data.is_empty():
 		data = SaveSystem.read_slot(SaveSystem.AUTOSAVE_SLOT)
 	if data.is_empty():
-		data = SaveSystem.read_slot("slot1")
+		data = SaveSystem.read_slot(SaveSystem.newest_slot(false))
 	if not data.is_empty():
 		SaveSystem.apply_snapshot(data)
 	get_tree().reload_current_scene()
@@ -248,6 +248,7 @@ func change_level(path: String, checkpoint: String) -> void:
 		GameState.inventories[p.character] = p.inventory.to_dict()
 	GameState.level_path = path
 	GameState.shared_checkpoint = checkpoint
+	SaveSystem.autosave_on_arrival = true
 	Engine.time_scale = 1.0
 	Music.override_track = ""
 	Cutscenes.cover(true)

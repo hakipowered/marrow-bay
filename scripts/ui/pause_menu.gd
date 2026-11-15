@@ -1,5 +1,5 @@
 extends Control
-## Pause: Resume, Save (shared checkpoint), Load, Cheats, Quit.
+## Pause: Resume, Save game (the slot screen), Cheats, Quit.
 
 var _list: VBoxContainer
 var _cheats: VBoxContainer
@@ -33,7 +33,7 @@ func _ready() -> void:
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_list.add_child(_info)
 	_add("Resume", func(): get_parent().toggle_pause())
-	_add("Save at shared checkpoint", func(): SaveSystem.request_save("slot1"); get_parent().toggle_pause())
+	_add("Save game", _open_save_slots)
 	_add("Cheats", func(): _cheats.visible = not _cheats.visible)
 	_add("Quit to title", _quit)
 	_cheats = VBoxContainer.new()
@@ -69,7 +69,32 @@ func _on_cheat_changed(n: String, v: bool) -> void:
 
 func refresh() -> void:
 	var goal: String = GameState.world_flags.get("objective", "")
-	_info.text = ("Objective: %s\n\n" % goal if goal != "" else "") + "Save point: %s\nPlay time: %d min" % [GameState.shared_checkpoint.capitalize().replace("_", " "), int(GameState.play_time_sec / 60.0)]
+	var place: String = SaveSystem.PLACES.get(GameState.shared_checkpoint, GameState.shared_checkpoint.capitalize().replace("_", " "))
+	_info.text = ("Objective: %s\n\n" % goal if goal != "" else "") + "Save point: %s\nPlay time: %s" % [place, SaveSystem.play_time_text(GameState.play_time_sec)]
+
+var _slots: Control
+
+## Save: the slot screen over the pause menu. A pick saves and resumes.
+func _open_save_slots() -> void:
+	if is_instance_valid(_slots):
+		return
+	_slots = preload("res://scripts/ui/save_slots.gd").new()
+	_slots.mode = "save"
+	_slots.picked.connect(func(_slot):
+		_close_save_slots()
+		get_parent().toggle_pause())
+	_slots.closed.connect(_close_save_slots)
+	add_child(_slots)
+
+func _close_save_slots() -> void:
+	if is_instance_valid(_slots):
+		_slots.queue_free()
+	_slots = null
+
+## Closing the pause menu (the II button) also closes the slot screen.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and not visible:
+		_close_save_slots()
 
 func _add(text: String, cb: Callable) -> void:
 	var b := Button.new()

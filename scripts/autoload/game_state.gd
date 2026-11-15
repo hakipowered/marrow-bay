@@ -19,7 +19,12 @@ var level_path: String = FIRST_LEVEL
 var world_flags: Dictionary = {}
 ## peer_id -> inventory snapshot, filled from the players on save.
 var inventories: Dictionary = {}
+## Time spent in the levels this run (the title and menus don't count).
 var play_time_sec: float = 0.0
+## Which playthrough this is: every save of one run carries the same id, so a
+## co-op copy of the host's save never lands over a different run on the
+## partner's phone (SaveSystem.mirror_target). New on each new game.
+var run_id: String = ""
 ## This phone's own look per character (outfit + body sliders), kept between
 ## sessions in LOOKS_PATH. The character select edits these; co-op sends
 ## them to the host, and saves carry the look each survivor had.
@@ -33,7 +38,15 @@ func _ready() -> void:
 			looks = d
 
 func _process(delta: float) -> void:
-	play_time_sec += delta
+	if get_tree().get_first_node_in_group("level") != null:
+		play_time_sec += delta
+
+## Its own random source: a draw from the global one would shift every
+## random thing after it (the playtest route bot depends on that order).
+func new_run_id() -> String:
+	var r := RandomNumberGenerator.new()
+	r.randomize()
+	return "%d-%06d" % [int(Time.get_unix_time_from_system()), r.randi() % 1000000]
 
 ## The saved look for a character, filled out with defaults.
 func look(character: String) -> Dictionary:
@@ -86,4 +99,6 @@ func reset_run() -> void:
 	world_flags.clear()
 	inventories.clear()
 	play_time_sec = 0.0
+	run_id = new_run_id()
 	SaveSystem.checkpoint_snapshot = {}
+	SaveSystem.autosave_on_arrival = false
