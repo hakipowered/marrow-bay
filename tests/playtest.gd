@@ -270,6 +270,8 @@ func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 	while sim_t < end:
 		if p.downed:
 			return false
+		if p.hp <= 46.0 and _hunted() and p.working == "":
+			_heal()   # one swing of his takes 45: a player heals first
 		if i < path.size() and _tallyman_in_way(path[i]):
 			await _fend_tallyman()
 			path = _path(target)
@@ -620,6 +622,11 @@ func _hunted() -> bool:
 ## Her way on goes through the Tallyman (down on his knee, or just there):
 ## the navmesh doesn't know about him, so she steps round him, on the side
 ## nearer where she's going, as a player would.
+## She keeps to the side she picked until she's past him (picked afresh
+## each frame, a goal straight behind him flipped it every step and she
+## jittered on the spot): the open side, else the one toward the goal.
+var _skirt_side := 0.0
+
 func _skirt_tallyman(dir: Vector3) -> Vector3:
 	for st in get_nodes_in_group("stalker"):
 		if not st.active:
@@ -633,9 +640,16 @@ func _skirt_tallyman(dir: Vector3) -> Vector3:
 		if dir.dot(n) < 0.15:
 			continue
 		var side := n.cross(Vector3.UP)
-		if side.dot(dir) < 0.0:
-			side = -side
-		return (side + dir * 0.25 - n * clampf(2.2 - d, 0.0, 1.0)).normalized()
+		if _skirt_side == 0.0:
+			var chest: Vector3 = p.global_position + Vector3.UP * 1.0
+			var open_r: bool = _los(chest, chest + side * 1.6, [p.get_rid(), st.get_rid()])
+			var open_l: bool = _los(chest, chest - side * 1.6, [p.get_rid(), st.get_rid()])
+			if open_r != open_l:
+				_skirt_side = 1.0 if open_r else -1.0
+			else:
+				_skirt_side = 1.0 if side.dot(dir) >= 0.0 else -1.0
+		return (side * _skirt_side + dir * 0.25 - n * clampf(2.2 - d, 0.0, 1.0)).normalized()
+	_skirt_side = 0.0
 	return dir
 
 func _fend_tallyman() -> void:
@@ -655,20 +669,20 @@ func _fend_tallyman() -> void:
 		to.y = 0.0
 		if to.length() > 7.0:
 			break
-		if p.hp < 40.0:
-			_heal()
+		if p.hp <= 46.0:
+			_heal()   # one swing of his takes 45
 		var err := _aim_at(st.global_position + Vector3.UP * 1.55)
 		p.aiming = true
 		_steer(-to, false, false)
 		p.fire_held = err < 4.0 and p._reloading <= 0.0
 		await physics_frame
-	# Down on his knee: four seconds to get clear of him, not to stand
-	# there (he's up and swinging again after it).
-	var clear_end := sim_t + 1.5
+	# Down on his knee: out of his reach first (he's up and swinging again
+	# in four seconds), then on her way past him.
+	var clear_end := sim_t + 1.0
 	while sim_t < clear_end and is_instance_valid(st) and st._stagger > 0.0 and not p.downed:
 		var away: Vector3 = p.global_position - st.global_position
 		away.y = 0.0
-		if away.length() > 4.0:
+		if away.length() > 2.5:
 			break
 		p.aiming = false
 		p.fire_held = false
@@ -914,6 +928,10 @@ func _monitor() -> void:
 		if _stuck_t > 1.5:
 			if p.global_position.distance_to(_stuck_ref) < 0.2:
 				_bug("movement", "stuck at %s pushing toward %s%s" % [_v(p.global_position), _v(p.global_position + Basis(Vector3.UP, p.yaw) * Vector3(p.move_input.x, 0, p.move_input.y)), _blocked_by(p)], "stuck:%d:%d" % [roundi(p.global_position.x), roundi(p.global_position.z)])
+				if OS.has_environment("PT_DEBUG"):
+					var hud := _hud()
+					print("PTDBG stuck: vel %s floor %s working '%s' anim '%s' fending %s fighting '%s' tally %s paused %s physics %s cutscene %s bag %s pause_menu %s" % [p.velocity, p.is_on_floor(), p.working, p.model._current if p.model else "", _fending, _fight_kind, _stalker_where(), paused, p.is_physics_processing(), CUTS.active,
+						hud._inventory.visible if hud and hud.get("_inventory") else "?", hud._pause.visible if hud and hud.get("_pause") else "?"])
 			_stuck_ref = p.global_position
 			_stuck_t = 0.0
 	else:
@@ -1918,7 +1936,7 @@ func _stalker_where() -> String:
 	var st = get_first_node_in_group("stalker")
 	if st == null or not st.active:
 		return "gone"
-	return "%.1f m away" % st.global_position.distance_to(p.global_position)
+	return "%.1f m away, stagger %.1f, at %s" % [st.global_position.distance_to(p.global_position), st._stagger, _v(st.global_position)]
 
 ## Away from the Tallyman until `cond` holds: to whichever of a few far-off
 ## spots is furthest from him, again and again (he walks slower than she runs).
