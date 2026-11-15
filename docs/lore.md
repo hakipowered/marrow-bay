@@ -249,8 +249,9 @@ use to pull boxes off the high shelves.
   count. He mutters numbers ("...forty-one... forty-two...") and lines from the
   job ("The Archive is closed. You are late.").
 - He can't be killed until the finale. Enough damage drops him to one knee for
-  about four seconds. A shut door keeps him out: he stands outside it,
-  breathing, then walks away and comes back later. Safe rooms stop him.
+  about four seconds. He follows them through an open door; a shut one keeps
+  him out: he stands outside it, breathing, then walks away and comes back
+  later. Safe rooms stop him.
 - Before he turned all the way he went down to the engine hall and made sure
   nobody would raise the flood door to the deep stacks: he took the fuse out
   of the generator's cabinet and locked it in the master clock, and threw the

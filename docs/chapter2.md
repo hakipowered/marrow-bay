@@ -53,9 +53,10 @@ are the only light until the generator runs.
    clock strikes and the drawer in its plinth opens on the fuse.
 4. **The hunt** (`c2_hunt`, taking the fuse): the chime carries. The Tallyman
    comes down the back stair and hunts them through the tunnels. He cannot be
-   killed (enough damage drops him to one knee). A shut door keeps him out:
-   he waits outside it, then gives up and walks back the way he came, and
-   comes again when someone is out where he can reach them. Safe rooms stop
+   killed (enough damage drops him to one knee). He follows them through an
+   open door. A shut door keeps him out: he waits outside it, then gives up
+   and walks back the way he came, and comes again when someone is out where
+   he can reach them. Safe rooms stop
    him. Once all three parts are in, he gives up for good (he turns and walks
    off if they can see him, or is simply gone).
 5. **The diesel**: the jerrycan is in the coal yard's fuel shed.
@@ -176,11 +177,11 @@ room, the key where he dropped it, the objective on the banner.
 
 ## Notes for later chapters
 
-- Doors are walls to the navmesh (it is baked with them shut), so infected
-  and the Tallyman don't path through them. The Tallyman checks whether the
-  navmesh reaches whoever he hunts and gives up on someone behind a door
-  (`Stalker._can_reach`). The playtest bot uses `cross()` for every doorway
-  with a door.
+- Doors are baked shut into the navmesh; each door's link joins the two
+  sides while it stands open (`Door.NAV_REACH`). The Tallyman checks whether
+  the navmesh reaches whoever he hunts and gives up on someone behind a shut
+  door (`Stalker._can_reach`). The playtest bot uses `cross()` for every
+  doorway with a door.
 - The Tallyman's model is 2.45 m tall but his body is 2.2 m, so he fits under
   2.3 m door heads; he stoops (the model scales down a touch) where the
   ceiling is low.

@@ -5,10 +5,10 @@ extends CharacterBody3D
 ## night keeper; now he walks the building counting the living.
 ## He cannot be killed: enough damage drops him to one knee for a few seconds.
 ## Heavy footsteps carry through walls. He does not run; he does not need to.
-## A shut door keeps him out (the navmesh doesn't go through doorways): he
-## waits outside it, breathing, then loses the scent and walks back to where
-## he came in, and picks the hunt up again once someone is out where he can
-## get at them. Host-simulated.
+## He follows them through an open door. A shut one keeps him out: he waits
+## outside it, breathing, then loses the scent and walks back to where he
+## came in, and picks the hunt up again once someone is out where he can get
+## at them. Host-simulated.
 
 @export var active := false
 var target: Node3D
@@ -239,7 +239,7 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 	if leaving:
-		_walk_to(_leave_to, delta, false)
+		_walk_to(_leave_to, delta)
 		return
 	_reach_t -= delta
 	if _reach_t <= 0.0:
@@ -260,9 +260,9 @@ func _physics_process(delta: float) -> void:
 	if target == null:
 		_lost_t += delta
 		if hunted and _lost_t < LINGER:
-			_walk_to(hunted.global_position, delta, false)
+			_walk_to(hunted.global_position, delta)
 		elif global_position.distance_to(_home) > 0.8:
-			_walk_to(_home, delta, false)
+			_walk_to(_home, delta)
 		else:
 			velocity = Vector3(0, velocity.y - 18.0 * delta, 0)
 			move_and_slide()
@@ -298,7 +298,7 @@ func _stoop(delta: float) -> void:
 	_stoop_k = move_toward(_stoop_k, want, delta * 0.8)
 	_model.scale = Vector3.ONE * _stoop_k
 
-func _walk_to(goal: Vector3, delta: float, hunting := true) -> void:
+func _walk_to(goal: Vector3, delta: float) -> void:
 	_agent.target_position = goal
 	var next := _agent.get_next_path_position()
 	var dir := next - global_position
@@ -310,20 +310,10 @@ func _walk_to(goal: Vector3, delta: float, hunting := true) -> void:
 	else:
 		velocity = Vector3(0, velocity.y - 18.0 * delta, 0)
 	move_and_slide()
-	if not hunting:
-		return
-	# Shoves open an ordinary door in front of him while he hunts (locked and
-	# co-op doors stop him), so whoever is behind it sees him standing there.
-	var fwd := -global_transform.basis.z
-	for door in get_tree().get_nodes_in_group("doors"):
-		if door.kind == Door.Kind.MANUAL and not door.is_open and door.global_position.distance_to(global_position) < 1.6:
-			var to: Vector3 = door.global_position - global_position
-			to.y = 0.0
-			if to.normalized().dot(fwd) > 0.3:
-				door._rpc_set_open.rpc(true, fwd)
 
-## Whether the navmesh takes him to `p`: a shut door, or the doorway it
-## stands in, cuts him off from whoever is on the far side.
+## Whether the navmesh takes him to `p`: an open door's link takes him
+## through it (Door.NAV_REACH), a shut one cuts him off from whoever is on
+## the far side.
 func _can_reach(p: Node3D) -> bool:
 	var to := p.global_position
 	var path := NavigationServer3D.map_get_path(get_world_3d().navigation_map, global_position, to, true)
