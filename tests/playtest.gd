@@ -138,6 +138,10 @@ func _initialize() -> void:
 			"pressure":
 				force_pressure = int(a[i + 1])
 				i += 1
+			"web":
+				# The browser version's profile (batched levels, shadow
+				# budget, adaptive scale) in every level the bot plays.
+				load("res://scripts/world/web_quality.gd").forced = true
 		i += 1
 	if shots_dir != "":
 		DirAccess.make_dir_recursive_absolute(shots_dir)

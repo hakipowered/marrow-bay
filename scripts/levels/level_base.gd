@@ -24,6 +24,8 @@ func _ready() -> void:
 		if p.is_multiplayer_authority():
 			hud.bind_player(p)
 	Net.partner_left.connect(_on_partner_left)
+	# Browser version: merge the static pieces, shadow LOD, render scale.
+	preload("res://scripts/world/web_quality.gd").apply_level(self)
 	# Story: tell the host this phone has the level, so cutscenes start for
 	# both players together.
 	Cutscenes.level_ready()
