@@ -43,11 +43,11 @@ const DIFFICULTIES := ["easy", "normal", "hard"]
 ## lasts. aim_assist: how far hip fire bends toward a target. pressure: how
 ## many infected come (see pressure()).
 const DIFFICULTY := {
-	"easy": {"name": "Easy", "blurb": "For the story. Infected hit softer and go down sooner, more ammo in every box, a longer wait to be revived, and hip fire finds its target.",
+	"easy": {"name": "Easy", "blurb": "For the story. Infected hit softer and go down sooner, every box holds more ammo, and hip fire finds its target. In co-op, more time to reach a downed partner.",
 		"enemy_damage": 0.6, "enemy_health": 0.8, "boss_health": 0.75, "ammo": 1.5, "drops": 1.4, "revive": 45.0, "aim_assist": 1.7, "pressure": 0},
 	"normal": {"name": "Normal", "blurb": "The way RaGoon City is meant to be played. Every shot counts, but there's enough to get through if you're careful.",
 		"enemy_damage": 1.0, "enemy_health": 1.0, "boss_health": 1.0, "ammo": 1.0, "drops": 1.0, "revive": 30.0, "aim_assist": 1.0, "pressure": 1},
-	"hard": {"name": "Hard", "blurb": "More infected, and they hit much harder and take more to put down. Less ammo, fewer drops, and only 20 seconds to reach a downed partner.",
+	"hard": {"name": "Hard", "blurb": "More infected, and they hit much harder and take more to put down. Less ammo in every box and fewer drops. In co-op, only 20 seconds to reach a downed partner.",
 		"enemy_damage": 1.5, "enemy_health": 1.2, "boss_health": 1.25, "ammo": 0.7, "drops": 0.6, "revive": 20.0, "aim_assist": 1.0, "pressure": 2},
 }
 ## Boss health with two survivors shooting at it.

@@ -323,19 +323,30 @@ func _difficulty_select(next: String) -> void:
 		b.button_pressed = d == _difficulty
 		b.pressed.connect(func(): _difficulty = d; _difficulty_select(next))
 		row.add_child(b)
+	# What it changes, on a dark card so it reads over the key art.
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.035, 0.03, 0.78)
+	sb.set_corner_radius_all(10)
+	sb.set_content_margin_all(22)
+	card.add_theme_stylebox_override("panel", sb)
+	_panel.add_child(card)
+	var words := VBoxContainer.new()
+	words.add_theme_constant_override("separation", 12)
+	card.add_child(words)
 	var blurb := Label.new()
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD
-	blurb.custom_minimum_size = Vector2(0, 150)
+	blurb.custom_minimum_size = Vector2(0, 124)
 	blurb.text = str(GameState.DIFFICULTY[_difficulty]["blurb"])
-	_panel.add_child(blurb)
+	words.add_child(blurb)
 	if next == "host_new":
 		var co := Label.new()
 		co.autowrap_mode = TextServer.AUTOWRAP_WORD
-		co.add_theme_font_size_override("font_size", 26)
-		co.add_theme_color_override("font_color", Color(0.75, 0.7, 0.64))
+		co.add_theme_font_size_override("font_size", 28)
+		co.add_theme_color_override("font_color", Color(0.78, 0.72, 0.64))
 		co.text = "Co-op: each of you finds your own ammo, herbs and guns, and keys and files are found for both of you. More infected come for two." if _difficulty != "easy" \
 			else "Co-op: each of you finds your own ammo, herbs and guns, and keys and files are found for both of you."
-		_panel.add_child(co)
+		words.add_child(co)
 	_btn("Start" if next == "solo" else "Create Room", func():
 		_save_difficulty(_difficulty)
 		_go(next))
