@@ -270,12 +270,9 @@ func _build_cabinet() -> void:
 		bulb.position = Vector3(x, 1.37, fz + 0.006)
 		c.add_child(bulb)
 		_plate(c, names[part], Vector3(x, 1.325, fz + 0.003), Vector2(0.11, 0.026), 13)
-		var glow := OmniLight3D.new()
-		glow.omni_range = 0.9
-		glow.light_energy = 0.3
-		glow.position = Vector3(x, 1.38, fz + 0.15)
-		c.add_child(glow)
-		_lamps[part] = [mat, glow]
+		# No light of its own: four lamps lighting the panel washed the
+		# whole cabinet green. The lens glows; the room lights the steel.
+		_lamps[part] = mat
 		i += 1
 	# Excitation and governor switches either side of the hours counter.
 	for sw in [[-0.22, "EXCITATION"], [0.22, "GOVERNOR"]]:
@@ -396,8 +393,8 @@ func _show_parts() -> void:
 	for part in PARTS:
 		var on := fitted(part)
 		var col := Color(0.25, 1.0, 0.35) if on else Color(1.0, 0.12, 0.06)
-		_set_lamp(part, col, 2.5)
-	_set_lamp("run", Color(0.25, 1.0, 0.35), 3.0 if running() else 0.0)
+		_set_lamp(part, col, 1.6)
+	_set_lamp("run", Color(0.25, 1.0, 0.35), 1.9 if running() else 0.0)
 	_breaker.rotation.x = -1.1 if running() else 0.0
 	if not running():
 		_point_needles(0.0, false)
@@ -406,13 +403,10 @@ func _show_parts() -> void:
 		_can = RoomBuilder.prop(self, "metal_jerrycan_green", Vector3(0.95, 0.02, 0.85), 25.0, 1.0, false)
 
 func _set_lamp(part: String, col: Color, energy: float) -> void:
-	var mat: StandardMaterial3D = _lamps[part][0]
-	var glow: OmniLight3D = _lamps[part][1]
+	var mat: StandardMaterial3D = _lamps[part]
 	mat.albedo_color = col * (0.3 if energy > 0.0 else 0.12)
 	mat.emission = col
 	mat.emission_energy_multiplier = energy
-	glow.light_color = col
-	glow.light_energy = 0.3 if energy > 0.0 else 0.0
 
 # ------------------------------------------------------------------ using it
 

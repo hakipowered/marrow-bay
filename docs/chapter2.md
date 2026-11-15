@@ -158,7 +158,11 @@ room, the key where he dropped it, the objective on the banner.
   (including the valves in the wrong order first, and reloads part way).
 - `tests/stalker_doors.gd`: the hunting Tallyman comes out of the clock
   gallery, waits outside the pump room door, gives up, and comes back when
-  she is out in the tunnel.
+  she is out in the tunnel, and follows her in through the door left open.
+- `tests/pump_walk.gd`: she walks the drained pump room on her own legs (door,
+  valves, round the pumps to the gate, down the steps, back up), and the
+  navmesh climbs out of the sump to the tunnel. Keep the head of the steps
+  and the way round the pumps clear: props there pinch the navmesh shut.
 - `tests/warden_fight.gd`: the boss fight with real pistol shots at his hit
   zones.
 - `tests/playtest.gd -- only route2`: the bot plays chapter 2 like a player

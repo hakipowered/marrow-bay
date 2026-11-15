@@ -98,6 +98,7 @@ func _ready() -> void:
 	# into the jamb of a doorway and he stood there pushing.
 	_agent.path_desired_distance = 0.35
 	_agent.target_desired_distance = 0.6
+	_agent.link_reached.connect(_on_link_reached)
 	add_child(_agent)
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
@@ -157,6 +158,7 @@ func activate(at: Vector3) -> void:
 	global_position = at
 	_home = at
 	_lost_t = 0.0
+	_link_exit = Vector3.INF
 	if _breath.stream:
 		_breath.play()
 
@@ -298,9 +300,28 @@ func _stoop(delta: float) -> void:
 	_stoop_k = move_toward(_stoop_k, want, delta * 0.8)
 	_model.scale = Vector3.ONE * _stoop_k
 
+## Through an open doorway (Door's navmesh link) he keeps on to the far side:
+## re-pathing from inside the doorway, which isn't navmesh, snapped him back
+## to the near side and he stood in it (as the infected did, Zombie).
+var _link_exit := Vector3.INF
+var _link_t := 0.0
+
+func _on_link_reached(details: Dictionary) -> void:
+	_link_exit = details.get("link_exit_position", Vector3.INF)
+	_link_t = 3.0
+
 func _walk_to(goal: Vector3, delta: float) -> void:
-	_agent.target_position = goal
-	var next := _agent.get_next_path_position()
+	var next: Vector3
+	if _link_exit != Vector3.INF:
+		_link_t -= delta
+		var left := Vector2(_link_exit.x - global_position.x, _link_exit.z - global_position.z).length()
+		if _link_t <= 0.0 or left < 0.3:
+			_link_exit = Vector3.INF
+	if _link_exit != Vector3.INF:
+		next = _link_exit
+	else:
+		_agent.target_position = goal
+		next = _agent.get_next_path_position()
 	var dir := next - global_position
 	dir.y = 0
 	if dir.length() > 0.05:

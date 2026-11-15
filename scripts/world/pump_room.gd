@@ -155,8 +155,9 @@ func _build() -> void:
 	_build_pumps()
 
 ## Concrete steps down the east side; a ramp under them is what you walk on
-## (smooth on the legs, the navmesh and the bot), set half a step down so the
-## feet meet the treads.
+## (smooth on the legs, the navmesh and the bot). It runs along the step
+## nosings, flush with the floor at the lip: set lower, its top edge left a
+## kerb at the lip that stopped anyone coming back up.
 func _build_stairs(conc: Material) -> void:
 	var run := STAIR.size.y / STEPS
 	var rise := -FLOOR_Y / STEPS
@@ -167,8 +168,8 @@ func _build_stairs(conc: Material) -> void:
 		var zc := STAIR.position.y + run * (k + 0.5)
 		RoomBuilder._box(self, Vector3(cx, (FLOOR_Y + top) / 2.0, zc), Vector3(STAIR.size.x, top - FLOOR_Y, run), conc, false)
 		RoomBuilder._box(self, Vector3(cx, top + 0.005, STAIR.position.y + run * k + 0.03), Vector3(STAIR.size.x, 0.012, 0.05), tread, false)
-	var a := Vector3(cx, -rise / 2.0, STAIR.position.y)
-	var b := Vector3(cx, FLOOR_Y - rise / 2.0, STAIR.end.y)
+	var a := Vector3(cx, 0.0, STAIR.position.y)
+	var b := Vector3(cx, FLOOR_Y, STAIR.end.y)
 	var along := b - a
 	var ang := atan2(-along.y, along.z)
 	var sb := StaticBody3D.new()
@@ -176,10 +177,12 @@ func _build_stairs(conc: Material) -> void:
 	sb.collision_layer = 1
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
+	# Runs on 0.3 m past the bottom, under the pit floor; none past the top,
+	# where it would stand proud of the floor.
 	bs.size = Vector3(STAIR.size.x, 0.1, along.length() + 0.3)
 	cs.shape = bs
 	sb.add_child(cs)
-	sb.position = (a + b) / 2.0 - Vector3(0, cos(ang), sin(ang)) * 0.05
+	sb.position = (a + b) / 2.0 + along.normalized() * 0.15 - Vector3(0, cos(ang), sin(ang)) * 0.05
 	sb.rotation.x = ang
 	add_child(sb)
 	# A pipe handrail down the open (west) side of the steps.
@@ -465,7 +468,19 @@ func _build_pumps() -> void:
 		p.name = "SumpPump%d" % (k + 1)
 		p.position = Vector3(2.7 + k * 0.95, 0, 2.1)
 		add_child(p)
-		RoomBuilder._box(p, Vector3(0, 0.06, 0), Vector3(0.62, 0.12, 0.5), iron, true)
+		RoomBuilder._box(p, Vector3(0, 0.06, 0), Vector3(0.62, 0.12, 0.5), iron, false)
+		# One solid body for plinth, motor and pipes: the plinth alone was a
+		# 12 cm kerb the navmesh walked over and legs caught on, and the
+		# motor above it was air.
+		var body := StaticBody3D.new()
+		body.name = "Body"
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(0.62, 1.32, 0.72)
+		cs.shape = bs
+		cs.position = Vector3(0, 0.66, -0.05)
+		body.add_child(cs)
+		p.add_child(body)
 		UndercroftKit.bar(p, Vector3(0, 0.3, 0), 0.15, 0.36, iron, "y", 16)
 		# Cast-iron frame with its cooling ribs running up it, end bells,
 		# and the fan cowl on top with its grille.

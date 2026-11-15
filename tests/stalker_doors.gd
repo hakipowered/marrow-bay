@@ -1,8 +1,9 @@
 extends SceneTree
-## The hunting Tallyman and shut doors (chapter 2): he comes for her in the
-## open, waits outside the pump room door when she shuts herself in, then
-## gives up and walks back to where he came in, and comes for her again once
-## she's back out in the tunnel.
+## The hunting Tallyman and doors (chapter 2): he comes out of the clock
+## gallery after her (stooping under its door head), waits outside the pump
+## room door when she shuts herself in, then gives up and walks back to
+## where he came in, comes for her again once she's back out in the tunnel,
+## and follows her in when she leaves the door open behind her.
 ## Prints STALKER DOORS OK or STALKER DOORS FAIL.
 ##   godot --headless --path . --fixed-fps 60 --script tests/stalker_doors.gd
 const UC := "res://scenes/levels/undercroft.tscn"
@@ -16,6 +17,7 @@ var fails := []
 var step := 0
 var t0 := 0
 var near_door := false
+var door: Node
 var door_min := INF
 var waited := 0.0
 var stooped := 1.0
@@ -57,7 +59,6 @@ func _process(_d: float) -> bool:
 		for st in get_nodes_in_group("story"):
 			st.set_physics_process(false)
 		root.get_node("Cheats").flags["god_mode"] = true
-		var door = null
 		for d in get_nodes_in_group("doors"):
 			if d.name.contains("pump_door"):
 				door = d
@@ -100,6 +101,15 @@ func _process(_d: float) -> bool:
 			_hold(TUNNEL)
 			if s.global_position.distance_to(TUNNEL) < 2.5 or el > 30.0:
 				_check(s.global_position.distance_to(TUNNEL) < 2.5, "he came back for her once she was out in the tunnel")
+				# Back in, leaving the door open behind her.
+				door._set_open(true, Vector3(0, 0, 1), false)
+				t0 = frames
+				step = 4
+		4:
+			_hold(INSIDE)
+			var inside: bool = s.global_position.z > 5.0 and s.global_position.distance_to(INSIDE) < 3.0
+			if inside or el > 25.0:
+				_check(inside, "he followed her in through the open door (%.1f m off her, at %s)" % [s.global_position.distance_to(INSIDE), s.global_position])
 				print("STALKER DOORS %s" % ("OK" if fails.is_empty() else "FAIL: " + ", ".join(fails)))
 				quit(0 if fails.is_empty() else 1)
 				return true

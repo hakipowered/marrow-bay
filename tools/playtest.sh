@@ -84,13 +84,14 @@ run save_slots       300 --script tests/save_slots.gd
 run bot_death        300 --fixed-fps 60 --script tests/playtest.gd -- only death
 # Chapter 2, the Undercroft: walls, the level probe, the whole story through
 # its prompts, the Warden's rules, the bot fighting him its own way, and
-# the hunting Tallyman at a shut door.
+# the hunting Tallyman at a shut door, and the pump room walked on foot.
 run wall_overlap_ch2 120 --script tests/wall_overlap.gd -- res://scenes/levels/undercroft.tscn
 run level_probe_ch2  180 --fixed-fps 60 --script tests/playtest.gd -- only probe2
 run chapter2_flow    600 --fixed-fps 60 --script tests/chapter2_flow.gd
 run warden_fight     300 --fixed-fps 60 --script tests/warden_fight.gd
 run bot_warden       300 --fixed-fps 60 --script tests/playtest.gd -- only warden2
 run stalker_doors    300 --fixed-fps 60 --script tests/stalker_doors.gd
+run pump_walk        200 --fixed-fps 60 --script tests/pump_walk.gd
 
 # Co-op: two copies of the game through a local relay.
 coop() {

@@ -597,8 +597,12 @@ func _pump_room() -> void:
 	RoomBuilder.prop(r, "old_gas_mask", Vector3(0.6, 1.5, 1.7), 90, 1.0, false)
 	RoomBuilder.prop(r, "metal_tool_chest", Vector3(5.3, 0, 0.95), -90)
 	RoomBuilder.prop(r, "pipe_wrench", Vector3(1.6, 0.02, 2.2), 35, 1.0, false)
-	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(2.55, 0, 0.5), 0)
-	RoomBuilder.prop(r, "WetFloorSign_01", Vector3(5.25, 0, 2.05), -30)
+	# On the north wall east of the pumps: behind them it pinched the way
+	# round them to the sump gate.
+	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(4.75, 0, 0.5), 0)
+	# Past the far end of the pit: at the head of the steps it squeezed the
+	# way down to less than a body's width for the infected.
+	RoomBuilder.prop(r, "WetFloorSign_01", Vector3(4.5, 0, 7.05), 160)
 	RoomBuilder.prop(r, "plastic_crate_01", Vector3(0.85, 0, 6.95), 10)
 	RoomBuilder.prop(r, "trashbag", Vector3(1.5, 0, 7.0), 60, 1.0, false)
 	UndercroftPower.emergency_light(r, Vector3(1.6, 2.75, 0.39), 0.0, 0.4, 5.5)
@@ -606,7 +610,13 @@ func _pump_room() -> void:
 	UndercroftPower.emergency_light(r, Vector3(0.39, 2.7, 6.6), 90.0, 0.35, 5.0)
 	for at in [Vector3(1.6, 3.9, 2.4), Vector3(3.9, 3.9, 5.2)]:
 		UndercroftPower.work_light(r, at, 0.0, 0.6, 7.0)
-	place_pickup("file:pump_drill", PUMP_AT + Vector3(0.6, 1.08, 1.6), "c2_pump_drill")
+	# The drill card on a steel ledge beside the door, under its stencil.
+	var steel := Mats.trim(Color(0.22, 0.23, 0.22), 0.5, 0.7)
+	RoomBuilder._box(r, Vector3(0.55, 1.0, 0.495), Vector3(0.44, 0.025, 0.22), steel, true)
+	for bx in [0.38, 0.72]:
+		RoomBuilder._box(r, Vector3(bx, 0.93, 0.42), Vector3(0.02, 0.12, 0.07), steel, false)
+	UndercroftKit.label(r, "DRILL  -  SUMP B", Vector3(0.55, 1.2, RoomBuilder.WALL_T + 0.14), 26, Color(0.82, 0.78, 0.66), 0.0, 0.0012)
+	place_pickup("file:pump_drill", PUMP_AT + Vector3(0.55, 1.02, 0.5), "c2_pump_drill")
 	place_pickup("ammo:shells", PUMP_AT + Vector3(0.85, 0.36, 6.95), "c2_pump_shells")
 	place_zombie("Z_c2_sump", PUMP_AT + PumpRoom.BODY_AT, PumpRoom.BODY_YAW, "possum", false, "mechanic")
 
