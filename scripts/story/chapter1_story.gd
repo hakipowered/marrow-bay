@@ -983,13 +983,14 @@ func _show_package() -> void:
 		if is_instance_valid(att):
 			att.queue_free())
 
-## Nasri's sealed package: a small brown-paper parcel tied with string. In the
-## survivors' hand bone space (cm): fingers along +Y, palm facing -Z.
+## Nasri's sealed package, as in the opening film: a brown-paper parcel tied
+## with string (the film can is inside). Placed in the survivors' hand bone
+## space (cm): fingers along +Y, palm facing -Z.
 func _package(skel: Skeleton3D) -> Node3D:
 	var holder := Node3D.new()
 	var k := 1.0 / maxf(skel.global_transform.basis.get_scale().x, 0.0001)
 	holder.scale = Vector3.ONE * k
-	holder.position = Vector3(0.0, 8.5, -5.2)
+	holder.position = Vector3(0.0, 9.0, -5.6)
 	var paper := StandardMaterial3D.new()
 	paper.albedo_color = Color(0.55, 0.42, 0.28)
 	paper.roughness = 0.9
@@ -997,25 +998,25 @@ func _package(skel: Skeleton3D) -> Node3D:
 	string_mat.albedo_color = Color(0.82, 0.78, 0.68)
 	var box := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(0.12, 0.17, 0.05)
+	bm.size = Vector3(0.14, 0.19, 0.06)
 	box.mesh = bm
 	box.material_override = paper
 	holder.add_child(box)
 	for along_y in [true, false]:
 		var tie := MeshInstance3D.new()
 		var tm := BoxMesh.new()
-		tm.size = Vector3(0.006, 0.172, 0.052) if along_y else Vector3(0.122, 0.006, 0.052)
+		tm.size = Vector3(0.006, 0.192, 0.062) if along_y else Vector3(0.142, 0.006, 0.062)
 		tie.mesh = tm
 		tie.material_override = string_mat
 		holder.add_child(tie)
 	var label := MeshInstance3D.new()
 	var lm := BoxMesh.new()
-	lm.size = Vector3(0.05, 0.03, 0.051)
+	lm.size = Vector3(0.055, 0.032, 0.061)
 	label.mesh = lm
 	var lmat := StandardMaterial3D.new()
 	lmat.albedo_color = Color(0.86, 0.82, 0.72)
 	label.material_override = lmat
-	label.position = Vector3(0.025, 0.045, 0.0)
+	label.position = Vector3(0.032, 0.05, 0.0)
 	holder.add_child(label)
 	return holder
 

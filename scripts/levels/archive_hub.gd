@@ -592,12 +592,13 @@ func _reading_room() -> void:
 ## by it, and the hook's drag marks run across the floor to it.
 func _staff_stair() -> void:
 	RoomBuilder.build(self, {
-		"id": "StaffStair", "pos": Vector3(-27.9, 0, -2.6), "size": Vector3(1.9, 2.8, 2.8),
+		"id": "StaffStair", "pos": Vector3(-28.6, 0, -2.6), "size": Vector3(2.62, 2.8, 2.8),
 		"floor": "basement_floor", "wall": "basement_wall", "trim": Color(0.2, 0.18, 0.16),
 		"floor_look": {"tile_size": 2.0, "wetness": 0.3},
 		"wall_look": {"tile_size": 2.0, "stain_amount": 0.9},
 		"look": {"grime_amount": 0.9, "grime_height": 1.2},
-		# The reading room's wall closes this side.
+		# The reading room's wall closes this side (the floor runs 2 cm under it,
+		# so the threshold has no seam).
 		"skip_walls": ["e"],
 	})
 	var d := place_door(Vector3(-26.0, 0, -1.2), 90, Door.Kind.BARRED, "wood_panel", 1.1, 2.2, "staff_stair")
