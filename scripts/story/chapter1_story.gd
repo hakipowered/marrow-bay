@@ -326,12 +326,14 @@ func _glass() -> Array:
 		{"do": "call", "fn": "_tally_leave", "wait": false},
 		{"do": "wait", "t": 3.2},
 		{"do": "cam", "pos": Vector3(-17.7, 1.6, 7.5), "look": Vector3(-15.9, 1.5, 6.4), "fov": 48.0},
+		{"do": "call", "fn": "_act", "args": ["zegan", "talk/talk_open"], "wait": false},
 		{"do": "say", "who": "zegan", "line": "z_glass_what", "text": "What the hell was that?"},
 		{"do": "cam", "pos": Vector3(-17.5, 1.6, 7.45), "look": Vector3(-15.9, 1.5, 6.4), "fov": 45.0, "t": 4.5, "block": false},
 		{"do": "wait", "t": 2.9},
 		{"do": "call", "fn": "_turn_to", "args": ["zegan", PANE + Vector3(-2.0, 0, -2.0)], "wait": false},
 		{"do": "call", "fn": "_turn_to", "args": ["obcera", PANE + Vector3(-2.0, 0, -2.0)], "wait": false, "delay": 0.2},
 		{"do": "wait", "t": 1.4},
+		{"do": "call", "fn": "_act", "args": ["obcera", "talk/talk_raise"], "wait": false},
 		{"do": "say", "who": "obcera", "line": "o_glass_big", "text": "Something big. Don't let it see us."},
 		{"do": "wait", "t": 0.8},
 		{"do": "fade", "to": 1.0, "t": 0.6},
@@ -353,6 +355,11 @@ func _warden() -> Array:
 	var card := "h1_card_on" if VaultCircuit.is_on() else "h1_card"
 	var card_text := "The vault elevator goes down to the old service tunnels. That's where he went. " + \
 		("You've got the power back on. Take my card." if VaultCircuit.is_on() else "It needs power. The breaker's in the boiler room. Take my card.")
+	# His good hand, held out to Zegan with the card on the palm.
+	var card_len := _voice_len(card, 7.5)
+	var fwd := Vector3(Z.x - H.x, 0, Z.z - H.z).normalized()
+	var right := Vector3(-fwd.z, 0, fwd.x)
+	var palm := H + fwd * 0.66 + Vector3.UP * 1.15
 	var steps: Array = [
 		{"do": "call", "fn": "_warden_stage"},
 		{"do": "bars", "on": true, "t": 0.4, "wait": false},
@@ -384,6 +391,7 @@ func _warden() -> Array:
 		{"do": "say", "who": "zegan", "line": "z1_who", "text": "I'm a paramedic. Who's in charge here?"},
 		# Who he is, and what happened to the shelter.
 		_close(H, "hardass", (Z + O) / 2.0 - H, 1.4, 40.0, 0.0),
+		{"do": "call", "fn": "_h_face", "args": [(Z + O) / 2.0, 0.5], "wait": false},
 		{"do": "call", "fn": "_h_once", "args": ["talk/talk_right"], "wait": false},
 		{"do": "say", "who": "hardass", "line": "h1_name", "text": "You're looking at him. Jackson Hardass. Twenty years on this building's security desk."},
 		_push_in(_close(H, "hardass", (Z + O) / 2.0 - H, 1.4, 40.0, 0.0), H, "hardass", 1.15, 8.0),
@@ -428,7 +436,7 @@ func _warden() -> Array:
 		{"do": "say", "who": "hardass", "line": "h1_orrin", "text": "Orrin came back. He isn't Orrin anymore. If you hear counting in the dark... you move.", "gap": 0.5},
 		# The package, and City Hall.
 		_close(O, "obcera", H - O, 1.25, 40.0, -0.1),
-		{"do": "call", "fn": "_act", "args": ["obcera", "talk/hand_hip"], "wait": false},
+		{"do": "call", "fn": "_show_package", "wait": false},
 		{"do": "say", "who": "obcera", "line": "o1_package", "text": "Nasri sent me this. Sealed. I'm putting it in his hands."},
 		{"do": "cam", "pos": Vector3(14.95, 1.7, 1.15), "look": Vector3(13.35, 1.25, 3.2), "fov": 50.0},
 		{"do": "cam", "pos": Vector3(14.75, 1.68, 1.3), "look": Vector3(13.35, 1.25, 3.2), "fov": 47.0, "t": 10.0, "block": false},
@@ -436,14 +444,17 @@ func _warden() -> Array:
 		{"do": "say", "who": "hardass", "line": "h1_cityhall", "text": "Then don't let anyone else get their hands on it. City Hall radioed twice before the lines went dead. Not to send help. To ask if the vault was still locked.", "gap": 0.5},
 		# Zegan sees the bite on his wrist; he pulls the hand away.
 		_ots(Z, "zegan", H, "hardass", -1.0, 44.0),
+		{"do": "call", "fn": "_h_face", "args": [Z, 0.5], "wait": false},
 		{"do": "call", "fn": "_act", "args": ["zegan", "talk/talk_right"], "wait": false},
 		{"do": "say", "who": "zegan", "line": "z1_wrist", "text": "Your wrist's bleeding. Let me look at that.", "gap": 0.1},
 		{"do": "call", "fn": "_h_pull_back", "wait": false},
 		{"do": "say", "who": "hardass", "line": "h1_scratch", "text": "It's a scratch. Leave it.", "gap": 0.6},
 		# His key card, held out in his good hand.
 		{"do": "cam", "pos": Vector3(14.6, 1.45, 1.55), "look": Vector3(13.4, 1.2, 3.25), "fov": 46.0},
-		{"do": "call", "fn": "_h_hand_over", "wait": false},
-		{"do": "say", "who": "hardass", "line": card, "text": card_text},
+		# The hand comes out on "Take my card"; then a look at it on his palm.
+		{"do": "call", "fn": "_h_hand_over", "wait": false, "delay": maxf(card_len - 4.4, 0.0)},
+		{"do": "cam", "pos": palm + right * 0.42 + Vector3.UP * 0.3 - fwd * 0.08, "look": palm, "fov": 34.0, "delay": maxf(card_len - 1.2, 0.0), "wait": false},
+		{"do": "say", "who": "hardass", "line": card, "text": card_text, "gap": 0.45},
 		_close(O, "obcera", H - O, 1.2, 40.0, -0.1),
 		{"do": "call", "fn": "_act", "args": ["obcera", "talk/talk_raise"], "wait": false},
 		{"do": "say", "who": "obcera", "line": "o1_come", "text": "Come with us.", "gap": 0.5},
@@ -723,6 +734,8 @@ func _silhouette() -> Node3D:
 func _glass_stage() -> void:
 	_place("zegan", Vector3(-16.3, 0.0, 6.1), PANE)
 	_place("obcera", Vector3(-15.4, 0.0, 7.0), PANE)
+	_listen("zegan")
+	_listen("obcera")
 	_tally = StoryActor.new("tallyman")
 	_tally.position = Vector3(-25.0, 0.0, 3.9)
 	_tally.rotation.y = -PI / 2
@@ -844,6 +857,8 @@ func _warden_stage() -> void:
 	# Just inside the door, looking into the room.
 	_place("zegan", WARDEN_Z, WARDEN_Z + Vector3(2.0, 0, 0.6))
 	_place("obcera", WARDEN_O, WARDEN_O + Vector3(2.0, 0, 0.3))
+	_listen("zegan")
+	_listen("obcera")
 	if _hardass:
 		_h_reset()
 		_hardass.global_position = HARDASS_POST
@@ -921,22 +936,88 @@ func _h_step_in() -> Signal:
 	return s
 
 ## Zegan reaches for the bitten hand: he snatches it back against his chest.
-## (The clip starts with the hand already out; it starts past that.)
+## (Only the end of the clip, where he clutches the wrist: before that the
+## clip flings both arms out.)
 func _h_pull_back() -> void:
-	_h_play_then("talk/hand_pull", -1.0, 1.0, 1.1)
+	_h_play_then("talk/hand_pull", -1.0, 0.7, 2.45)
 
 ## Holds his key card out in his good hand (the left: the bite is on the
 ## right). The card goes once his hand comes back.
 func _h_hand_over() -> void:
 	if not _hardass:
 		return
-	_h_play_then("talk/hand_over", -1.0, 1.0)
+	_h_play_then("talk/hand_over", -1.0, HAND_OVER_SPEED)
 	_card = _key_card()
 	if _card:
 		var tok := _h_token
-		get_tree().create_timer(_hardass.clip_length("talk/hand_over") * 0.62).timeout.connect(func():
+		get_tree().create_timer(_hardass.clip_length("talk/hand_over") * 0.62 / HAND_OVER_SPEED).timeout.connect(func():
 			if tok == _h_token and is_instance_valid(_card):
 				_card.queue_free())
+
+## The hand-over is slowed so his hand stays out (clip 2.4-3.6 s) long
+## enough for the insert shot.
+const HAND_OVER_SPEED := 0.75
+
+func _voice_len(line: String, fallback: float) -> float:
+	var path := "res://assets/audio/voice/story/%s.ogg" % line
+	if ResourceLoader.exists(path):
+		return (load(path) as AudioStream).get_length()
+	return fallback
+
+## Obcera shows him Nasri's package (her right hand brings it up to her
+## chest and out to him), then puts it away.
+func _show_package() -> void:
+	var m := _model_of("obcera")
+	if m == null:
+		return
+	_act("obcera", "talk/talk_hip")
+	var skel: Skeleton3D = m._skel
+	if skel == null or skel.find_bone("RightHand") < 0:
+		return
+	var att := BoneAttachment3D.new()
+	att.bone_name = "RightHand"
+	skel.add_child(att)
+	_scene_bits.append(att)
+	att.add_child(_package(skel))
+	get_tree().create_timer(maxf(m.clip_length("talk/talk_hip") - 0.5, 0.5)).timeout.connect(func():
+		if is_instance_valid(att):
+			att.queue_free())
+
+## Nasri's sealed package: a small brown-paper parcel tied with string. In the
+## survivors' hand bone space (cm): fingers along +Y, palm facing -Z.
+func _package(skel: Skeleton3D) -> Node3D:
+	var holder := Node3D.new()
+	var k := 1.0 / maxf(skel.global_transform.basis.get_scale().x, 0.0001)
+	holder.scale = Vector3.ONE * k
+	holder.position = Vector3(0.0, 8.5, -5.2)
+	var paper := StandardMaterial3D.new()
+	paper.albedo_color = Color(0.55, 0.42, 0.28)
+	paper.roughness = 0.9
+	var string_mat := StandardMaterial3D.new()
+	string_mat.albedo_color = Color(0.82, 0.78, 0.68)
+	var box := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.12, 0.17, 0.05)
+	box.mesh = bm
+	box.material_override = paper
+	holder.add_child(box)
+	for along_y in [true, false]:
+		var tie := MeshInstance3D.new()
+		var tm := BoxMesh.new()
+		tm.size = Vector3(0.006, 0.172, 0.052) if along_y else Vector3(0.122, 0.006, 0.052)
+		tie.mesh = tm
+		tie.material_override = string_mat
+		holder.add_child(tie)
+	var label := MeshInstance3D.new()
+	var lm := BoxMesh.new()
+	lm.size = Vector3(0.05, 0.03, 0.051)
+	label.mesh = lm
+	var lmat := StandardMaterial3D.new()
+	lmat.albedo_color = Color(0.86, 0.82, 0.72)
+	label.material_override = lmat
+	label.position = Vector3(0.025, 0.045, 0.0)
+	holder.add_child(label)
+	return holder
 
 ## The vault key card in his left hand: white plastic, a dark stripe, the
 ## Archive's crest in red.
@@ -1027,6 +1108,13 @@ func _turn_to(ch: String, point: Vector3) -> void:
 	if p and p.is_multiplayer_authority():
 		p.sync_yaw = target
 		p.yaw = target
+
+## A survivor stands still and listens (their own "talk/listen" loop, not
+## the shared gameplay idle, which looks round over the shoulder).
+func _listen(ch: String) -> void:
+	var m := _model_of(ch)
+	if m and m.has_clip("talk/listen"):
+		m.act("talk/listen", 0.0)
 
 ## A survivor's line gesture (a "talk" clip), then they stand listening.
 func _act(ch: String, clip: String) -> void:
