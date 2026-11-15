@@ -715,8 +715,8 @@ func die(head_gone: bool, plan := {}) -> void:
 	_falling = false
 	_oneshot = 0.0
 	if _hound and _anim:
-		# The host picked it (Zombie._death_plan): shot down at full tilt its
-		# legs fold under it; otherwise it rolls onto one side or the other.
+		# The host picked it (Zombie._hound_death_plan): which way it falls
+		# and how, from the killing shot and the room around it.
 		var pick: String = plan.get("c", "death")
 		if not _anim.has_animation(pick):
 			pick = "death"

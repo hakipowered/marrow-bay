@@ -8,7 +8,9 @@
 # Quick pass: the level probe (holes out of the level, infected placed inside
 # props or falling through the floor, items no one can pick up), the scares
 # that bring infected in (no one popping up in view, no body in the floor), the
-# existing rule tests (walls, doors, crowd, death flow, infected deaths, story,
+# existing rule tests (walls, doors, crowd, stun lock, infected chasing her
+# through doorways and every one able to leave its room, the Records Vault
+# fight and Continue, death flow, infected and hound deaths, story,
 # the vault power and elevator, weapons, music, barrels: every gun on every
 # drum), chapter 2 (its walls and level probe, the whole story through its
 # prompts, the Warden fight's rules), the
@@ -60,8 +62,13 @@ run level_probe      180 --fixed-fps 60 --script tests/playtest.gd -- only probe
 run door_sweep       180 --script tests/door_sweep.gd
 run door_reach       180 --script tests/door_reach.gd
 run crowd_rules      300 --script tests/crowd_rules.gd
+run stun_lock        300 --script tests/stun_lock.gd
+run doorway_chase    300 --fixed-fps 60 --script tests/doorway_chase.gd
+run vault_respawn    400 --fixed-fps 60 --script tests/vault_respawn.gd
+run enemy_reach      300 --fixed-fps 60 --script tests/enemy_reach.gd
 run death_flow       300 --script tests/death_flow.gd
 run death_variety    180 --fixed-fps 60 --script tests/death_variety.gd
+run hound_deaths     300 --fixed-fps 60 --script tests/hound_deaths.gd
 run story            300 --script tests/story_test.gd
 run power_route      300 --fixed-fps 60 --script tests/power_route.gd
 run weapon_sweep     300 --script tests/weapon_sweep.gd

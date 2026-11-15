@@ -800,15 +800,21 @@ func _monitor() -> void:
 	if cam and current_scene:
 		_scan_audio(current_scene, cam.global_position)
 	# 6. Music while fighting only ordinary infected (no brute, charger or
-	#    boss coming for her): the 0.9 feedback wants no tense track there.
+	#    boss coming for her, and fewer than six on her at once): the 0.9
+	#    feedback wants no tense track there. Six or more is the big fight
+	#    the fight track is for (HorrorDirector: Music.ACTION_ON).
 	if _fight_kind != "":
 		# A scripted big fight (the generator's crank waves) asks for it.
 		var heavy: bool = MUSIC._forced_action > 0.0
+		var crowd := 0
 		for z in _zombies():
 			if z.state in [ZS.CHASE, ZS.ATTACK, ZS.CHARGE, ZS.PINNING] and z.global_position.distance_to(p.global_position) < 18.0:
+				crowd += 1
 				var zd: Dictionary = z.data
 				if zd.get("boss", false) or zd.get("charge", false) or zd.get("bulk", 1.0) >= 1.5:
 					heavy = true
+		if crowd >= 6:
+			heavy = true
 		if not heavy:
 			var tr: String = MUSIC.current_track()
 			var key := "%s in the %s" % [tr if tr != "" else "no music", _area_of(p.global_position)]

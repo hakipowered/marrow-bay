@@ -463,7 +463,9 @@ func _great_hall() -> void:
 	RoomBuilder.prop(r, "old_gas_mask", Vector3(0.2, 2.05, 6.3), 90, 1.0, false)
 	RoomBuilder.prop(r, "vintage_crutches_01", Vector3(19.0, 0, 15.6), 10, 1.0, false)
 	RoomBuilder.prop(r, "Megaphone_01", Vector3(11.0, 0.78, 9.8), 60, 1.0, false)
-	RoomBuilder.prop(r, "painted_wooden_bench", Vector3(1.0, 0, 7.6), 90)
+	# Against the west wall north of the corridor doorway (it stood right in
+	# the doorway and shut the infected out of, or into, the West corridor).
+	RoomBuilder.prop(r, "painted_wooden_bench", Vector3(1.0, 0, 11.2), 90)
 	RoomBuilder.prop(r, "standing_chalkboard_01", Vector3(8.0, 0, 14.6), 160)
 	RoomBuilder.prop(r, "hanging_picture_frame_02", Vector3(0.16, 2.6, 12.6), 90, 1.4, false)
 	RoomBuilder.prop(r, "old_military_crate", Vector3(2.6, 0, 2.6), 15)
@@ -516,7 +518,9 @@ func _west_corridor() -> void:
 		# The air vent the ventling waits in (Z_corr_vent, right under it).
 		"ceiling_holes": [[5.05, 0.85, 1.1, 1.1, {"vent": true}]],
 	})
-	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(11.6, 0, 0.4), 0)
+	# In the corner past the doorway, not in it: right by the opening it
+	# sealed the corridor off from the hall for the infected's navmesh.
+	RoomBuilder.prop(r, "korean_fire_extinguisher_01", Vector3(11.55, 0, 2.55), 0)
 	var tube := RoomBuilder.prop(r, "mounted_fluorescent_lights", Vector3(4, 3.35, 1.5), 90, 1.0, false)
 	Breakable.make_lamp(tube, [RoomBuilder.light(r, Vector3(4, 3.1, 1.5), SICK, 1.2, 6.0, false, true)], "corridor_tube")
 	RoomBuilder.light(r, Vector3(10, 3.1, 1.5), SICK, 0.6, 5.0)
@@ -628,10 +632,13 @@ func _records_vault() -> void:
 			RoomBuilder.shelf_unit(r, Vector3(2.2 + i * 2.2, 0, row), 0, 2.0, 2.4, 0.5, "vault")
 	for i in 5:
 		RoomBuilder.shelf_unit(r, Vector3(1.8 + i * 2.2, 0, 9.5), 180, 2.0, 2.4, 0.5, "vault_back")
-	RoomBuilder.prop(r, "cardboard_box_01", Vector3(11.6, 0, 7.6), 37)
-	RoomBuilder.prop(r, "cardboard_box_01", Vector3(11.9, 0, 7.1), 80)
-	RoomBuilder.prop(r, "cardboard_box_01", Vector3(11.7, 0.34, 7.4), 10, 1.0, false)
-	var vcrate := Breakable.make(r, "wood", Vector3(12.6, 0, 8.5), 80.0, "vault_crate", "wooden_crate_01")
+	# Boxes and the crate stacked in the far corner, against the walls: out
+	# in the floor they closed the end of the back aisle, and the three
+	# waiting in it (brute, grappler, riot cop) could never get out.
+	RoomBuilder.prop(r, "cardboard_box_01", Vector3(13.45, 0, 7.15), 87)
+	RoomBuilder.prop(r, "cardboard_box_01", Vector3(13.4, 0, 6.6), 4)
+	RoomBuilder.prop(r, "cardboard_box_01", Vector3(13.45, 0.34, 6.9), 30, 1.0, false)
+	var vcrate := Breakable.make(r, "wood", Vector3(13.35, 0, 9.3), 80.0, "vault_crate", "wooden_crate_01")
 	vcrate.drop_table = "crate"
 	# Down here a drum is the answer to the brute and the riot shield.
 	Breakable.make(r, "fuel_drum", Vector3(10.6, 0, 6.5), 10.0, "vault_drum")

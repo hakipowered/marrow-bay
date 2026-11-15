@@ -59,6 +59,16 @@ const POISE := 1.4
 ## wall, can't chain hits into a stun lock. Kept on the host, which runs
 ## every strike.
 const GRACE_MS := 1300
+## A grab lasts this long at most (seconds): then the grappler loses its grip
+## and reels, so a survivor on her own is never held until she dies.
+const PIN_MAX := 3.5
+## After she breaks a grab, no one grabs her again for this long (ms).
+const REPIN_MS := 4500
+## Two infected beside her never start their swings together: one that
+## would start within this long (ms) of another's waits a beat, so blows
+## come one, then the other, with room between them to roll away.
+const SWING_GAP_MS := 650
+var _pin_t := 0.0
 ## The one who landed the blow steps back from her, so a survivor pinned
 ## against a wall or a crate gets room to move.
 var _recoil_t := 0.0
@@ -133,6 +143,7 @@ func _ready() -> void:
 	agent.target_desired_distance = 1.0
 	agent.radius = 0.35
 	add_child(agent)
+	agent.link_reached.connect(_on_link_reached)
 	_groan_t = _rng.randf_range(2.0, 7.0)
 	if start_asleep:
 		state = S.FEED
@@ -257,11 +268,14 @@ func _physics_process(delta: float) -> void:
 				state = S.CRAWL if crippled else S.CHASE
 		S.PINNING:
 			velocity = Vector3.ZERO
-			if not is_instance_valid(_pinned) or _pinned.downed:
+			_pin_t += delta
+			if not is_instance_valid(_pinned) or _pinned.downed or _pin_t >= PIN_MAX:
 				_release_pin()
 			elif _attack_cd <= 0:
+				# The squeeze hurts, but it isn't a blow: no flinch on top
+				# of the grab (she's already struggling in its arms).
 				_attack_cd = 1.0
-				_rpc_hurt_player.rpc(_pinned.get_path(), data["dmg"])
+				_rpc_squeeze.rpc(_pinned.get_path(), data["dmg"])
 		S.CHARGE:
 			_charge_t -= delta
 			velocity = _charge_dir * 5.4
@@ -362,8 +376,11 @@ func _chase(delta: float, speed_mult: float) -> void:
 	# Only swings at someone it can actually reach: not through a wall, a
 	# door or a shelf (it keeps walking round instead).
 	if dist < reach and _attack_cd <= 0 and _flinch_t <= 0 and _clear_line(target):
-		_begin_attack()
-		return
+		if _swing_waits(target):
+			_attack_cd = _rng.randf_range(0.25, 0.6)
+		else:
+			_begin_attack()
+			return
 	var spd: float = (0.35 if crippled and not data.get("crawl") else data["speed"]) * speed_mult * _speed_f
 	if _flinch_t > 0:
 		spd *= 0.15
@@ -379,12 +396,31 @@ func _sound_id(kind: String) -> String:
 		family = "brute"
 	return "%s_%s" % [family, kind]
 
+## Through a doorway (Door's navmesh link): once it steps in, it keeps on to
+## the far side. Re-pathing from inside the doorway (which isn't navmesh)
+## snapped it back to the near side, so it turned round in the doorway, and
+## two in a row there jammed each other for good.
+var _link_exit := Vector3.INF
+var _link_t := 0.0
+
+func _on_link_reached(details: Dictionary) -> void:
+	_link_exit = details.get("link_exit_position", Vector3.INF)
+	_link_t = 2.5
+
 func _move_to(pos: Vector3, speed: float, delta: float) -> void:
+	if _link_exit != Vector3.INF:
+		_link_t -= delta
+		var left := Vector2(_link_exit.x - global_position.x, _link_exit.z - global_position.z).length()
+		if _link_t <= 0.0 or left < 0.3:
+			_link_exit = Vector3.INF
+			_repath_t = 0.0
 	_repath_t -= delta
-	if _repath_t <= 0:
+	if _repath_t <= 0 and _link_exit == Vector3.INF:
 		agent.target_position = pos
 		_repath_t = 0.4
 	var next := agent.get_next_path_position() if not agent.is_navigation_finished() else pos
+	if _link_exit != Vector3.INF:
+		next = _link_exit
 	var dir := (next - global_position)
 	dir.y = 0
 	if dir.length() > 0.05:
@@ -405,17 +441,53 @@ func _nearest_player() -> Node3D:
 			best = p
 	return best
 
+## Seeing her: this far, in front of it, nothing solid in between (an iron
+## gate's bars don't hide her). Up close it notices her anyway (`radius`:
+## heard, smelled), whichever way it faces. One feeding has its head down.
+const SIGHT_RANGE := 15.0
+const SIGHT_RANGE_FEEDING := 7.0
+const SIGHT_COS := 0.26   # about 75 degrees either side of where it faces
+## One that spots her groans, and the idle infected around it turn to look.
+const PACK_ALERT := 7.0
+var _sight_t := 0.0
+
 func _look_for_players(radius: float) -> void:
 	var p := _nearest_player()
-	if p and global_position.distance_to(p.global_position) < radius:
+	var spotted := p != null and global_position.distance_to(p.global_position) < radius
+	if not spotted and p != null:
+		_sight_t -= get_physics_process_delta_time()
+		if _sight_t <= 0.0:
+			_sight_t = _rng.randf_range(0.2, 0.3)
+			for pl in get_tree().get_nodes_in_group("players"):
+				if not pl.downed and _sees(pl, SIGHT_RANGE_FEEDING if state == S.FEED else SIGHT_RANGE):
+					p = pl
+					spotted = true
+					break
+	if spotted:
 		state = S.CRAWL if crippled else S.CHASE
 		_groan.rpc(_sound_id("alert"))
+		# (Not the ones feeding: their heads stay down in the kill.)
+		for z in get_tree().get_nodes_in_group("zombies"):
+			if z != self and z.state in [S.IDLE, S.WANDER] and z.global_position.distance_to(global_position) < PACK_ALERT:
+				z.hear_noise(p.global_position)
 	elif noise_pos != Vector3.INF:
 		state = S.WANDER
 		_move_to(noise_pos, data["speed"] * 0.7, get_physics_process_delta_time())
 		if global_position.distance_to(noise_pos) < 1.5:
 			noise_pos = Vector3.INF
 			state = S.IDLE
+
+func _sees(p: Node3D, reach: float) -> bool:
+	var to := p.global_position - global_position
+	to.y = 0.0
+	var d := to.length()
+	if d > reach:
+		return false
+	if d > 0.5 and (-global_transform.basis.z).dot(to / d) < SIGHT_COS:
+		return false
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 1.5, p.global_position + Vector3.UP * 1.3, 1)
+	q.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 func hear_noise(pos: Vector3) -> void:
 	if state in [S.IDLE, S.FEED, S.WANDER]:
@@ -515,8 +587,22 @@ static func attack_timing(d: Dictionary) -> Dictionary:
 	var from := 0.45 if windup >= 0.6 else 1.0
 	return {"windup": windup, "from": from, "speed": (ATTACK_STRIKE - from) / windup, "recover": 0.6}
 
+## Hold the swing a beat: another infected only just started one on her,
+## or this one would land while she's still reeling from the last blow (it
+## would only whiff), or someone has her in a grab.
+func _swing_waits(t: Node) -> bool:
+	var now := Time.get_ticks_msec()
+	if now - int(t.get_meta("swing_ms", -100000)) < SWING_GAP_MS:
+		return true
+	var lands := now + int(float(attack_timing(data)["windup"]) * 1000.0)
+	if lands < int(t.get_meta("struck_ms", -100000)) + GRACE_MS:
+		return true
+	return t.get("pinned") == true
+
 func _begin_attack() -> void:
 	state = S.ATTACK
+	if target and is_instance_valid(target):
+		target.set_meta("swing_ms", Time.get_ticks_msec())
 	_atk = attack_timing(data)
 	_attack_t = 0.0
 	_struck = false
@@ -564,8 +650,9 @@ func _strike() -> void:
 		return
 	_mark_struck(hit)
 	_recoil_t = 0.35
-	if data.get("pins") and not hit.pinned:
+	if data.get("pins") and not hit.pinned and Time.get_ticks_msec() - int(hit.get_meta("pin_free_ms", -100000)) >= REPIN_MS:
 		_pinned = hit
+		_pin_t = 0.0
 		state = S.PINNING
 		_set_pinned.rpc(hit.get_path(), true)
 		return
@@ -588,7 +675,8 @@ func _clear_line(to: Node3D) -> bool:
 	return false
 
 func _can_strike(p: Node) -> bool:
-	return Time.get_ticks_msec() - int(p.get_meta("struck_ms", -100000)) >= GRACE_MS and not p.get("dodging")
+	# Not while she's in another one's grab: the rest wait their turn.
+	return Time.get_ticks_msec() - int(p.get_meta("struck_ms", -100000)) >= GRACE_MS and not p.get("dodging") and not p.get("pinned")
 
 func _mark_struck(p: Node) -> void:
 	p.set_meta("struck_ms", Time.get_ticks_msec())
@@ -608,7 +696,12 @@ func _set_pinned(path: NodePath, on: bool) -> void:
 func _release_pin() -> void:
 	if is_instance_valid(_pinned):
 		_set_pinned.rpc(_pinned.get_path(), false)
+		# Out of its arms: a moment before anyone can land a blow on her
+		# (GRACE_MS), and a while before she can be grabbed again.
+		_mark_struck(_pinned)
+		_pinned.set_meta("pin_free_ms", Time.get_ticks_msec())
 	_pinned = null
+	_pin_t = 0.0
 	_set_stagger(1.2)
 
 ## A partner (or struggling enough) frees a pinned player.
@@ -621,6 +714,14 @@ func _rpc_hurt_player(path: NodePath, dmg: float) -> void:
 	var p := get_node_or_null(path)
 	if p and p.is_multiplayer_authority():
 		p.apply_damage(dmg, self)
+
+## A grab's squeeze: it hurts without a fresh flinch (Player.apply_damage
+## with no source and under 9 damage is a sting, not a blow).
+@rpc("authority", "reliable", "call_local")
+func _rpc_squeeze(path: NodePath, dmg: float) -> void:
+	var p := get_node_or_null(path)
+	if p and p.is_multiplayer_authority():
+		p.apply_damage(minf(dmg, 8.5), null)
 
 @rpc("authority", "reliable", "call_local")
 func _ignite(path: NodePath) -> void:
@@ -761,11 +862,7 @@ const DEATH_PUSHED := ["fall_back", "slow_back", "sit_back", "blown_back", "flip
 ## (ZombieModel.die).
 func _death_plan() -> Dictionary:
 	if data.get("quadruped"):
-		# The hound: cut down at a gallop its legs fold under it; otherwise
-		# it rolls onto one side or the other.
-		var rushing_dog: bool = _last_hit.get("rush", Vector3.ZERO) != Vector3.ZERO
-		return {"c": "death_collapse" if rushing_dog else ("death" if _rng.randf() < 0.5 else "death_left"),
-			"s": _rng.randf_range(0.95, 1.1)}
+		return _hound_death_plan()
 	var clips := model.death_clips()
 	if clips.is_empty():
 		return {"y": _rng.randf_range(-1.0, 1.0)}
@@ -897,6 +994,72 @@ func _death_plan() -> Dictionary:
 		best = tight
 	_remember_death(best.get("c", ""))
 	return best
+
+## Where the hound's head and back come to rest at the end of each death
+## (its own frame: it faces -Z, its right is +X). "death..." falls onto its
+## right side, "..._left" onto its left; the collapse skids on ahead.
+const HOUND_DEATHS := {
+	"death": [Vector3(0.35, 0, -0.56), Vector3(0.3, 0, -0.11), Vector3(0.25, 0, 0.35)],
+	"death_left": [Vector3(-0.35, 0, -0.56), Vector3(-0.3, 0, -0.11), Vector3(-0.25, 0, 0.35)],
+	"death_slump": [Vector3(0.37, 0, -0.51), Vector3(0.29, 0, -0.06), Vector3(0.25, 0, 0.4)],
+	"death_slump_left": [Vector3(-0.37, 0, -0.51), Vector3(-0.29, 0, -0.06), Vector3(-0.25, 0, 0.4)],
+	"death_collapse": [Vector3(0.47, 0, -1.15), Vector3(0.25, 0, -0.75), Vector3(0.1, 0, -0.3)],
+	"death_collapse_left": [Vector3(-0.47, 0, -1.15), Vector3(-0.25, 0, -0.75), Vector3(-0.1, 0, -0.3)],
+}
+
+## The hound goes down away from the round: shot from its left it falls
+## onto its right side, and the other way round (head on, either side).
+## Cut down at full tilt it ploughs in on its chest and skids; shot from
+## behind its hind legs go first and it sits down hard before it slumps
+## over; otherwise its front legs buckle and it tips over (or, now and then,
+## the hind legs go). A wall or a drop where it would land turns it to the
+## other side, or picks a fall that fits.
+func _hound_death_plan() -> Dictionary:
+	var h := _last_hit
+	var dir: Vector3 = h.get("dir", Vector3.ZERO)
+	dir.y = 0.0
+	var push := (global_transform.basis.inverse() * dir) if dir.length() > 0.01 else Vector3.ZERO
+	var right: bool = push.x > 0.25 or (absf(push.x) <= 0.25 and _rng.randf() < 0.5)
+	var rushing: bool = h.get("rush", Vector3.ZERO) != Vector3.ZERO
+	var kinds := ["death", "death_slump"]
+	if push.z < -0.35 or (_rng.randf() < 0.35):
+		kinds = ["death_slump", "death"]
+	if rushing:
+		kinds.push_front("death_collapse")
+	else:
+		kinds.append("death_collapse")
+	var best := ""
+	var best_blocked := 99
+	for k in kinds:
+		for side_right in [right, not right]:
+			var c: String = k if side_right else k + "_left"
+			var b := _hound_blocked(HOUND_DEATHS[c])
+			if b < best_blocked:
+				best = c
+				best_blocked = b
+			if b == 0:
+				break
+		if best_blocked == 0:
+			break
+	return {"c": best, "s": _rng.randf_range(0.92, 1.08)}
+
+func _hound_blocked(pts: Array) -> int:
+	var space := get_world_3d().direct_space_state
+	var from := global_position + Vector3.UP * 0.45
+	var blocked := 0
+	for i in pts.size():
+		var at: Vector3 = global_transform * (pts[i] as Vector3)
+		var q := PhysicsRayQueryParameters3D.create(from, at + Vector3.UP * 0.2, 1 | Door.BARS_LAYER)
+		q.exclude = [get_rid()]
+		if not space.intersect_ray(q).is_empty():
+			blocked += 1
+			continue
+		var down := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.5, at + Vector3.DOWN * 0.8, 1)
+		down.exclude = [get_rid()]
+		var hit := space.intersect_ray(down)
+		if hit.is_empty() or (hit.position as Vector3).y < global_position.y - 0.35:
+			blocked += 2
+	return blocked
 
 ## How many of the body's resting points (head, hands, feet, hips, chest)
 ## would end up in a wall, a car or a shelf, or over a drop, for a plan. Also

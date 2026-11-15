@@ -42,7 +42,14 @@ func _bake_navigation() -> void:
 	nav.navigation_mesh = nm
 	add_child(nav)
 	var src := NavigationMeshSourceGeometryData3D.new()
+	# Doors bake shut, even ones a reload opened: each door's own link joins
+	# the two sides while it stands open (Door.NAV_REACH).
+	var doors := get_tree().get_nodes_in_group("doors")
+	for d in doors:
+		d.bake_shut(true)
 	NavigationServer3D.parse_source_geometry_data(nm, src, self)
+	for d in doors:
+		d.bake_shut(false)
 	NavigationServer3D.bake_from_source_geometry_data(nm, src)
 	nav.navigation_mesh = nm
 
