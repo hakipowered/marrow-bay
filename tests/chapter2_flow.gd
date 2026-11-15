@@ -456,9 +456,46 @@ func _process(_d: float) -> bool:
 				_check(not gs.has_flag("c2_flood_open"), "the flood door stays down: it's locked out")
 				var fd: Node = current_scene.find_child("FloodDoor", true, false)
 				_check(fd._lamps["supply"][0].emission_energy_multiplier > 0.0 and fd._lamps["locked"][0].emission_energy_multiplier > 0.0, "its control box shows SUPPLY and LOCKED OUT")
-				_clear_infected()
-				step = 18
-				wait_to = frames + 60 * 8
+				# The engine hall's checkpoint is taken as it catches, stragglers
+				# or not: a death now must not go back to before the lights.
+				var save: Node = root.get_node("SaveSystem")
+				var snap: Dictionary = save.checkpoint_snapshot
+				_check(gs.shared_checkpoint == "ch2_hall", "the engine hall checkpoint is taken as it catches (%s)" % gs.shared_checkpoint)
+				_check(snap.get("checkpoint", "") == "ch2_hall" and snap.get("flags", {}).has("power:undercroft"), "Continue's snapshot has the power on (%s)" % str(snap.get("checkpoint", "")))
+				# She dies among the stragglers, and Continues.
+				cheats.set_cheat("god_mode", false)
+				step = 30
+				wait_to = frames + 30
+		30:
+			if frames < wait_to:
+				return false
+			var lvl: Node = get_first_node_in_group("level")
+			if not p.dead:
+				p.hp = 1.0
+				p.apply_damage(50.0, null, true)
+			if frames > wait_to + 60 * 4:
+				_check(lvl.game_over, "she died: game over")
+				lvl.vote_continue()
+				step = 31
+				wait_to = frames + 90
+		31:
+			if frames < wait_to:
+				return false
+			p = get_first_node_in_group("players")
+			gen = current_scene.find_child("GeneratorSet", true, false)
+			_check(p != null and not p.dead and gen != null, "Continue brings her back")
+			_check(gen.running() and gs.has_flag("power:undercroft") and gs.has_flag("c2_hunt_over"), "the generator is still running after Continue")
+			_check(gs.shared_checkpoint == "ch2_hall" and p.global_position.distance_to(Vector3(43.0, 0.0, 3.0)) < 4.0, "she comes back at the engine hall checkpoint (%s)" % str(p.global_position.snapped(Vector3.ONE * 0.1)))
+			_check(_obj() == _story_cls.OBJ_POWER, "objective after Continue: %s" % _obj())
+			_check(not gs.has_flag(_story_cls.OLD_FLOW), "Continue is not taken for an old save")
+			var left := 0
+			for z in get_nodes_in_group("zombies"):
+				if str(z.name).begins_with("Z_crank_"):
+					left += 1
+			_check(left == 0, "no crank infected after Continue (%d)" % left)
+			_clear_infected()
+			step = 18
+			wait_to = frames + 60 * 8
 		18:
 			if frames < wait_to:
 				return false
