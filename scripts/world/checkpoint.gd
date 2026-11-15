@@ -41,11 +41,19 @@ func _check() -> void:
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_reached() -> void:
+	# A place they haven't been saved at yet, or a new chapter's first spot.
+	# Not the spot a loaded game or a Continue puts them back at: that
+	# would write over the autosave before they've done anything.
+	var autosave := GameState.shared_checkpoint != checkpoint_id or SaveSystem.autosave_on_arrival
 	GameState.set_shared_checkpoint(checkpoint_id)
 	SaveSystem.mark_checkpoint()
+	if autosave:
+		# The host writes it (and sends the partner a copy), quietly, since
+		# this toast already says so.
+		SaveSystem.autosave_now()
 	var hud := get_tree().get_first_node_in_group("hud")
 	if hud:
-		hud.toast("Checkpoint reached together" if Net.is_coop() else "Checkpoint reached")
+		hud.toast(("Checkpoint reached together" if Net.is_coop() else "Checkpoint reached") + (". Autosaved" if autosave else ""))
 
 ## Whether this player is standing in it now.
 func holds(p: Node) -> bool:

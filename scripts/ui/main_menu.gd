@@ -216,25 +216,60 @@ func _home() -> void:
 	sub.text = "The city has gone silent."
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_panel.add_child(sub)
-	if not SaveSystem.read_slot("slot1").is_empty() or not SaveSystem.read_slot(SaveSystem.AUTOSAVE_SLOT).is_empty():
-		_btn("Continue", _continue_menu)
+	var newest := SaveSystem.newest_slot()
+	if newest != "":
+		_btn("Continue", func(): _resume(newest))
+		var d := SaveSystem.describe(SaveSystem.read_slot(newest))
+		var what := Label.new()
+		what.text = "%s, %s  ·  %s" % [d["chapter"], d["place"], d["when"]]
+		what.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		what.add_theme_font_size_override("font_size", 26)
+		what.add_theme_color_override("font_color", Color(0.75, 0.7, 0.64))
+		_panel.add_child(what)
+		_btn("Load Game", _load_menu)
 	_btn("Play Solo", func(): _character_select("solo"))
-	_btn("Co-op: Invite a Friend", func(): _character_select("host"))
+	_btn("Co-op: Invite a Friend", func(): _character_select("host_new"))
 	_btn("Co-op: Join with Code", func(): _character_select("join"))
 	# Browsers can't open the direct phone-to-phone connection Same Wi-Fi uses.
 	if not WebPlatform.is_web():
 		_btn("Co-op: Same Wi-Fi", _lan_menu)
 
-func _continue_menu() -> void:
-	_clear()
-	_title("CONTINUE", 64)
-	for slot in ["slot1", SaveSystem.AUTOSAVE_SLOT]:
-		var d := SaveSystem.read_slot(slot)
-		if d.is_empty():
-			continue
-		var label := "%s  ·  %s  ·  %s" % ["Saved game" if slot == "slot1" else "Autosave", str(d.get("checkpoint", "")).capitalize().replace("_", " "), str(d.get("timestamp", "")).replace("T", " ")]
-		_btn(label, func(): SaveSystem.apply_snapshot(d); _custom = GameState.look(_char); _character_select("solo_or_host_resume"))
-	_btn("Back", _home)
+## Loads a save into the run and goes on to pick who to play: solo, or host
+## it for a friend. Starts on the survivor the save was played as.
+func _resume(slot: String) -> void:
+	var d := SaveSystem.read_slot(slot)
+	if d.is_empty():
+		_home()
+		return
+	SaveSystem.apply_snapshot(d)
+	var who: String = SaveSystem.describe(d).get("host_character", "")
+	if who in GameState.CHARACTERS:
+		_char = who
+	_custom = GameState.look(_char)
+	_character_select("solo_or_host_resume")
+
+var _slots: Control
+
+## Every save: the autosave and the slots, with their pictures.
+func _load_menu() -> void:
+	if is_instance_valid(_slots):
+		return
+	_slots = preload("res://scripts/ui/save_slots.gd").new()
+	_slots.mode = "load"
+	_slots.picked.connect(func(slot: String):
+		_close_load_menu()
+		_resume(slot))
+	_slots.closed.connect(func():
+		_close_load_menu()
+		_home())
+	_panel.get_parent().visible = false
+	add_child(_slots)
+
+func _close_load_menu() -> void:
+	if is_instance_valid(_slots):
+		_slots.queue_free()
+	_slots = null
+	_panel.get_parent().visible = true
 
 func _character_select(next: String) -> void:
 	_clear()
@@ -259,7 +294,7 @@ func _character_select(next: String) -> void:
 	}[_char]
 	_panel.add_child(bio)
 	_btn("Outfit & Body:  %s" % Outfits.display_name(_char, _custom.get("outfit", Outfits.DEFAULT)), func(): _customize(next))
-	var go_text := {"solo": "Start", "host": "Create Room", "join": "Next", "solo_or_host_resume": "Resume Solo"}.get(next, "Start")
+	var go_text := {"solo": "Start", "host": "Create Room", "host_new": "Create Room", "join": "Next", "solo_or_host_resume": "Resume Solo"}.get(next, "Start")
 	_btn(go_text, func(): _go(next))
 	if next == "solo_or_host_resume":
 		_btn("Resume as Co-op Host", func(): _go("host"))
@@ -288,9 +323,11 @@ func _go(next: String) -> void:
 				GameState.reset_run()
 			Net.start_solo(_char)
 			GameState.customization_by_peer[1] = _custom
-		"host":
-			if SaveSystem.read_slot("slot1").is_empty() or next == "host":
-				pass
+		"host", "host_new":
+			# A new co-op game starts from the beginning; "host" resumes the
+			# save just loaded.
+			if next == "host_new":
+				GameState.reset_run()
 			var code := Net.host_online(_char)
 			_lobby_host(code)
 		"join":

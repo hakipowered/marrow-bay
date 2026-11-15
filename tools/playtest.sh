@@ -12,7 +12,8 @@
 # the vault power and elevator, weapons, music, barrels: every gun on every
 # drum), chapter 2 (its walls and level probe, the whole story through its
 # prompts, the Warden fight's rules), the
-# bot's weapon / bag / save / death sections, and the co-op tests with two
+# bot's weapon / bag / save / death sections, the save slots (old saves, the
+# save and load screens, the autosave rules), and the co-op tests with two
 # copies of the game through a local relay (needs node and the ws package:
 # `npm i ws` anywhere and point NODE_PATH at its node_modules, or install it
 # in relay/).
@@ -72,6 +73,7 @@ run bot_scares       300 --fixed-fps 60 --script tests/playtest.gd -- only scare
 run bot_weapons      600 --fixed-fps 60 --script tests/playtest.gd -- only weapons
 run bot_bag          300 --fixed-fps 60 --script tests/playtest.gd -- only bag
 run bot_save         300 --fixed-fps 60 --script tests/playtest.gd -- only save
+run save_slots       300 --script tests/save_slots.gd
 run bot_death        300 --fixed-fps 60 --script tests/playtest.gd -- only death
 # Chapter 2, the Undercroft: walls, the level probe, the whole story through
 # its prompts, the Warden's rules, and the bot fighting him its own way.
@@ -108,6 +110,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	coop coop_story tests/coop_story.gd
 	coop coop_death tests/coop_death.gd
 	coop coop_playtest tests/playtest_coop.gd
+	coop coop_saves tests/coop_saves.gd
 	kill $RELAY 2>/dev/null
 else
 	echo "  skip  co-op tests (needs node with the ws package; see the top of this file)"
