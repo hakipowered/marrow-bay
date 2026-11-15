@@ -13,7 +13,9 @@
 # fight and Continue, death flow, infected and hound deaths, story,
 # the vault power and elevator, weapons, music, barrels: every gun on every
 # drum), chapter 2 (its walls and level probe, the whole story through its
-# prompts, the Warden fight's rules), the
+# prompts, the Warden fight's rules), the browser version's profile (both
+# levels batched, its adapting on made-up phones; full mode: the bot's whole
+# route with it), the
 # bot's weapon / bag / save / death sections, the save slots (old saves, the
 # save and load screens, the autosave rules), and the co-op tests with two
 # copies of the game through a local relay (needs node and the ws package:
@@ -89,6 +91,11 @@ run level_probe_ch2  180 --fixed-fps 60 --script tests/playtest.gd -- only probe
 run chapter2_flow    600 --fixed-fps 60 --script tests/chapter2_flow.gd
 run warden_fight     300 --fixed-fps 60 --script tests/warden_fight.gd
 run bot_warden       300 --fixed-fps 60 --script tests/playtest.gd -- only warden2
+# The browser version's profile (docs/web_performance.md): both levels built
+# and batched with it, and how it adapts to slow and fast phones.
+run web_probe        180 --fixed-fps 60 --script tests/playtest.gd -- web only probe
+run web_probe_ch2    180 --fixed-fps 60 --script tests/playtest.gd -- web only probe2
+run web_adapt         60 --script tests/web_quality_adapt_test.gd
 
 # Co-op: two copies of the game through a local relay.
 coop() {
@@ -125,6 +132,7 @@ fi
 
 if [ "$MODE" = "full" ]; then
 	run bot_route 3000 --fixed-fps 60 --script tests/playtest.gd -- only route
+	run bot_route_web 3000 --fixed-fps 60 --script tests/playtest.gd -- web only route
 fi
 
 echo

@@ -1,7 +1,10 @@
 shader_type canvas_item;
 // Full-screen horror grade: film grain, vignette, slight chromatic fringing,
 // and a pulsing red edge + desaturation when the player is badly hurt.
-uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+// No mipmaps: every tap is at full size (the fringe offsets are a few
+// pixels), and asking for them made the renderer build a mip chain of the
+// whole screen every frame.
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
 uniform float grain = 0.06;
 uniform float vignette = 0.25;
 uniform float fringe = 0.0015;
