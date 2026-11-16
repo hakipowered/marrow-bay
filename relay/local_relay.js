@@ -1,5 +1,7 @@
 // Same protocol as worker.js, for testing on a PC: `npm i ws && node local_relay.js`
 // Then set the relay URL in the game to ws://<pc-ip>:8787
+// Refusals match worker.js: an error frame, then close 1008 with the same
+// words as the reason (the game reads either; see scripts/net/relay_peer.gd).
 const { WebSocketServer } = require("ws");
 const rooms = new Map();
 const wss = new WebSocketServer({ port: Number(process.env.PORT || 8787) });
@@ -10,7 +12,7 @@ wss.on("connection", (ws, req) => {
   const code = m[1].toUpperCase();
   const role = url.searchParams.get("role") === "host" ? "host" : "join";
   const peers = rooms.get(code) || new Map();
-  const fail = (msg) => { ws.send(JSON.stringify({ type: "error", message: msg })); ws.close(); };
+  const fail = (msg) => { ws.send(JSON.stringify({ type: "error", message: msg })); ws.close(1008, msg); };
   if (role === "host" && peers.has(1)) return fail("Room code already in use");
   if (role === "join" && !peers.has(1)) return fail("No game with that code");
   if (peers.size >= 2) return fail("Room is full");
@@ -28,7 +30,7 @@ wss.on("connection", (ws, req) => {
   });
   ws.on("close", () => {
     peers.delete(id);
-    for (const o of peers.values()) { o.send(JSON.stringify({ type: "peer_left", id })); if (id === 1) o.close(); }
+    for (const o of peers.values()) { o.send(JSON.stringify({ type: "peer_left", id })); if (id === 1) o.close(1000, "Host left"); }
     if (id === 1 || peers.size === 0) rooms.delete(code);
   });
 });

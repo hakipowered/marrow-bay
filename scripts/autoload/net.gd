@@ -5,12 +5,20 @@ signal session_ready
 signal partner_joined(peer_id: int)
 signal partner_left(peer_id: int)
 signal session_failed(reason: String)
+## The host's room got a different code (the first one was taken).
+signal room_code_changed(code: String)
 
 ## Set this to your deployed relay (see relay/README.md).
 const RELAY_URL := "wss://ragoon-city-relay.hakipowered.workers.dev"
 const LAN_PORT := 24680
 const INVITE_SCHEME := "ragooncity://join/"
-const CODE_ALPHABET := "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+## Room codes are six numbers. Letters were misheard and misread between
+## friends (a D read out as T sent a joiner to a room that didn't exist);
+## digits survive a voice call, any font, and the phone's number pad.
+const CODE_ALPHABET := "0123456789"
+const CODE_LENGTH := 6
+## How long a joiner waits for the relay to answer before saying so.
+const RELAY_TIMEOUT := 12.0
 
 ## How long the host waits for a joiner's version hello before telling the
 ## player that their friend's game is too old to check.
@@ -19,6 +27,11 @@ const VersionCheck := preload("res://scripts/net/version_check.gd")
 
 var room_code := ""
 var relay_url := RELAY_URL
+## Each host/join attempt gets a number; replies to an older attempt (the
+## player pressed Join again, or went Back) are ignored.
+var _attempt := 0
+var _host_fixed_code := false
+var _host_retries := 0
 ## Joiners whose game content matches the host's (see version_check.gd).
 var _verified := {}
 var _version_check: Node
@@ -27,8 +40,14 @@ func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(func(): session_ready.emit())
-	multiplayer.connection_failed.connect(func(): session_failed.emit("Could not connect"))
-	multiplayer.server_disconnected.connect(func(): session_failed.emit("Host left the game"))
+	# Through the relay, RelayPeer.relay_closed says what really happened
+	# (_on_relay_closed); these two only speak for Same Wi-Fi games.
+	multiplayer.connection_failed.connect(func():
+		if not multiplayer.multiplayer_peer is RelayPeer:
+			session_failed.emit("Couldn't reach the host phone. Check that you're both on the same Wi-Fi and the IP is right."))
+	multiplayer.server_disconnected.connect(func():
+		if not multiplayer.multiplayer_peer is RelayPeer:
+			session_failed.emit("Host left the game"))
 	_version_check = VersionCheck.new()
 	_version_check.name = "VersionCheck"
 	add_child(_version_check)
@@ -57,34 +76,71 @@ func new_room_code() -> String:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var s := ""
-	for i in 6:
+	for i in CODE_LENGTH:
 		s += CODE_ALPHABET[rng.randi_range(0, CODE_ALPHABET.length() - 1)]
 	return s
+
+## "482917" -> "482 917", easier to read out and to compare by eye. Older
+## letter codes (and test codes) stay as they are.
+static func pretty_code(code: String) -> String:
+	if code.length() == CODE_LENGTH and _all_digits(code):
+		return code.substr(0, 3) + " " + code.substr(3)
+	return code
+
+static func is_valid_code(code: String) -> bool:
+	if code.length() != CODE_LENGTH:
+		return false
+	for ch in code:
+		if not (ch >= "A" and ch <= "Z") and not (ch >= "0" and ch <= "9"):
+			return false
+	return true
+
+static func _all_digits(t: String) -> bool:
+	for ch in t:
+		if ch < "0" or ch > "9":
+			return false
+	return t != ""
 
 ## A web link: it opens the browser version straight into the join screen,
 ## so a friend without the app can play too (the message also has the code).
 func invite_link() -> String:
 	return WebPlatform.invite_url(room_code)
 
-## Accepts "ABC123", "ragooncity://join/ABC123", ".../play/?join=ABC123" or a
-## pasted message containing one of them.
+## Accepts "482917", "482 917", "482-917", "ragooncity://join/482917",
+## ".../play/?join=482917", a pasted invite message containing one of them,
+## and older letter codes ("rdrfvx"). Returns the code in capitals, or what
+## was typed (letters and digits only) when it isn't six long, so the join
+## screen can say what's wrong instead of guessing.
 static func parse_code(text: String) -> String:
 	var t := text.strip_edges().to_upper()
 	for marker in ["JOIN=", "JOIN/"]:
 		var idx := t.find(marker)
 		if idx >= 0:
-			t = t.substr(idx + marker.length())
-			break
+			return _squash(t.substr(idx + marker.length()).get_slice("&", 0).get_slice(" ", 0))
+	var whole := _squash(t)
+	if whole.length() <= CODE_LENGTH:
+		return whole
+	# A longer message: the first "482 917" / "482917" in it.
+	var re := RegEx.create_from_string("(?<![0-9])([0-9]{3})[ -]?([0-9]{3})(?![0-9])")
+	var m := re.search(t)
+	if m:
+		return m.get_string(1) + m.get_string(2)
+	return whole
+
+## Letters and digits only. In an all-number code, O and I/L typed by
+## mistake mean 0 and 1.
+static func _squash(t: String) -> String:
 	var out := ""
 	for ch in t:
-		if CODE_ALPHABET.contains(ch):
+		if (ch >= "A" and ch <= "Z") or (ch >= "0" and ch <= "9"):
 			out += ch
-		if out.length() == 6:
-			break
-	return out
+	var as_digits := out.replace("O", "0").replace("I", "1").replace("L", "1")
+	return as_digits if _all_digits(as_digits) else out
 
 func host_online(character: String, fixed_code := "") -> String:
 	close()
+	_host_fixed_code = fixed_code != ""
+	_host_retries = 0
 	room_code = fixed_code if fixed_code != "" else new_room_code()
 	_open_relay("host", character)
 	return room_code
@@ -92,28 +148,77 @@ func host_online(character: String, fixed_code := "") -> String:
 func join_online(code: String, character: String) -> void:
 	close()
 	room_code = parse_code(code)
+	if not is_valid_code(room_code):
+		GameState.mode = GameState.Mode.COOP
+		session_failed.emit.call_deferred(explain_join_problem("bad_code", room_code))
+		return
 	_open_relay("join", character)
 
 func _open_relay(role: String, character: String) -> void:
 	GameState.mode = GameState.Mode.COOP
+	_attempt += 1
+	var attempt := _attempt
 	var peer := RelayPeer.new()
-	peer.relay_error.connect(func(m): session_failed.emit(m))
+	# Deferred: it fires inside the peer's own poll, where swapping the
+	# multiplayer peer (a retry with a new code) isn't safe.
+	peer.relay_closed.connect(_on_relay_closed.bind(role, character, attempt), CONNECT_DEFERRED)
 	var url := "%s/room/%s?role=%s" % [relay_url, room_code, role]
 	if peer.open(url) != OK:
-		session_failed.emit("Could not reach relay")
+		session_failed.emit.call_deferred(explain_join_problem("unreachable", room_code, role))
 		return
 	multiplayer.multiplayer_peer = peer
-	_wait_for_id(character)
+	_wait_for_id(peer, character, attempt)
 
-func _wait_for_id(character: String) -> void:
-	var peer := multiplayer.multiplayer_peer
+## Everything the relay connection can end with, said plainly. role is
+## "host" or "join"; code is the room code tried.
+static func explain_join_problem(kind: String, code: String, role := "join") -> String:
+	var shown := pretty_code(code)
+	match kind:
+		"bad_code":
+			if code == "":
+				return "Type the room code from your friend's screen first."
+			return "Room codes have 6 numbers, and \"%s\" has %d. Check the code on your friend's screen." % [shown, code.length()]
+		"no_room":
+			return "No game is open with code %s. Check it against your friend's screen. If it matches, their room has closed: ask them to invite you again." % shown
+		"room_full":
+			return "Room %s already has two players." % shown
+		"code_taken":
+			return "Room code %s is already in use. Tap Cancel and invite again for a new code." % shown
+		"host_left":
+			return "Your friend closed their game."
+		"timeout":
+			return "The co-op server didn't answer in time. Check your internet connection and try again."
+		"lost":
+			if role == "host":
+				return "Lost the connection to the co-op server, so your friend can't join room %s. Check your internet connection, then tap Cancel and invite again." % shown
+			return "Lost the connection to the co-op server. Check your internet connection and join again."
+	return "Can't reach the co-op server. Check your internet connection and try again."
+
+func _on_relay_closed(kind: String, role: String, character: String, attempt: int) -> void:
+	if attempt != _attempt:
+		return
+	# Another host already has this code: open the room with a new one.
+	if kind == "code_taken" and role == "host" and not _host_fixed_code and _host_retries < 5:
+		_host_retries += 1
+		room_code = new_room_code()
+		_open_relay("host", character)
+		room_code_changed.emit(room_code)
+		return
+	session_failed.emit(explain_join_problem(kind, room_code, role))
+
+func _wait_for_id(peer: RelayPeer, character: String, attempt: int) -> void:
 	var t := 0.0
-	while peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTING and t < 10.0:
+	while peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTING and t < RELAY_TIMEOUT:
 		await get_tree().process_frame
 		t += get_process_delta_time()
+	if attempt != _attempt:
+		return   # closed, or a newer attempt has started
 	if peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
-		session_failed.emit("Relay timed out")
-		return
+		if peer.close_kind == "":
+			# Still knocking: the relay never answered.
+			close()
+			session_failed.emit(explain_join_problem("timeout", room_code))
+		return   # otherwise _on_relay_closed has said why
 	GameState.character_by_peer[multiplayer.get_unique_id()] = character
 	if multiplayer.is_server():
 		session_ready.emit()
@@ -200,6 +305,7 @@ func is_coop() -> bool:
 	return GameState.mode == GameState.Mode.COOP
 
 func close() -> void:
+	_attempt += 1
 	_verified.clear()
 	if multiplayer.multiplayer_peer and not multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
 		multiplayer.multiplayer_peer.close()

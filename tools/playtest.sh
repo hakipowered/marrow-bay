@@ -21,8 +21,9 @@
 # take, saves, the same box in chapter 2), the difficulty numbers and the
 # extra infected that Hard and co-op bring (the level probes again with every
 # one of them in, the scares with Hard's bigger groups), and the co-op tests
-# with two copies of the game through a local relay (needs node and the ws
-# package:
+# with two copies of the game through a local relay (joining: a wrong code,
+# no relay, a silent relay, a full room, a taken code, the host leaving, each
+# saying what happened; needs node and the ws package:
 # `npm i ws` anywhere and point NODE_PATH at its node_modules, or install it
 # in relay/).
 #
@@ -135,6 +136,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	sleep 1
 	coop coop_peer tests/coop_peer.gd
 	coop coop_version tests/coop_version.gd
+	coop coop_join_errors tests/coop_join_errors.gd
 	coop coop_story tests/coop_story.gd
 	coop coop_death tests/coop_death.gd
 	coop coop_playtest tests/playtest_coop.gd
