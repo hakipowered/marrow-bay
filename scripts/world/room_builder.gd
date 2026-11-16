@@ -55,6 +55,8 @@ static func build(parent: Node3D, r: Dictionary) -> Node3D:
 
 	var openings: Dictionary = r.get("openings", {})
 	var wall_mat := Mats.surface(r["wall"], _merge(base, r.get("wall_look", {"tile_size": 2.5})))
+	# Paint and chalk on these walls (Signage.paint) take the wall's texture.
+	root.set_meta("wall_mat", wall_mat)
 	var sides := {
 		"n": [Vector3(0, 0, 0), Vector3(1, 0, 0), size.x],
 		"s": [Vector3(0, 0, size.z), Vector3(1, 0, 0), size.x],

@@ -282,8 +282,10 @@ func _strap_shield(sk: Skeleton3D) -> void:
 		RoomBuilder._box(h, Vector3(0, y, 0), Vector3(0.64, 0.025, 0.03), rim, false)
 	for x in [-0.31, 0.31]:
 		RoomBuilder._box(h, Vector3(x, 0, 0), Vector3(0.025, 1.06, 0.03), rim, false)
-	var l := UndercroftKit.label(h, "WARDEN", Vector3(0, 0.3, 0.012), 64, Color(0.92, 0.92, 0.9), 0.0, 0.0018)
-	l.double_sided = true
+	# Printed on the clear pane, read through from behind too.
+	Signage.paint(h, Vector3(0, 0.3, 0.007), 0, {"size": Vector2(0.52, 0.13), "kind": "print", "lines": ["WARDEN"],
+		"color": Color(0.92, 0.92, 0.9), "surface": null, "back": true, "weight": 600, "track": 0.08, "wear": 0.3,
+		"rough": 0.3, "offset": 0.0008})
 	_crack_mat = StandardMaterial3D.new()
 	_crack_mat.albedo_texture = ZombieModel._crack_texture()
 	_crack_mat.albedo_color = Color(0.92, 0.95, 0.97, 0.0)

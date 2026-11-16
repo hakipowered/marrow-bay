@@ -59,7 +59,7 @@ func _build() -> void:
 	# height. Its hood is empty behind the glass, so the dial is ours.
 	var case := RoomBuilder.prop(self, "vintage_grandfather_clock_01", Vector3(0, 0, 0.19 * CASE_S), 0.0, CASE_S, true)
 	case.name = "Case"
-	var dial := _dial(self, Vector3(0, 1.77 * CASE_S, 0.36 * CASE_S), 0.15 * CASE_S, "", true)
+	var dial := _dial(self, Vector3(0, 1.77 * CASE_S, 0.36 * CASE_S), 0.15 * CASE_S, true)
 	_hands.append(dial)
 	# The drawer in the plinth: shut flush with its front, the keyhole above.
 	var wood := Mats.trim(Color(0.3, 0.14, 0.07), 0.45, 0.0)
@@ -77,34 +77,26 @@ func _build() -> void:
 	UndercroftKit.reach(self, self, Vector3(0, 1.1, 0.95), Vector3(1.0, 2.2, 0.6))
 	_build_slaves()
 
-## A clock face: a dark bezel, an ivory face with its twelve marks, and two
-## hands. Returns [hour hand, minute hand].
-func _dial(parent: Node3D, at: Vector3, r: float, text: String, roman := false) -> Array:
+## A clock face: a dark bezel, an enamel dial (Signage "dial": its minute
+## track and hour marks, Roman numerals on the master's), and two hands.
+## Returns [hour hand, minute hand].
+func _dial(parent: Node3D, at: Vector3, r: float, roman := false) -> Array:
 	var d := Node3D.new()
 	d.position = at
 	parent.add_child(d)
 	var bezel := UndercroftKit.bar(d, Vector3(0, 0, -0.01), r + 0.03, 0.04, Mats.trim(Color(0.1, 0.08, 0.06), 0.4, 0.6), "z", 32)
 	bezel.name = "Bezel"
-	var face := UndercroftKit.bar(d, Vector3(0, 0, 0.012), r, 0.004, Mats.trim(Color(0.86, 0.82, 0.7), 0.6), "z", 32)
-	face.name = "Face"
-	var ink := Color(0.08, 0.06, 0.05)
-	var numerals := ["XII", "I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI"]
-	for i in 12:
-		var a := TAU * i / 12.0
-		var p := Vector3(sin(a), cos(a), 0) * r * 0.8
-		if roman:
-			UndercroftKit.label(d, numerals[i], p + Vector3(0, 0, 0.016), int(r * 120), ink, 0.0, 0.001)
-		else:
-			var tick := MeshInstance3D.new()
-			var bm := BoxMesh.new()
-			bm.size = Vector3(r * 0.05, r * 0.16, 0.002)
-			tick.mesh = bm
-			tick.material_override = Mats.trim(ink, 0.6)
-			tick.position = Vector3(sin(a), cos(a), 0) * r * 0.82 + Vector3(0, 0, 0.016)
-			tick.rotation.z = -a
-			d.add_child(tick)
-	if text != "":
-		UndercroftKit.label(d, text, Vector3(0, -r * 0.42, 0.016), int(r * 70), ink, 0.0, 0.001)
+	var items: Array = []
+	if roman:
+		var numerals := ["XII", "I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI"]
+		for i in 12:
+			var a := TAU * i / 12.0
+			items.append({"text": numerals[i], "at": Vector2(sin(a), cos(a)) * r * 0.7, "h": r * 0.13, "font": "roman"})
+	var face := Signage.plate(d, Vector3(0, 0, 0.01), 0, {"size": Vector2(r * 2, r * 2), "style": "dial", "corner": r,
+		"items": items, "dial": Vector4(r * 0.93, r * 0.86, r * (0.07 if roman else 0.2), 1.0), "wear": 0.5, "dirt": 0.35,
+		"field": Color(0.86, 0.82, 0.7), "ink": Color(0.08, 0.06, 0.05), "seed": at.x * 13.0 + at.y * 7.0, "name": "Face",
+		"ppm": 2400.0 if roman else 900.0})
+	face.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var hour := _hand(d, r * 0.5, r * 0.07, 0.02)
 	var minute := _hand(d, r * 0.78, r * 0.045, 0.024)
 	return [hour, minute]
@@ -125,17 +117,20 @@ func _hand(d: Node3D, length: float, width: float, z: float) -> Node3D:
 ## The wall of slave dials to the right of the case, four across and three
 ## down, each with an enamel plate naming its room.
 func _build_slaves() -> void:
-	var plate := Mats.trim(Color(0.78, 0.74, 0.62), 0.55)
 	var board := Mats.trim(Color(0.16, 0.07, 0.04), 0.5)
 	RoomBuilder._box(self, Vector3(3.0, 2.0, 0.03), Vector3(3.9, 2.6, 0.05), board, false)
-	UndercroftKit.label(self, "SERVICE  CLOCKS   -   DRIVEN  FROM  THE  MASTER", Vector3(3.0, 3.2, 0.06), 30, Color(0.75, 0.66, 0.4), 0.0, 0.0016)
+	# Signwritten across the top of the board in gilt.
+	Signage.paint(self, Vector3(3.0, 3.16, 0.055), 0, {"size": Vector2(3.6, 0.13), "kind": "brush", "font": "roman", "surface": null,
+		"lines": ["SERVICE CLOCKS  -  DRIVEN FROM THE MASTER"], "color": Color(0.78, 0.6, 0.3), "metal": 0.8, "rough": 0.35,
+		"wear": 0.55, "offset": 0.0008})
 	for i in SLAVES.size():
 		var col := i % 4
 		var row := i / 4
 		var at := Vector3(1.6 + col * 0.93, 2.85 - row * 0.82, 0.07)
-		_hands.append(_dial(self, at, 0.22, ""))
-		RoomBuilder._box(self, at + Vector3(0, -0.3, -0.01), Vector3(0.62, 0.075, 0.01), plate, false)
-		UndercroftKit.label(self, SLAVES[i], at + Vector3(0, -0.3, -0.003), 22, Color(0.12, 0.08, 0.06), 0.0, 0.0011)
+		_hands.append(_dial(self, at, 0.22))
+		Signage.plate(self, at + Vector3(0, -0.3, -0.015), 0, {"size": Vector2(0.62, 0.075), "style": "enamel", "lines": [SLAVES[i]],
+			"field": Color(0.82, 0.78, 0.66), "ink": Color(0.1, 0.07, 0.05), "fix": "screws", "wear": 0.4, "rust": 0.35,
+			"track": 0.06})
 
 func _set_hands(minutes: float) -> void:
 	var total := 11.0 * 60.0 + minutes

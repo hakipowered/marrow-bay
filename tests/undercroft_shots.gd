@@ -36,6 +36,39 @@ var shots := [
 	["yard_back", Vector3(74.0, 1.9, 6.0), Vector3(56.0, 3.0, 2.0)],
 	["stacks", Vector3(46.0, 1.7, 13.0), Vector3(48.5, 1.2, 18.5)],
 	["stacks_chalk", Vector3(48.0, 1.6, 16.4), Vector3(51.0, 1.4, 17.0)],
+	["backstair_door", Vector3(30.6, 1.7, -5.2), Vector3(33.0, 1.7, -11.8)],
+	["backstair", Vector3(32.4, 1.6, -9.85), Vector3(33.3, 1.9, -13.5)],
+	["backstair_up", Vector3(33.6, 0.9, -9.8), Vector3(32.8, 3.6, -13.8)],
+	["backstair_landing", Vector3(31.9, 1.7, -10.0), Vector3(33.4, 1.9, -14.8)],
+	["backstair_hunt", Vector3(31.3, 1.75, -6.5), Vector3(32.9, 2.15, -9.8)],
+	["sign_lift", Vector3(4.6, 1.7, 4.2), Vector3(5.4, 2.7, 0.0)],
+	["sign_lift_arrow", Vector3(3.6, 1.7, 3.6), Vector3(6.9, 2.6, 4.4)],
+	["sign_lift_door", Vector3(3.9, 1.7, 3.0), Vector3(0.2, 2.1, 3.0)],
+	["sign_survey_door", Vector3(12.6, 1.65, 4.2), Vector3(12.0, 2.3, 1.6)],
+	["sign_arrows", Vector3(18.0, 1.65, 4.2), Vector3(18.0, 1.95, 1.6)],
+	["sign_keeper", Vector3(11.0, 1.65, 1.9), Vector3(11.0, 2.3, 4.4)],
+	["sign_muster_door", Vector3(26.6, 1.65, 1.9), Vector3(26.5, 2.3, 4.4)],
+	["sign_pump_door", Vector3(35.4, 1.65, 1.9), Vector3(35.6, 2.2, 4.4)],
+	["sign_gallery_door", Vector3(31.1, 1.65, 4.2), Vector3(31.1, 2.3, 1.6)],
+	["sign_survey_title", Vector3(15.0, 1.8, -4.4), Vector3(15.0, 2.9, -9.4)],
+	["sign_tally", Vector3(12.2, 1.7, -1.9), Vector3(9.1, 1.85, -1.9)],
+	["sign_clock", Vector3(25.8, 1.8, -5.4), Vector3(26.0, 2.4, -9.4)],
+	["sign_clock_close", Vector3(24.6, 2.1, -7.5), Vector3(24.5, 2.4, -9.4)],
+	["sign_muster", Vector3(26.0, 1.8, 10.6), Vector3(26.0, 2.7, 14.4)],
+	["sign_staff_only", Vector3(29.4, 1.7, 11.9), Vector3(32.9, 2.5, 11.9)],
+	["sign_pump", Vector3(37.0, 1.8, 7.4), Vector3(37.2, 2.9, 4.9)],
+	["sign_drill", Vector3(34.2, 1.5, 6.3), Vector3(33.6, 1.15, 4.9)],
+	["sign_engine", Vector3(45.6, 2.0, 0.6), Vector3(45.8, 3.7, -5.9)],
+	["sign_tank", Vector3(48.0, 2.2, -2.2), Vector3(48.0, 2.6, -4.4)],
+	["sign_flood", Vector3(46.0, 1.7, 7.0), Vector3(46.0, 2.8, 12.0)],
+	["sign_chute", Vector3(51.4, 2.0, -0.6), Vector3(53.6, 3.3, -3.6)],
+	["sign_shed", Vector3(58.5, 1.7, 2.4), Vector3(58.5, 2.2, 6.1)],
+	["sign_annex", Vector3(46.4, 1.7, 17.4), Vector3(43.1, 2.0, 17.6)],
+	["stacks_chalk", Vector3(48.0, 1.6, 16.4), Vector3(51.0, 1.4, 17.0)],
+	["cabinet_close", Vector3(48.3, 1.5, 1.15), Vector3(48.2, 1.35, 0.4)],
+	["flood_box", Vector3(47.9, 1.55, 10.6), Vector3(48.62, 1.15, 11.8)],
+	["pump_valves", Vector3(36.3, 1.6, 6.2), Vector3(33.5, 1.3, 8.4)],
+	["pump_board", Vector3(35.4, 1.7, 8.4), Vector3(33.4, 2.3, 8.4)],
 	["top", Vector3(38.0, 70.0, 3.5), Vector3(38.0, 0.0, 3.4)],
 ]
 var idx := -1
@@ -92,6 +125,11 @@ func _process(_d: float) -> bool:
 			t.shadow_enabled = true
 			t.position = Vector3(0.15, -0.25, 0)
 			cam.add_child(t)
+		# "doors": every door stood open (to look into rooms past them).
+		if "doors" in fl.split(","):
+			for d in get_nodes_in_group("doors"):
+				if d.has_method("_set_open"):
+					d._set_open(true, Vector3(0, 0, 1), false)
 		# "lit": flat bright ambient, to check the geometry and props.
 		if "lit" in fl.split(","):
 			for we in current_scene.find_children("*", "WorldEnvironment", true, false):

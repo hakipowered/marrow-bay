@@ -75,20 +75,7 @@ static func bar(parent: Node3D, at: Vector3, radius: float, length: float, mat: 
 	parent.add_child(mi)
 	return mi
 
-## Painted or stencilled lettering facing local +z.
-static func label(parent: Node3D, text: String, at: Vector3, size: int, color: Color, rot_y := 0.0, pixel := 0.0011) -> Label3D:
-	var l := Label3D.new()
-	l.text = text
-	l.font_size = size
-	l.outline_size = 0
-	l.pixel_size = pixel
-	l.modulate = color
-	l.shaded = true
-	l.double_sided = false
-	l.position = at
-	l.rotation.y = rot_y
-	parent.add_child(l)
-	return l
+## Lettering: use Signage.plate() / Signage.paint() (no floating Label3Ds).
 
 ## What a survivor's reach finds (layer 16, like doors): routes to
 ## target.interact_text(player, handle) / target.interact(player, handle).

@@ -17,6 +17,10 @@ var shots := [
 	["characters_side", Vector3(1.4, 1.3, 4.2), Vector3(-1.6, 1.05, 4.0)],
 	["obcera_profile", Vector3(1.0, 1.15, 4.0), Vector3(-0.9, 1.05, 4.0)],
 	["obcera_front", Vector3(-0.9, 1.3, 5.9), Vector3(-0.9, 1.05, 4.0)],
+	["sign_staff_stair", Vector3(-22.6, 1.7, -1.2), Vector3(-26.0, 2.05, -1.2)],
+	["sign_breaker", Vector3(11.6, 1.6, 18.6), Vector3(13.9, 1.45, 19.0)],
+	["sign_breaker_side", Vector3(12.6, 1.55, 20.8), Vector3(13.8, 1.35, 19.5)],
+	["sign_lift_note", Vector3(-7.6, 1.7, 23.2), Vector3(-10.0, 1.85, 23.2)],
 ]
 var idx := -1
 var cam: Camera3D
@@ -34,6 +38,8 @@ func _initialize() -> void:
 func _process(_d: float) -> bool:
 	frames += 1
 	if frames == 3:
+		# Past the opening film, so it doesn't cover the views.
+		root.get_node("GameState").set_flag("story_intro")
 		root.get_node("Net").start_solo("obcera")
 		change_scene_to_file(root.get_node("GameState").level_path)
 	if frames == 40:
@@ -45,6 +51,23 @@ func _process(_d: float) -> bool:
 		cam.make_current()
 		for h in get_nodes_in_group("hud"):
 			h.visible = false
+		var cs = root.get_node_or_null("Cutscenes")
+		if cs:
+			cs.cover(false)
+		# Optional third arg "torch": a survivor's flashlight on the camera.
+		var ua := OS.get_cmdline_user_args()
+		if ua.size() > 2 and "torch" in ua[2].split(","):
+			var t := SpotLight3D.new()
+			t.spot_range = 22.0
+			t.spot_angle = 38.0
+			t.spot_attenuation = 0.35
+			t.spot_angle_attenuation = 1.5
+			t.light_projector = load("res://assets/textures/fx/flashlight_cookie.png")
+			t.light_energy = 3.4
+			t.light_color = Color(1.0, 0.95, 0.86)
+			t.shadow_enabled = true
+			t.position = Vector3(0.15, -0.25, 0)
+			cam.add_child(t)
 		# Line-up of the two survivors under the hall chandelier.
 		for c in [["zegan", Vector3(-2.3, 0, 4)], ["obcera", Vector3(-0.9, 0, 4)]]:
 			var cm := CharacterModel.new()

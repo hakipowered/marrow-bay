@@ -244,8 +244,10 @@ func _build_railing() -> void:
 	sign.position = Vector3(-w / 2, 0.78, -0.03)
 	sign.rotation_degrees.y = 180.0
 	_gate.add_child(sign)
-	RoomBuilder._box(sign, Vector3(0, 0, 0.005), Vector3(0.42, 0.2, 0.01), Mats.trim(Color(0.82, 0.78, 0.66), 0.6), false)
-	UndercroftKit.label(sign, "DANGER\nDEEP WATER  -  NO ENTRY", Vector3(0, 0, 0.012), 26, Color(0.62, 0.1, 0.06), 0.0, 0.0011)
+	# Wired to the bars: enamel, chipped, bleeding rust from its holes.
+	Signage.plate(sign, Vector3.ZERO, 0, {"size": Vector2(0.42, 0.2), "style": "enamel", "back": true,
+		"lines": ["DANGER", ["DEEP WATER - NO ENTRY", 0.5]], "ink": Color(0.62, 0.1, 0.06), "border": 0.006,
+		"fix": "rivets", "wear": 0.6, "rust": 0.7})
 	_gate_body = StaticBody3D.new()
 	_gate_body.collision_layer = Door.BARS_LAYER
 	var cs := CollisionShape3D.new()
@@ -279,7 +281,10 @@ func _build_pit_details() -> void:
 	# Drain: a dark sump-hole under a square grating.
 	RoomBuilder._box(self, DRAIN_AT + Vector3(0, 0.005, 0), Vector3(0.56, 0.01, 0.56), Mats.trim(Color(0.01, 0.01, 0.01), 0.95), false)
 	RoomBuilder._box(self, DRAIN_AT + Vector3(0, 0.02, 0), Vector3(0.52, 0.025, 0.52), Mats.surface("grate", {"tile_size": 0.5, "grime_amount": 0.8}), false)
-	UndercroftKit.label(self, "SEWER", DRAIN_AT + Vector3(0, 0.035, 0.32), 22, Color(0.5, 0.48, 0.42), 0.0, 0.0012).rotation_degrees.x = -90.0
+	# The cast-iron kerb plate at its edge, its raised letters worn bright.
+	Signage.plate(self, DRAIN_AT + Vector3(0, 0.0, 0.32), Vector3(-90, 0, 0), {"size": Vector2(0.3, 0.075), "style": "cast",
+		"lines": ["SEWER"], "field": Color(0.09, 0.085, 0.08), "ink": Color(0.2, 0.19, 0.17), "core": Color(0.42, 0.4, 0.37),
+		"fix": "none", "border": 0.004, "wear": 0.8, "dirt": 0.8, "track": 0.2})
 	# The scum line where the water has stood for weeks, round all four walls.
 	var scum := Mats.trim(Color(0.07, 0.065, 0.05), 0.3)
 	var x0 := PIT.position.x
@@ -329,7 +334,6 @@ func _build_valves() -> void:
 	var pipe_paint := Mats.surface("flood_steel", {"tile_size": 0.8, "grime_amount": 0.7, "tint": Color(0.42, 0.44, 0.4)})
 	var red := Mats.surface("flood_steel", {"tile_size": 0.4, "grime_amount": 0.5, "tint": Color(0.75, 0.16, 0.1)})
 	var steel := Mats.trim(Color(0.3, 0.29, 0.27), 0.35, 0.85)
-	var brass := Mats.trim(Color(0.62, 0.47, 0.22), 0.35, 0.85)
 	for i in VALVES.size():
 		var z: float = VALVE_Z[i]
 		var v := Node3D.new()
@@ -396,11 +400,12 @@ func _build_valves() -> void:
 		tag.position = Vector3(0.27, WHEEL_Y - 0.17, 0.12)
 		tag.rotation_degrees.y = 90.0
 		v.add_child(tag)
-		RoomBuilder._box(tag, Vector3.ZERO, Vector3(0.17, 0.065, 0.006), brass, false)
-		UndercroftKit.label(tag, "%s\n%s" % [VALVES[i][0], VALVES[i][1]], Vector3(0, 0, 0.0045), 20, Color(0.16, 0.1, 0.04), 0.0, 0.00085)
+		Signage.plate(tag, Vector3(0, 0, -0.002), 0, {"size": Vector2(0.17, 0.065), "style": "brass", "back": true, "fix": "none",
+			"lines": [VALVES[i][0], [VALVES[i][1], 0.55]], "wear": 0.7, "dirt": 0.5, "corner": 0.008})
 		UndercroftKit.bar(tag, Vector3(0, 0.06, 0), 0.004, 0.06, steel, "y", 4)
 		# Stencilled big on the wall behind it too.
-		UndercroftKit.label(self, VALVES[i][0], Vector3(RoomBuilder.WALL_T * 1.5 + 0.005, 1.68, z + 0.26), 90, Color(0.86, 0.82, 0.68), PI / 2, 0.0016)
+		Signage.paint(self, Vector3(RoomBuilder.WALL_T * 1.5, 1.68, z + 0.26), 90, {"size": Vector2(0.34, 0.2), "kind": "stencil",
+			"lines": [VALVES[i][0]], "color": Color(0.86, 0.82, 0.68), "wear": 0.5})
 		UndercroftKit.reach(self, self, Vector3(WHEEL_X + 0.22, WHEEL_Y, z), Vector3(0.6, 1.0, 0.62), i)
 
 ## The enamel pipework board over the valves.
@@ -432,17 +437,19 @@ func _build_gauge() -> void:
 	g.position = GAUGE_AT
 	g.rotation_degrees.y = 90.0
 	add_child(g)
-	var enamel := Mats.trim(Color(0.84, 0.8, 0.68), 0.5)
 	var ink := Color(0.1, 0.08, 0.06)
 	RoomBuilder._box(g, Vector3(0, 0, 0.02), Vector3(0.26, 1.0, 0.04), Mats.trim(Color(0.14, 0.15, 0.14), 0.5, 0.6), false)
-	RoomBuilder._box(g, Vector3(0, 0, 0.042), Vector3(0.2, 0.92, 0.004), enamel, false)
-	UndercroftKit.label(g, "SUMP B\nLEVEL", Vector3(0, 0.56, 0.045), 24, Color(0.82, 0.8, 0.7), 0.0, 0.0011)
+	# The enamel scale, and an engraved label over the case.
+	Signage.plate(g, Vector3(0, 0, 0.04), 0, {"size": Vector2(0.2, 0.92), "style": "enamel", "fix": "screws", "fix_r": 0.004,
+		"fix_at": [Vector2(0, 0.43), Vector2(0, -0.43)], "field": Color(0.84, 0.8, 0.68), "ink": ink, "wear": 0.4,
+		"items": [{"text": "FULL", "at": Vector2(0.045, 0.4), "h": 0.016}, {"text": "EMPTY", "at": Vector2(0.045, -0.4), "h": 0.016}]})
+	Signage.plate(g, Vector3(0.05, 0.2, 0.044), 0, {"size": Vector2(0.075, 0.024), "style": "enamel", "lines": ["DANGER"],
+		"field": Color(0.62, 0.1, 0.05), "ink": Color(0.92, 0.88, 0.8), "fix": "none", "wear": 0.3})
+	Signage.plate(g, Vector3(0, 0.575, -0.014), 0, {"size": Vector2(0.24, 0.1), "style": "engraved", "lines": ["SUMP B", ["LEVEL", 0.8]],
+		"field": Color(0.035, 0.035, 0.035), "core": Color(0.86, 0.84, 0.76), "wear": 0.35})
 	for k in 9:
 		var y := -0.4 + k * 0.1
 		RoomBuilder._box(g, Vector3(-0.05, y, 0.045), Vector3(0.06 if k % 4 == 0 else 0.03, 0.006, 0.002), Mats.trim(ink, 0.6), false)
-	UndercroftKit.label(g, "FULL", Vector3(0.04, 0.4, 0.046), 18, ink, 0.0, 0.0011)
-	UndercroftKit.label(g, "EMPTY", Vector3(0.04, -0.4, 0.046), 18, ink, 0.0, 0.0011)
-	UndercroftKit.label(g, "DANGER", Vector3(0.045, 0.2, 0.046), 16, Color(0.6, 0.1, 0.05), 0.0, 0.0011)
 	_pointer = Node3D.new()
 	_pointer.position = Vector3(-0.05, 0.4, 0.05)
 	g.add_child(_pointer)
@@ -506,7 +513,9 @@ func _build_pumps() -> void:
 		UndercroftKit.bar(p, Vector3(0, 1.28, 0), 0.035, 0.06, iron, "z", 10)
 		RoomBuilder._box(p, Vector3(0.26, 0.82, 0), Vector3(0.1, 0.18, 0.16), green, false)
 		UndercroftKit.bar(p, Vector3(0.3, 1.4, -0.0), 0.022, 1.0, dark, "y", 6)
-		UndercroftKit.label(p, "No. %d" % (k + 1), Vector3(0, 0.82, 0.236), 40, Color(0.86, 0.84, 0.74), 0.0, 0.0012)
+		# Its number stencilled round the fan cowl.
+		Signage.paint(p, Vector3(0, 1.16, 0.215), 0, {"size": Vector2(0.24, 0.1), "kind": "stencil", "lines": ["No. %d" % (k + 1)],
+			"color": Color(0.86, 0.84, 0.74), "surface": null, "bend": 0.215, "bend_axis": "y", "wear": 0.5})
 		# Suction: out over the lip and down into the water.
 		UndercroftKit.bar(p, Vector3(0, 0.2, 0.36), 0.07, 0.42, pipe_paint, "z", 12)
 		UndercroftKit.bar(p, Vector3(0, -0.6, 0.62), 0.07, 1.6, pipe_paint, "y", 12)
@@ -515,7 +524,9 @@ func _build_pumps() -> void:
 		UndercroftKit.bar(p, Vector3(0, 0.3, -0.24), 0.07, 0.2, pipe_paint, "z", 12)
 		UndercroftKit.bar(p, Vector3(0, 2.0, -0.34), 0.07, 3.4, pipe_paint, "y", 12)
 	UndercroftKit.bar(self, Vector3(4.12, 3.7, 1.76), 0.08, 3.0, pipe_paint, "x", 12)
-	UndercroftKit.label(self, "PUMPS ON MAINS ONLY", Vector3(3.17, 2.3, 0.39), 34, Color(0.8, 0.2, 0.1), 0.0, 0.0018)
+	Signage.plate(self, Vector3(3.17, 2.3, RoomBuilder.WALL_T * 1.5), 0, {"size": Vector2(0.9, 0.16), "style": "painted",
+		"lines": ["PUMPS ON MAINS ONLY"], "field": Color(0.86, 0.84, 0.76), "ink": Color(0.7, 0.12, 0.06), "border": 0.006,
+		"wear": 0.55, "rust": 0.65})
 
 # ------------------------------------------------------------------ using it
 

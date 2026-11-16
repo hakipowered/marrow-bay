@@ -58,7 +58,8 @@
   "corrugated_rust": "rusty_corrugated_iron",
   "flood_steel": "rusty_painted_metal",
   "cabinet_paint": "green_metal_rust",
-  "sump_wall": "concrete_wall_008"
+  "sump_wall": "concrete_wall_008",
+  "rubble": "brick_gravel"
  },
  "models": [
   "GothicCabinet_01",

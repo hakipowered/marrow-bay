@@ -35,11 +35,14 @@ func _build() -> void:
 	RoomBuilder._box(self, Vector3(0.42, 1.34, 0.205), Vector3(0.26, 0.4, 0.012), Mats.trim(Color(0.11, 0.14, 0.13), 0.7, 0.35), false)
 	# Conduit from the case up into the ceiling.
 	RoomBuilder._box(self, Vector3(0.42, 2.7, 0.04), Vector3(0.035, 2.1, 0.035), steel, false)
-	# Enamel plate over it, so it reads from across the room.
-	RoomBuilder._box(self, Vector3(0.42, 1.7, 0.03), Vector3(0.3, 0.085, 0.012), Mats.trim(Color(0.78, 0.74, 0.62), 0.6), false)
-	_label("VAULT  /  LIFT", Vector3(0.42, 1.7, 0.038), 30, Color(0.45, 0.06, 0.04))
-	_label("ON", Vector3(0.62, 1.58, 0.213), 20, Color(0.7, 0.68, 0.6))
-	_label("OFF", Vector3(0.62, 1.12, 0.213), 20, Color(0.7, 0.68, 0.6))
+	# An enamel plate screwed to the case over its door, so it reads from
+	# across the room, and ON / OFF painted on the side by the handle.
+	Signage.plate(self, Vector3(0.42, 1.586, 0.2), 0, {"size": Vector2(0.3, 0.07), "style": "enamel",
+		"lines": ["VAULT / LIFT"], "ink": Color(0.5, 0.06, 0.04), "border": 0.004, "fix": "screws",
+		"wear": 0.45, "rust": 0.4, "track": 0.08, "seed": 3.1})
+	for t in [["ON", 1.6], ["OFF", 1.12]]:
+		Signage.paint(self, Vector3(0.59, t[1], 0.17), 90, {"size": Vector2(0.06, 0.028), "kind": "print",
+			"lines": [t[0]], "color": Color(0.82, 0.78, 0.66), "wear": 0.35, "offset": 0.0006})
 	_handle = Node3D.new()
 	_handle.position = Vector3(0.62, 1.36, 0.12)
 	add_child(_handle)
@@ -108,19 +111,6 @@ func _build() -> void:
 	a.set_script(preload("res://scripts/world/interact_proxy.gd"))
 	a.target = self
 	add_child(a)
-
-## Small painted lettering on the case.
-func _label(text: String, at: Vector3, size: int, color: Color) -> void:
-	var l := Label3D.new()
-	l.text = text
-	l.font_size = size
-	l.outline_size = 0
-	l.pixel_size = 0.0011
-	l.modulate = color
-	l.shaded = true
-	l.double_sided = false
-	l.position = at
-	add_child(l)
 
 func _process(delta: float) -> void:
 	if VaultCircuit.is_on() or _busy:

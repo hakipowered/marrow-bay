@@ -281,7 +281,9 @@ func _build_cabinet() -> void:
 		_plate(c, sw[1], Vector3(sw[0], 1.21, fz + 0.003), Vector2(0.12, 0.022), 12)
 	RoomBuilder._box(c, Vector3(0, 1.25, fz + 0.006), Vector3(0.12, 0.045, 0.012), bakelite, false)
 	RoomBuilder._box(c, Vector3(0, 1.25, fz + 0.0125), Vector3(0.1, 0.026, 0.002), Mats.trim(Color(0.06, 0.06, 0.06), 0.1, 0.0), false)
-	UndercroftKit.label(c, "0 4 1 7 2", Vector3(0, 1.25, fz + 0.0145), 18, Color(0.86, 0.84, 0.78), 0.0, 0.00085)
+	# The counter's drums, white figures on black, behind its window.
+	Signage.paint(c, Vector3(0, 1.25, fz + 0.0135), 0, {"size": Vector2(0.09, 0.022), "kind": "print", "lines": ["0 4 1 7 2"],
+		"color": Color(0.86, 0.84, 0.78), "surface": null, "offset": 0.0004, "wear": 0.1, "rough": 0.3})
 	_plate(c, "HOURS RUN", Vector3(0, 1.21, fz + 0.003), Vector2(0.09, 0.022), 12)
 	# ---- the fuse compartment, its door hanging open
 	var plate_mat := Mats.trim(Color(0.4, 0.41, 0.4), 0.55, 0.75)
@@ -326,15 +328,17 @@ func _build_cabinet() -> void:
 	var danger := Node3D.new()
 	danger.position = Vector3(w / 2 - 0.02, 0.22, 0.012)
 	door.add_child(danger)
-	RoomBuilder._box(danger, Vector3.ZERO, Vector3(0.22, 0.1, 0.003), Mats.trim(Color(0.85, 0.66, 0.08), 0.5), false)
-	UndercroftKit.label(danger, "DANGER\n415  VOLTS", Vector3(0, 0, 0.002), 22, Color(0.06, 0.05, 0.04), 0.0, 0.00085)
+	Signage.plate(danger, Vector3(0, 0, -0.002), 0, {"size": Vector2(0.22, 0.1), "style": "enamel", "lines": ["DANGER", ["415 VOLTS", 0.7]],
+		"field": Color(0.85, 0.66, 0.08), "ink": Color(0.05, 0.045, 0.04), "border": 0.004, "fix": "screws", "wear": 0.45})
 	UndercroftKit.bar(door, Vector3(w - 0.07, 0.0, 0.02), 0.01, 0.1, chrome, "y", 8)
 	var diagram := Node3D.new()
 	diagram.position = Vector3(w / 2 - 0.02, 0.1, -0.012)
 	diagram.rotation_degrees.y = 180.0
 	door.add_child(diagram)
-	RoomBuilder._box(diagram, Vector3.ZERO, Vector3(0.4, 0.3, 0.003), Mats.trim(Color(0.78, 0.74, 0.62), 0.6), false)
-	UndercroftKit.label(diagram, "No. 2 STANDBY SET\nFIELD CIRCUIT\n\nEXCITER - FUSE F1 60A - FIELD\nCONTACTOR K1 - AVR\n\nISOLATE BEFORE OPENING", Vector3(0, 0, 0.002), 16, Color(0.12, 0.1, 0.08), 0.0, 0.00085)
+	# The wiring card glued inside the door, browned and creased.
+	Signage.plate(diagram, Vector3(0, 0, -0.0015), 0, {"size": Vector2(0.4, 0.3), "style": "card", "font": "sans",
+		"lines": ["No. 2 STANDBY SET", ["FIELD CIRCUIT", 0.8], "", ["EXCITER - FUSE F1 60 A - FIELD", 0.6], ["CONTACTOR K1 - AVR", 0.6], "",
+			["ISOLATE BEFORE OPENING", 0.7]], "gap": 0.6, "wear": 0.6, "dirt": 0.55, "ink": Color(0.1, 0.08, 0.07)})
 	# The main breaker on the right side: a cast case and its red lever,
 	# down (OFF) until the set runs.
 	var brk := Node3D.new()
@@ -367,10 +371,13 @@ func _piece(parent: Node3D, at: Vector3, ext: Vector3, mat: Material, rot: Vecto
 	parent.add_child(mi)
 	return mi
 
-## An engraved black plate with cream letters.
-func _plate(parent: Node3D, text: String, at: Vector3, size: Vector2, px: int) -> void:
-	RoomBuilder._box(parent, at, Vector3(size.x, size.y, 0.003), Mats.trim(Color(0.04, 0.04, 0.04), 0.35, 0.2), false)
-	UndercroftKit.label(parent, text, at + Vector3(0, 0, 0.002), px, Color(0.86, 0.82, 0.7), 0.0, 0.00085)
+## An engraved laminate label, black cut through to cream, screwed on;
+## `at` is its middle on the panel's face.
+func _plate(parent: Node3D, text: String, at: Vector3, size: Vector2, _px := 0) -> void:
+	while text.contains("  "):
+		text = text.replace("  ", " ")
+	Signage.plate(parent, at - Vector3(0, 0, 0.0015), 0, {"size": size, "style": "engraved", "lines": [text],
+		"field": Color(0.035, 0.035, 0.035), "core": Color(0.86, 0.82, 0.7), "wear": 0.35, "dirt": 0.5})
 
 ## The meters: dead at the pin, or on their running values with a little
 ## life in them.

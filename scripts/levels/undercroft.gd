@@ -46,7 +46,6 @@ const PUMP_AT := Vector3(33.0, 0.0, 4.5)
 const TALLY_IN := Vector3(33.0, 0.0, -11.4)
 const LANYARD_AT := Vector3(46.4, 0.0, 16.6)
 const CHALK_AT := Vector3(51.0 - RoomBuilder.WALL_T / 2.0, 1.6, 17.0)
-const CHALK_FONT := preload("res://assets/fonts/RockSalt.ttf")
 
 ## Where the generator's noise brings infected in from, all out of the
 ## hall's sight: the yard behind the coal heap and the shed, the far end of
@@ -141,9 +140,20 @@ func _pipe(parent: Node3D, from: Vector3, length: float, axis: String, radius: f
 			break
 		UndercroftKit.bar(parent, at, radius + 0.02, 0.06, bracket, axis, 14)
 
-## Stencilled letters on a wall, facing local +z turned by `rot` (degrees).
-func _stencil(parent: Node3D, text: String, at: Vector3, rot: float, size := 40, col := Color(0.82, 0.78, 0.66), pixel := 0.0022) -> Label3D:
-	return UndercroftKit.label(parent, text, at, size, col, deg_to_rad(rot), pixel)
+## Stencilled paint (Signage.paint) on a wall, facing local +z turned by
+## `rot` (degrees); `at` is on the wall's face. On a room's wall the paint
+## takes the brick's texture.
+func _stencil(parent: Node3D, lines: Array, at: Vector3, rot, size: Vector2, col := Color(0.86, 0.82, 0.7), extra := {}) -> MeshInstance3D:
+	var spec := {"size": size, "kind": "stencil", "lines": lines, "color": col, "wear": 0.5}
+	spec.merge(extra, true)
+	return Signage.paint(parent, at, rot, spec)
+
+## A vitreous enamel plate bolted to a wall: cream, black letters, a black
+## line round it, chipped, and rusting from its bolts.
+func _enamel(parent: Node3D, lines: Array, at: Vector3, rot, size: Vector2, extra := {}) -> MeshInstance3D:
+	var spec := {"size": size, "style": "enamel", "lines": lines, "border": 0.007, "wear": 0.5, "rust": 0.55, "track": 0.05}
+	spec.merge(extra, true)
+	return Signage.plate(parent, at, rot, spec)
 
 ## A picture on a wall: a textured quad in a dark frame, facing local +z
 ## turned by `rot` (degrees).
@@ -199,10 +209,10 @@ static func _unshadowed(n: Node) -> Node:
 	return n
 
 ## Chalk on a wall, in a scrawled hand.
-func _chalk(parent: Node3D, text: String, at: Vector3, rot: float, size: int, pixel: float, col := Color(0.88, 0.88, 0.84)) -> Label3D:
-	var l := _stencil(parent, text, at, rot, size, col, pixel)
-	l.font = CHALK_FONT
-	return l
+func _chalk(parent: Node3D, lines: Array, at: Vector3, rot, size: Vector2, extra := {}) -> MeshInstance3D:
+	var spec := {"size": size, "kind": "chalk", "lines": lines, "color": Color(0.88, 0.88, 0.84), "wear": 0.25}
+	spec.merge(extra, true)
+	return Signage.paint(parent, at, rot, spec)
 
 func _block(parent: Node3D, center: Vector3, ext: Vector3, mat: Material) -> void:
 	RoomBuilder._box(parent, center, ext, mat, true)
@@ -227,9 +237,11 @@ func _lift_pit() -> void:
 	lift.position = Vector3(0, 0, 3)
 	lift.rotation_degrees.y = 90.0
 	add_child(lift)
-	_stencil(r, "B2", Vector3(5.4, 3.3, 0.14), 0, 220, Color(0.85, 0.8, 0.6), 0.0026)
-	_stencil(r, "UNDERCROFT  SERVICE  LEVEL\nNO  UNACCOMPANIED  ENTRY", Vector3(5.4, 2.55, 0.14), 0, 34)
-	_stencil(r, "ENGINE HALL  ->", Vector3(6.86, 2.75, 4.6), -90, 30)
+	# The level number stencilled big, the rules on an enamel plate under it,
+	# and the way on painted by the door.
+	_stencil(r, ["B2"], Vector3(5.4, 3.32, 0.125), 0, Vector2(0.8, 0.62), Color(0.85, 0.8, 0.6), {"wear": 0.55})
+	_enamel(r, ["UNDERCROFT SERVICE LEVEL", ["NO UNACCOMPANIED ENTRY", 0.62]], Vector3(5.4, 2.5, 0.125), 0, Vector2(1.3, 0.3))
+	_stencil(r, ["ENGINE HALL"], Vector3(6.875, 2.6, 4.6), -90, Vector2(1.3, 0.24), Color(0.86, 0.82, 0.7), {"arrow": "left"})
 	var pipe := _steel(0.2, 0.5)
 	_pipe(r, Vector3(0.2, 4.25, 0.36), 6.6, "x", 0.09, pipe)
 	_pipe(r, Vector3(0.2, 4.1, 0.66), 6.6, "x", 0.05, Mats.trim(Color(0.32, 0.12, 0.08), 0.6, 0.4))
@@ -283,16 +295,16 @@ func _service_corridor() -> void:
 	RoomBuilder._box(r, Vector3(16, 3.12, 2.42), Vector3(31.8, 0.03, 0.3), _steel(0.15), false)
 	for i in 6:
 		RoomBuilder.prop(r, "modular_electric_cables", Vector3(2.5 + i * 5.2, 3.0, 2.86), 180, 1.0, false)
-	# Signs over the doorways.
-	var paint := Color(0.86, 0.82, 0.7)
-	_stencil(r, "SURVEY ROOM", Vector3(5.0, 2.6, 0.15), 0, 30, paint)
-	_stencil(r, "CLOCK GALLERY", Vector3(24.1, 2.7, 0.15), 0, 30, paint)
-	_stencil(r, "KEEPER", Vector3(4.0, 2.6, 2.85), 180, 30, paint)
-	_stencil(r, "MUSTER ROOM  -  SHELTER STAFF", Vector3(19.1, 2.7, 2.85), 180, 26, paint)
-	_stencil(r, "<-  LIFT", Vector3(9.5, 1.9, 0.15), 0, 30, paint)
-	_stencil(r, "ENGINE HALL  ->", Vector3(14.5, 1.9, 0.15), 0, 30, paint)
-	_stencil(r, "ENGINE HALL  ->", Vector3(30.4, 1.9, 2.85), 180, 30, paint)
-	_stencil(r, "PUMP ROOM  -  SUMP B", Vector3(27.6, 2.62, 2.85), 180, 26, paint)
+	# Enamel plates over the doorways, the ways on stencilled at eye height
+	# between the pilasters. (The south wall reads with -x on the right.)
+	_enamel(r, ["SURVEY ROOM"], Vector3(5.0, 2.62, 0.125), 0, Vector2(0.95, 0.2))
+	_enamel(r, ["CLOCK GALLERY"], Vector3(24.1, 2.66, 0.125), 0, Vector2(1.05, 0.2))
+	_enamel(r, ["KEEPER'S LODGE"], Vector3(4.0, 2.6, 2.875), 180, Vector2(1.05, 0.2))
+	_enamel(r, ["MUSTER ROOM", ["SHELTER STAFF", 0.55]], Vector3(19.1, 2.68, 2.875), 180, Vector2(1.0, 0.26))
+	_enamel(r, ["PUMP ROOM", ["SUMP B", 0.55]], Vector3(27.6, 2.6, 2.875), 180, Vector2(0.9, 0.26))
+	_stencil(r, ["LIFT"], Vector3(9.5, 1.85, 0.125), 0, Vector2(0.75, 0.2), Color(0.86, 0.82, 0.7), {"arrow": "left"})
+	_stencil(r, ["ENGINE HALL"], Vector3(12.45, 1.85, 0.125), 0, Vector2(1.3, 0.2), Color(0.86, 0.82, 0.7), {"arrow": "right"})
+	_stencil(r, ["ENGINE HALL"], Vector3(30.4, 1.85, 2.875), 180, Vector2(1.3, 0.2), Color(0.86, 0.82, 0.7), {"arrow": "left"})
 	# Things left behind in the dark.
 	RoomBuilder.prop(r, "wheelchair_01", Vector3(11.8, 0, 2.3), 140)
 	RoomBuilder.prop(r, "industrial_storage_cart", Vector3(27.2, 0, 0.75), 4)
@@ -384,17 +396,16 @@ func _survey_room() -> void:
 	# The 1891 survey of the river district on the north wall: the walled
 	# street, the burial ground, the line of the Deep Tunnel inked in later.
 	_picture(r, "res://assets/textures/undercroft/survey_map_1891.jpg", Vector3(6.0, 2.15, 0.13), Vector2(3.9, 2.6), 0.0)
-	_stencil(r, "CITY  SURVEY  OFFICE   -   RIVER  DISTRICT   1891", Vector3(6.0, 3.7, 0.13), 0, 30, Color(0.86, 0.8, 0.62))
+	# Signwritten on the plaster above it, in faded gilt.
+	_stencil(r, ["CITY SURVEY OFFICE  -  RIVER DISTRICT  1891"], Vector3(6.0, 3.66, 0.125), 0, Vector2(3.8, 0.2),
+		Color(0.74, 0.6, 0.34), {"kind": "brush", "font": "roman", "wear": 0.6, "track": 0.08})
 	# The keeper's tally on the west wall: hundreds of marks, in fives,
 	# scratched into the plaster, and the last ones still fresh.
-	var tally := ""
+	var counts: Array = []
 	for row in 7:
-		var line := ""
-		for g in 9 - (row % 3):
-			line += "IIII  "
-		tally += line.strip_edges() + "\n"
-	var t := _chalk(r, tally, Vector3(0.14, 1.9, 7.6), 90, 34, 0.0025, Color(0.12, 0.1, 0.09))
-	t.modulate.a = 0.85
+		counts.append((9 - (row % 3)) * 5 - (3 if row == 6 else 0))
+	Signage.paint(r, Vector3(0.125, 1.9, 7.6), 90, {"size": Vector2(1.5, 0.85), "kind": "scratch", "name": "Tally",
+		"color": Color(0.82, 0.79, 0.72), "wear": 0.2, "strokes": Signage.tally(counts, Vector2(1.5, 0.85), 0.085, 71), "stroke_w": 0.0045})
 	# The plan chests, the map table, the drawing board.
 	RoomBuilder.prop(r, "dining_table", Vector3(6.0, 0, 5.8), 0)
 	RoomBuilder.prop(r, "office_notepads", Vector3(5.7, 0.88, 5.8), 8, 1.0, false)
@@ -468,7 +479,9 @@ func _clock_gallery() -> void:
 	RoomBuilder.prop(r, "metal_tool_chest", Vector3(0.6, 0, 9.6), 90)
 	RoomBuilder.prop(r, "wooden_display_shelves_01", Vector3(0.45, 0, 2.0), 0)
 	RoomBuilder.prop(r, "Rockingchair_01", Vector3(9.2, 0, 4.2), 200)
-	_stencil(r, "MASTER  REGULATOR  -  KEEP  WOUND", Vector3(1.2, 3.85, 0.14), 0, 30, Color(0.82, 0.74, 0.5))
+	# The maker's brass plaque on the wall over the master clock.
+	Signage.plate(r, CLOCK_AT - r.position + Vector3(0, 2.86, 0), 0, {"size": Vector2(0.6, 0.16), "style": "brass",
+		"lines": ["MASTER REGULATOR", ["KEEP WOUND", 0.7]], "font": "roman", "border": 0.003, "wear": 0.55})
 	UndercroftPower.emergency_light(r, Vector3(0.14, 3.1, 8.0), 90.0, 0.4, 6.0)
 	UndercroftPower.emergency_light(r, Vector3(13.86, 3.2, 6.0), -90.0, 0.35, 6.0)
 	for x in [3.5, 10.5]:
@@ -480,35 +493,357 @@ func _clock_gallery() -> void:
 
 # ------------------------------------------------------------------ the back stair
 
+## The north stair (BackStair room, local metres): a landing inside the
+## door, then one flight rising north toward the vault level. The upper
+## flight and the floor above it came down on its top half: a heap of brick
+## and concrete fills the north end up under the hole they left, and that
+## dark gap is the way down for whatever comes.
+const STAIR_FOOT := 5.6       # local z of the first riser
+const STAIR_RISE := 0.18
+const STAIR_GOING := 0.29
+const STAIR_STEPS := 14
+const STAIR_X := Vector2(0.125, 2.875)   # wall face to wall face
+
+var _heap_noise: FastNoiseLite
+
 func _back_stair() -> void:
 	var r := RoomBuilder.build(self, {
-		"id": "BackStair", "pos": Vector3(31.5, 0, -12.5), "size": Vector3(3, 6, 3),
+		"id": "BackStair", "pos": Vector3(31.5, 0, -17.5), "size": Vector3(3, 5.0, 8),
 		"floor": "undercroft_floor", "wall": "undercroft_brick", "ceiling": "undercroft_floor",
 		"floor_look": {"tile_size": 2.0, "grime_amount": 0.9},
 		"wall_look": {"tile_size": 2.0, "grime_amount": 0.9, "stain_amount": 0.8},
 		"skip_walls": ["s"],
+		# Where the floor above came through, over the top of the heap.
+		"ceiling_holes": [[0.35, 0.2, 2.3, 2.5]],
 		"decals": {"blood": 1},
 	})
 	place_door(STAIR_DOOR, 0, Door.Kind.MANUAL, "steel", 1.4, 2.4, "stair_door")
-	# The stair up to the vault level, caved in a few steps up: whatever
-	# comes down here comes over the rubble.
+	_heap_noise = FastNoiseLite.new()
+	_heap_noise.seed = 1891
+	_heap_noise.frequency = 0.9
+	_heap_noise.fractal_octaves = 3
+	# The flight: solid concrete steps with steel nosings, and the half
+	# landing at its head.
 	var stone := Mats.surface("undercroft_floor", {"tile_size": 1.0, "grime_amount": 0.9})
-	for i in 5:
-		_block(r, Vector3(1.5, 0.09 + i * 0.18, 1.0 - i * 0.18), Vector3(2.4, 0.18, 0.3 + i * 0.36), stone)
-	var rubble := Mats.surface("undercroft_brick", {"tile_size": 0.8, "grime_amount": 1.0})
+	var nosing := _steel(0.16, 0.45)
+	var w := STAIR_X.y - STAIR_X.x
+	for i in STAIR_STEPS:
+		var top := STAIR_RISE * (i + 1)
+		var z1 := STAIR_FOOT - STAIR_GOING * i
+		var z0 := z1 - STAIR_GOING
+		_block(r, Vector3(1.5, top / 2.0, (z0 + z1) / 2.0), Vector3(w, top, z1 - z0), stone)
+		RoomBuilder._box(r, Vector3(1.5, top + 0.003, z1 - 0.018), Vector3(w - 0.02, 0.006, 0.036), nosing, false)
+	var head := STAIR_FOOT - STAIR_GOING * STAIR_STEPS
+	var land := STAIR_RISE * STAIR_STEPS
+	_block(r, Vector3(1.5, land / 2.0, (0.125 + head) / 2.0), Vector3(w, land, head - 0.125), stone)
+	# The heap, and what lies on it.
+	_heap(r)
+	_heap_wreck(r)
+	# A tube handrail on brackets up the east wall, running into the heap.
+	var rail := _steel(0.2, 0.4)
+	var z := STAIR_FOOT + 0.25
+	var last := z
+	while z > 1.0:
+		if _heap_y(STAIR_X.y - 0.12, z) > _rail_y(z) - 0.06:
+			break
+		last = z
+		z -= 0.05
+	var a := Vector3(STAIR_X.y - 0.075, _rail_y(STAIR_FOOT + 0.25), STAIR_FOOT + 0.25)
+	var b := Vector3(STAIR_X.y - 0.075, _rail_y(last - 0.15), last - 0.15)
+	_strut(r, a, b, 0.022, rail, 10)
+	var k := 0.0
+	while k < 1.0:
+		var p := a.lerp(b, k)
+		_strut(r, p, Vector3(STAIR_X.y, p.y - 0.04, p.z), 0.009, rail, 6)
+		k += 1.0 / maxf(1.0, round(a.distance_to(b) / 1.1))
+	# Dust still sifting down from the hole, in the torchlight.
+	var dust := CPUParticles3D.new()
+	dust.name = "Dust"
+	dust.position = Vector3(1.5, 4.8, 1.4)
+	dust.amount = 26
+	dust.lifetime = 9.0
+	dust.preprocess = 9.0
+	dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	dust.emission_box_extents = Vector3(1.0, 0.1, 1.1)
+	dust.direction = Vector3.DOWN
+	dust.spread = 25.0
+	dust.initial_velocity_min = 0.05
+	dust.initial_velocity_max = 0.14
+	dust.gravity = Vector3(0, -0.04, 0)
+	dust.scale_amount_min = 0.5
+	dust.scale_amount_max = 1.4
+	var dq := QuadMesh.new()
+	dq.size = Vector2(0.008, 0.008)
+	var dm := StandardMaterial3D.new()
+	dm.albedo_color = Color(0.75, 0.7, 0.62, 0.55)
+	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	dm.roughness = 1.0
+	dq.material = dm
+	dust.mesh = dq
+	r.add_child(dust)
+	# Nobody climbs the heap to the hole: the way up stops at its toe.
+	_wall_collider(r, Vector3(1.5, 2.3, 4.3), Vector3(w, 4.0, 0.1))
+	# The way up, stencilled on the landing wall; the keeper's count
+	# scratched beside the door; the plate over the door on the gallery side.
+	_stencil(r, ["VAULT LEVEL"], Vector3(STAIR_X.x, 1.75, 6.5), 90, Vector2(1.2, 0.2), Color(0.86, 0.82, 0.7), {"arrow": "right"})
+	Signage.paint(r, Vector3(STAIR_X.x, 1.3, 7.3), 90, {"size": Vector2(0.55, 0.32), "kind": "scratch", "name": "Tally",
+		"color": Color(0.78, 0.74, 0.66), "wear": 0.15, "strokes": Signage.tally([23, 17, 9], Vector2(0.55, 0.32), 0.07, 1891),
+		"stroke_w": 0.004})
+	_enamel(self, ["NORTH STAIR", ["STAFF ONLY", 0.55]], Vector3(STAIR_DOOR.x, 2.66, STAIR_DOOR.z + RoomBuilder.WALL_T / 2.0), 0,
+		Vector2(0.9, 0.24))
+	UndercroftPower.emergency_light(r, Vector3(STAIR_X.y, 2.4, 7.0), -90.0, 0.25, 3.5)
+
+## Where the steps' tops are at local z (0 on the landing).
+static func _stair_y(z: float) -> float:
+	if z >= STAIR_FOOT:
+		return 0.0
+	var i := int(floor((STAIR_FOOT - z) / STAIR_GOING))
+	return STAIR_RISE * mini(i + 1, STAIR_STEPS)
+
+## The handrail's height over the nosings.
+static func _rail_y(z: float) -> float:
+	return 0.92 + STAIR_RISE + maxf(0.0, STAIR_FOOT - z) * STAIR_RISE / STAIR_GOING
+
+## The heap's surface: from a ragged toe a few steps up, rising at about the
+## angle loose brick settles at to a crest against the north wall, slumped
+## further to the west where the upper flight came down. Below the steps
+## where there is no heap.
+func _heap_y(x: float, z: float) -> float:
+	var toe := 4.45 + 0.28 * sin(x * 2.3 + 0.7) + 0.12 * sin(x * 5.1)
+	var t := clampf((toe - z) / (toe - 0.3), 0.0, 1.0)
+	var crest := 3.75 + 0.3 * (1.0 - x / 3.0)
+	var y := lerpf(_stair_y(toe) - 0.12, crest, pow(t, 0.82))
+	y += _heap_noise.get_noise_2d(x * 1.4, z * 1.4) * 0.22 * smoothstep(0.0, 0.25, t)
+	y += _heap_noise.get_noise_2d(x * 6.0 + 40.0, z * 6.0) * 0.05
+	return y
+
+## The heap as one mesh: a height field from wall to wall, cut off where it
+## dips under the steps, with a skirt down into them along its toe. Crushed
+## brick texture, and solid to walk on.
+func _heap(r: Node3D) -> void:
+	var xs: Array = []
+	var zs: Array = []
+	var x := STAIR_X.x - 0.1
+	while x < STAIR_X.y + 0.1:
+		xs.append(x)
+		x += 0.09
+	xs.append(STAIR_X.y + 0.1)
+	var z := 0.0
+	while z < STAIR_FOOT:
+		zs.append(z)
+		z += 0.07
+	var hs := {}
+	for i in xs.size():
+		for j in zs.size():
+			hs[Vector2i(i, j)] = _heap_y(xs[i], zs[j])
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var edges := {}
+	var tris: Array = []
+	for i in xs.size() - 1:
+		for j in zs.size() - 1:
+			var q := [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]
+			for tri in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]:
+				var ok := true
+				for v in tri:
+					if hs[v] < _stair_y(zs[v.y]) + 0.015:
+						ok = false
+				if not ok:
+					continue
+				tris.append(tri)
+				for e in 3:
+					var a: Vector2i = tri[e]
+					var b: Vector2i = tri[(e + 1) % 3]
+					edges[_edge_key(a, b)] = edges.get(_edge_key(a, b), 0) + 1
+	var pos := func(v: Vector2i) -> Vector3:
+		return Vector3(xs[v.x], hs[v], zs[v.y])
+	var nrm := func(v: Vector2i) -> Vector3:
+		var e := 0.05
+		var px: float = xs[v.x]
+		var pz: float = zs[v.y]
+		return Vector3(_heap_y(px - e, pz) - _heap_y(px + e, pz), 2.0 * e, _heap_y(px, pz - e) - _heap_y(px, pz + e)).normalized()
+	for tri in tris:
+		var p := [pos.call(tri[0]), pos.call(tri[1]), pos.call(tri[2])]
+		var order := [0, 1, 2]
+		if ((p[2] - p[0]).cross(p[1] - p[0])).y < 0.0:
+			order = [0, 2, 1]
+		for o in order:
+			st.set_normal(nrm.call(tri[o]))
+			st.set_uv(Vector2(p[o].x, p[o].z))
+			st.add_vertex(p[o])
+		# Along the heap's open edges, a skirt down into the steps.
+		for e in 3:
+			var a: Vector2i = tri[e]
+			var b: Vector2i = tri[(e + 1) % 3]
+			if edges[_edge_key(a, b)] != 1:
+				continue
+			var pa: Vector3 = pos.call(a)
+			var pb: Vector3 = pos.call(b)
+			var c: Vector3 = (p[0] + p[1] + p[2]) / 3.0
+			var out := ((pa + pb) / 2.0 - c)
+			out.y = 0.0
+			out = out.normalized()
+			var da := pa - Vector3(0, 0.35, 0)
+			var db := pb - Vector3(0, 0.35, 0)
+			var quad := [pa, pb, db, pa, db, da]
+			if ((quad[2] - quad[0]).cross(quad[1] - quad[0])).dot(out) < 0.0:
+				quad = [pa, db, pb, pa, da, db]
+			for v in quad:
+				st.set_normal(out)
+				st.set_uv(Vector2(v.x + v.z, v.y))
+				st.add_vertex(v)
+	st.generate_tangents()
+	var mesh := st.commit()
+	var mi := MeshInstance3D.new()
+	mi.name = "Heap"
+	mi.mesh = mesh
+	mi.material_override = Mats.surface("rubble", {"tile_size": 1.3, "grime_amount": 0.3, "tint": Color(0.82, 0.74, 0.68)})
+	r.add_child(mi)
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	var cs := CollisionShape3D.new()
+	cs.shape = mesh.create_trimesh_shape()
+	body.add_child(cs)
+	mi.add_child(body)
+
+static func _edge_key(a: Vector2i, b: Vector2i) -> Vector4i:
+	return Vector4i(a.x, a.y, b.x, b.y) if (a.x < b.x or (a.x == b.x and a.y < b.y)) else Vector4i(b.x, b.y, a.x, a.y)
+
+## What came down with the floor, lying on the heap where it fell: a
+## length of the upper flight, a steel joist, timber, lumps of bonded
+## brickwork and loose bricks down to the landing. Everything rests on the
+## heap or the steps (sat a little into the rubble), nothing hangs.
+func _heap_wreck(r: Node3D) -> void:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 91
-	for i in 9:
+	rng.seed = 1891
+	var stone := Mats.surface("undercroft_floor", {"tile_size": 1.0, "grime_amount": 0.9})
+	var brick := Mats.surface("undercroft_brick", {"tile_size": 0.8, "grime_amount": 0.6})
+	var timber := Mats.trim(Color(0.2, 0.14, 0.09), 0.85)
+	var ground := func(px: float, pz: float) -> float:
+		return maxf(_heap_y(px, pz), _stair_y(pz))
+	# A length of the upper flight, five steps of it, fallen on the west side
+	# of the heap with its treads turned up.
+	var f := Node3D.new()
+	f.name = "FallenFlight"
+	var lo := Vector3(0.95, ground.call(0.95, 3.35) + 0.03, 3.35)
+	var hi := Vector3(0.85, ground.call(0.85, 1.55) + 0.02, 1.55)
+	var mid := (lo + hi) / 2.0
+	# Rolled to lie along the heap's slope across it, west side up.
+	var roll := atan((ground.call(mid.x - 0.5, mid.z) - ground.call(mid.x + 0.5, mid.z)) / 1.0)
+	_lay(f, lo, hi, 0.0, roll)
+	r.add_child(f)
+	var len := lo.distance_to(hi)
+	_block_vis(f, Vector3(0, 0.08, 0), Vector3(1.25, 0.16, len), stone, true)
+	for s in 5:
+		var sz := -len / 2.0 + len * (s + 0.5) / 5.0
+		_block_vis(f, Vector3(0, 0.16 + 0.085, sz - len / 20.0), Vector3(1.25, 0.17, len / 10.0), stone)
+	# A steel joist from the floor above: off the heap's east flank on to
+	# the steps.
+	var j := Node3D.new()
+	j.name = "FallenJoist"
+	var ja := Vector3(2.35, ground.call(2.35, 1.0) + 0.08, 1.0)
+	var jb := Vector3(1.95, ground.call(1.95, 4.95) + 0.075, 4.95)
+	_lay(j, ja, jb, 0.0, -0.12)
+	r.add_child(j)
+	var jl := ja.distance_to(jb)
+	var steel := _steel(0.18, 0.6)
+	_block_vis(j, Vector3(0, 0, 0), Vector3(0.012, 0.15, jl), steel)
+	_wall_collider(j, Vector3.ZERO, Vector3(0.1, 0.15, jl))
+	for y in [-0.07, 0.07]:
+		_block_vis(j, Vector3(0, y, 0), Vector3(0.1, 0.012, jl), steel)
+	# Floor timbers, snapped, across the heap.
+	for t in [[Vector2(0.4, 0.9), Vector2(2.2, 2.4), 0.3], [Vector2(2.6, 2.9), Vector2(0.9, 3.9), -0.4], [Vector2(1.6, 0.4), Vector2(2.7, 1.6), 0.1]]:
+		var tn := Node3D.new()
+		var ta := Vector3(t[0].x, ground.call(t[0].x, t[0].y) + 0.03, t[0].y)
+		var tb := Vector3(t[1].x, ground.call(t[1].x, t[1].y) + 0.03, t[1].y)
+		_lay(tn, ta, tb, t[2], 0.0)
+		r.add_child(tn)
+		_block_vis(tn, Vector3.ZERO, Vector3(0.075, 0.19, ta.distance_to(tb)), timber, true)
+	# Lumps of bonded brickwork (still showing their courses) and loose
+	# bricks in three fired shades, each merged into one mesh.
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var lumps := [[Vector2(1.9, 2.1), Vector3(0.62, 0.3, 0.33)], [Vector2(0.6, 3.6), Vector3(0.45, 0.24, 0.22)],
+		[Vector2(2.4, 3.3), Vector3(0.5, 0.36, 0.22)], [Vector2(1.3, 1.0), Vector3(0.7, 0.33, 0.33)]]
+	for l in lumps:
+		_settle(st, l[0], l[1], ground, rng, 0.3)
+	st.generate_normals()
+	st.generate_tangents()
+	var lmi := MeshInstance3D.new()
+	lmi.name = "Brickwork"
+	lmi.mesh = st.commit()
+	lmi.material_override = brick
+	r.add_child(lmi)
+	var shades := [Color(0.4, 0.17, 0.11), Color(0.47, 0.22, 0.14), Color(0.32, 0.14, 0.1)]
+	var sts: Array = []
+	for c in shades:
+		var s3 := SurfaceTool.new()
+		s3.begin(Mesh.PRIMITIVE_TRIANGLES)
+		sts.append(s3)
+	for n in 70:
+		var at := Vector2(rng.randf_range(0.3, 2.7), rng.randf_range(0.5, 5.2))
+		if n >= 58:
+			# Strays bounced down to the landing, clear of the doorway.
+			at = Vector2(rng.randf_range(0.3, 0.9) if n % 2 == 0 else rng.randf_range(2.1, 2.7), rng.randf_range(5.7, 6.9))
+		var size := Vector3(0.215, 0.065, 0.1025)
+		if rng.randf() < 0.3:
+			size = Vector3(0.215, 0.1025, 0.065)
+		if rng.randf() < 0.25:
+			size.x = rng.randf_range(0.08, 0.15)   # half bats
+		_settle(sts[n % 3], at, size, ground, rng, 0.35)
+	for i in 3:
+		(sts[i] as SurfaceTool).generate_normals()
 		var mi := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(rng.randf_range(0.4, 1.0), rng.randf_range(0.25, 0.6), rng.randf_range(0.3, 0.7))
-		mi.mesh = bm
-		mi.material_override = rubble
-		mi.position = Vector3(rng.randf_range(0.5, 2.5), 1.1 + rng.randf_range(0.0, 1.4), rng.randf_range(0.2, 0.9))
-		mi.rotation = Vector3(rng.randf_range(-0.6, 0.6), rng.randf(), rng.randf_range(-0.6, 0.6))
+		mi.name = "Bricks%d" % i
+		mi.mesh = (sts[i] as SurfaceTool).commit()
+		mi.material_override = Mats.trim(shades[i], 0.9)
 		r.add_child(mi)
-	RoomBuilder.prop(r, "dead_tree_trunk", Vector3(1.5, 1.6, 0.6), 20, 1.0, false)
-	UndercroftPower.emergency_light(r, Vector3(2.86, 2.4, 2.0), -90.0, 0.25, 3.5)
+
+## Sets n's transform so its local z runs from a to b, its local y as near
+## straight up as that allows, rolled `roll` radians about its length; its
+## middle sits `lift` above the line (half its thickness: it rests on it).
+func _lay(n: Node3D, a: Vector3, b: Vector3, lift: float, roll: float) -> void:
+	var fwd := (b - a).normalized()
+	var right := Vector3.UP.cross(fwd).normalized()
+	var up := fwd.cross(right).normalized()
+	var basis := Basis(right, up, fwd).rotated(fwd, roll)
+	n.transform = Transform3D(basis, (a + b) / 2.0 + up * lift)
+
+## A box in n's own frame (solid if `collide`).
+func _block_vis(n: Node3D, center: Vector3, ext: Vector3, mat: Material, collide := false) -> void:
+	RoomBuilder._box(n, center, ext, mat, collide)
+
+## A brick or a lump of brickwork, settled on the ground where it lies: its
+## base on the slope there, turned at random, sunk `sink` of its height.
+func _settle(st: SurfaceTool, at: Vector2, size: Vector3, ground: Callable, rng: RandomNumberGenerator, sink: float) -> void:
+	var e := 0.06
+	var y: float = ground.call(at.x, at.y)
+	var n := Vector3(ground.call(at.x - e, at.y) - ground.call(at.x + e, at.y), 2.0 * e,
+		ground.call(at.x, at.y - e) - ground.call(at.x, at.y + e)).normalized()
+	if not n.is_finite() or n.y < 0.3:
+		n = Vector3.UP
+	var basis := Basis(Quaternion(Vector3.UP, n)) * Basis(Vector3.UP, rng.randf() * TAU)
+	basis = basis * Basis(Vector3.RIGHT, rng.randf_range(-0.12, 0.12))
+	var bm := BoxMesh.new()
+	bm.size = size
+	st.append_from(bm, 0, Transform3D(basis, Vector3(at.x, y, at.y) + n * size.y * (0.5 - sink)))
+
+## A round bar from a to b (a handrail, a bracket).
+func _strut(parent: Node3D, a: Vector3, b: Vector3, radius: float, mat: Material, sides := 8) -> void:
+	var mi := MeshInstance3D.new()
+	var c := CylinderMesh.new()
+	c.top_radius = radius
+	c.bottom_radius = radius
+	c.height = a.distance_to(b)
+	c.radial_segments = sides
+	c.rings = 1
+	mi.mesh = c
+	mi.material_override = mat
+	var y := (b - a).normalized()
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	mi.transform = Transform3D(Basis(x, y, x.cross(y)), (a + b) / 2.0)
+	parent.add_child(mi)
 
 # ------------------------------------------------------------------ the muster room (the Warden)
 
@@ -544,8 +879,11 @@ func _muster_room() -> void:
 	RoomBuilder.prop(r, "Megaphone_01", Vector3(0.45, 1.05, 3.4), 90, 1.0, false)
 	RoomBuilder.prop(r, "vintage_flashlight", Vector3(0.45, 1.5, 3.1), 0, 1.0, false)
 	_picture(r, "res://assets/textures/undercroft/drill_poster.jpg", Vector3(0.14, 1.65, 6.6), Vector2(1.0, 1.4), 90.0, Color(0.1, 0.1, 0.1))
-	_stencil(r, "MUSTER  POINT  B", Vector3(7.0, 3.0, 9.86), 180, 44, Color(0.82, 0.8, 0.7))
-	_stencil(r, "STAFF  ONLY", Vector3(13.86, 2.8, 7.4), -90, 30, Color(0.82, 0.8, 0.7))
+	# Civil defence green for the muster point; red for staff only.
+	Signage.plate(r, Vector3(7.0, 2.95, 9.875), 180, {"size": Vector2(1.2, 0.4), "style": "painted", "lines": ["MUSTER POINT B"],
+		"field": Color(0.07, 0.28, 0.15), "ink": Color(0.88, 0.86, 0.78), "border": 0.012, "wear": 0.5})
+	_enamel(r, ["STAFF ONLY"], Vector3(13.875, 2.75, 7.4), -90, Vector2(0.6, 0.16),
+		{"field": Color(0.55, 0.07, 0.05), "ink": Color(0.9, 0.88, 0.8), "border": 0.005})
 	RoomBuilder.prop(r, "medical_box", Vector3(13.7, 1.3, 8.6), -90, 1.0, false)
 	RoomBuilder.prop(r, "cardboard_box_01", Vector3(12.9, 0, 9.4), 25)
 	RoomBuilder.prop(r, "plastic_crate_01", Vector3(1.0, 0, 9.3), -10)
@@ -590,9 +928,13 @@ func _pump_room() -> void:
 	var pr := PumpRoom.new()
 	pr.name = "PumpRoom"
 	pr.position = PUMP_AT
+	# Its stencils go on the shell's brick.
+	pr.set_meta("wall_mat", r.get_meta("wall_mat"))
 	add_child(pr)
-	_stencil(r, "SUMP  B", Vector3(4.2, 3.3, 0.39), 0, 90, Color(0.82, 0.78, 0.66), 0.0026)
-	_stencil(r, "RIVER  DISTRICT  PUMPING  STATION   -   1974", Vector3(4.2, 2.95, 0.39), 0, 26, Color(0.8, 0.76, 0.62))
+	_stencil(r, ["SUMP B"], Vector3(4.2, 3.32, 0.375), 0, Vector2(1.0, 0.36), Color(0.82, 0.78, 0.66))
+	# The station's cast plate from the 1974 refit.
+	Signage.plate(r, Vector3(4.2, 2.9, 0.375), 0, {"size": Vector2(1.0, 0.24), "style": "cast", "corner": 0.02, "border": 0.006,
+		"lines": ["RIVER DISTRICT PUMPING STATION", ["1974", 0.7]], "field": Color(0.07, 0.12, 0.2), "ink": Color(0.85, 0.82, 0.7)})
 	# The drill card on a rack by the door, the tool chest, the extinguisher,
 	# a crate of stores at the end of the valve gallery.
 	RoomBuilder.prop(r, "worn_metal_rack", Vector3(0.6, 0, 1.45), 90)
@@ -618,7 +960,7 @@ func _pump_room() -> void:
 	RoomBuilder._box(r, Vector3(0.55, 1.0, 0.495), Vector3(0.44, 0.025, 0.22), steel, true)
 	for bx in [0.38, 0.72]:
 		RoomBuilder._box(r, Vector3(bx, 0.93, 0.42), Vector3(0.02, 0.12, 0.07), steel, false)
-	UndercroftKit.label(r, "DRILL  -  SUMP B", Vector3(0.55, 1.2, RoomBuilder.WALL_T + 0.14), 26, Color(0.82, 0.78, 0.66), 0.0, 0.0012)
+	_stencil(r, ["DRILL - SUMP B"], Vector3(0.55, 1.2, RoomBuilder.WALL_T * 1.5), 0, Vector2(0.44, 0.075), Color(0.82, 0.78, 0.66))
 	place_pickup("file:pump_drill", PUMP_AT + Vector3(0.55, 1.02, 0.5), "c2_pump_drill")
 	place_pickup("ammo:shells", PUMP_AT + Vector3(0.85, 0.36, 6.95), "c2_pump_shells")
 	place_zombie("Z_c2_sump", PUMP_AT + PumpRoom.BODY_AT, PumpRoom.BODY_YAW, "possum", false, "mechanic")
@@ -654,16 +996,24 @@ func _engine_hall() -> void:
 	door.position = FLOOD_AT
 	door.rotation_degrees.y = 180.0
 	add_child(door)
-	_stencil(r, "ENGINE  HALL", Vector3(4.5, 4.6, 0.32), 0, 70, Color(0.86, 0.82, 0.7), 0.003)
-	_stencil(r, "No. 2  STANDBY  SET   -   ROTHWELL  &  SONS   1958", Vector3(8.5, 3.9, 0.32), 0, 30, Color(0.8, 0.76, 0.62))
+	# The hall's name stencilled big between the pilasters, the set's plate
+	# beside it.
+	_stencil(r, ["ENGINE HALL"], Vector3(4.8, 4.55, 0.125), 0, Vector2(2.6, 0.55), Color(0.86, 0.82, 0.7))
+	Signage.plate(r, Vector3(8.0, 3.95, 0.125), 0, {"size": Vector2(1.5, 0.34), "style": "painted",
+		"lines": ["No. 2 STANDBY SET", ["ROTHWELL & SONS LTD  -  1958", 0.5]], "field": Color(0.11, 0.19, 0.14),
+		"ink": Color(0.86, 0.83, 0.72), "border": 0.01, "wear": 0.5})
 	# The diesel day tank on the north wall, dry, piped down to the set.
 	var tank := Mats.surface("flood_steel", {"tile_size": 1.2, "grime_amount": 0.7, "tint": Color(0.42, 0.44, 0.34)})
 	var dark := _steel(0.12)
 	UndercroftKit.bar(r, Vector3(9.0, 2.6, 0.95), 0.62, 2.8, tank, "x", 24)
 	for x in [7.9, 10.1]:
 		RoomBuilder._box(r, Vector3(x, 1.4, 0.95), Vector3(0.12, 2.0, 0.9), dark, true)
-	_stencil(r, "DIESEL  DAY  TANK", Vector3(9.0, 2.75, 1.58), 0, 34, Color(0.9, 0.85, 0.3))
-	_stencil(r, "EMPTY", Vector3(9.0, 2.4, 1.58), 0, 40, Color(0.85, 0.2, 0.12))
+	# Stencilled round the tank, and the keeper's chalk under it.
+	for t in [[12.0, ["DIESEL DAY TANK"], Vector2(1.4, 0.2), "stencil", Color(0.9, 0.85, 0.3), tank],
+			[-10.0, ["EMPTY"], Vector2(0.62, 0.2), "chalk", Color(0.88, 0.88, 0.84), null]]:
+		var a := deg_to_rad(t[0])
+		Signage.paint(r, Vector3(9.0, 2.6 + sin(a) * 0.62, 0.95 + cos(a) * 0.62), Vector3(-t[0], 0, 0), {"size": t[2],
+			"kind": t[3], "lines": t[1], "color": t[4], "surface": t[5], "bend": 0.62, "bend_axis": "x", "wear": 0.4})
 	_pipe(r, Vector3(9.0, 1.95, 0.95), 3.2, "z", 0.035, dark)
 	# The switchboard beside it.
 	RoomBuilder.prop(r, "utility_box_02", Vector3(12.6, 0, 0.55), 0)
@@ -682,7 +1032,7 @@ func _engine_hall() -> void:
 			[Vector3(-0.72, 4.75, 0), Vector3(0.08, 3.5, 1.5)], [Vector3(0.72, 4.75, 0), Vector3(0.08, 3.5, 1.5)]]:
 		RoomBuilder._box(chute, s[0], s[1], plate, true)
 	RoomBuilder._box(chute, Vector3(0, 3.0, 0), Vector3(1.66, 0.12, 1.66), dark, false)
-	_stencil(chute, "COAL  DROP", Vector3(0, 3.5, 0.77), 0, 30, Color(0.85, 0.8, 0.6))
+	_stencil(chute, ["COAL DROP"], Vector3(0, 3.5, 0.76), 0, Vector2(0.95, 0.18), Color(0.85, 0.8, 0.6), {"surface": plate})
 	_coal_heap(chute, Vector3(0, 0, 0.3), Vector3(1.6, 0.35, 1.3), false)
 	# A gantry girder across the hall with the chain block that lifted the set.
 	RoomBuilder._box(r, Vector3(8.0, 5.7, 7.0), Vector3(15.6, 0.45, 0.3), _steel(0.18), false)
@@ -705,7 +1055,8 @@ func _engine_hall() -> void:
 	# The tannoy horn the Warden speaks from (the intercom scene).
 	RoomBuilder.prop(r, "Megaphone_01", PA_HORN - r.position, 90, 2.2, false)
 	RoomBuilder._box(r, PA_HORN - r.position + Vector3(-0.12, 0.0, 0), Vector3(0.12, 0.4, 0.3), dark, false)
-	_stencil(r, "FLOOD  DOOR  No. 3   -   DEEP  STACKS", Vector3(7.0, 4.4, 17.86), 180, 34, Color(0.86, 0.82, 0.7))
+	# Beside the flood door, clear of the slab's travel up the guides.
+	_enamel(r, ["DEEP STACKS", ["FLOOD DOOR No. 3", 0.55]], Vector3(3.7, 2.5, 17.875), 180, Vector2(0.9, 0.28))
 	# Lights: battery lamps on the walls until the set runs, then the
 	# high-bay tubes.
 	UndercroftPower.emergency_light(r, Vector3(0.18, 3.6, 2.0), 90.0, 0.55, 8.0)
@@ -897,7 +1248,12 @@ func _fuel_shed(r: Node3D, at: Vector3) -> void:
 	for x in [0.1, 2.5, 4.9]:
 		UndercroftKit.bar(shed, Vector3(x, 1.4, 0.1), 0.06, 2.8, timber, "y")
 	RoomBuilder._box(shed, Vector3(2.5, 2.75, 0.1), Vector3(5.0, 0.14, 0.14), timber, false)
-	_stencil(shed, "FUEL  -  NO  NAKED  LIGHTS", Vector3(2.5, 2.45, 0.2), 0, 30, Color(0.86, 0.78, 0.3))
+	# Its sign hangs under the front beam on two wires, facing the yard.
+	Signage.plate(shed, Vector3(2.5, 2.47, 0.1), 180, {"size": Vector2(1.0, 0.26), "style": "painted", "back": true,
+		"lines": ["FUEL STORE", ["NO NAKED LIGHTS", 0.6]], "field": Color(0.62, 0.08, 0.05), "ink": Color(0.9, 0.87, 0.78),
+		"border": 0.008, "fix": "rivets", "fix_at": [Vector2(-0.43, 0.095), Vector2(0.43, 0.095)], "wear": 0.6, "rust": 0.8})
+	for x in [-0.43, 0.43]:
+		UndercroftKit.bar(shed, Vector3(2.5 + x, 2.625, 0.1), 0.0025, 0.12, _steel(0.25), "y", 4)
 	RoomBuilder.prop(shed, "Barrel_01", Vector3(0.6, 0, 3.8), 0)
 	RoomBuilder.prop(shed, "Barrel_01", Vector3(1.25, 0, 3.95), 30)
 	RoomBuilder.prop(shed, "metal_jerrycan", Vector3(4.3, 0, 3.9), 80)
@@ -933,7 +1289,7 @@ func _deep_stacks() -> void:
 	var bulk := Mats.surface("flood_steel", {"tile_size": 1.2, "grime_amount": 0.8})
 	RoomBuilder._box(r, Vector3(0.16, 1.2, 5.6), Vector3(0.1, 2.2, 1.3), bulk, true)
 	UndercroftKit.bar(r, Vector3(0.24, 1.2, 5.6), 0.22, 0.04, _steel(0.25), "x", 20)
-	_stencil(r, "RECORDS  ANNEX", Vector3(0.14, 2.6, 5.6), 90, 30, Color(0.82, 0.8, 0.7))
+	_enamel(r, ["RECORDS ANNEX"], Vector3(0.125, 2.6, 5.6), 90, Vector2(1.0, 0.22))
 	# Nasri's staff lanyard on the wet floor, and the chalk on the wall.
 	var lan := Node3D.new()
 	lan.name = "Lanyard"
@@ -945,10 +1301,10 @@ func _deep_stacks() -> void:
 	var strap := Mats.trim(Color(0.55, 0.08, 0.06), 0.8)
 	for i in 6:
 		RoomBuilder._box(lan, Vector3(sin(i * 0.9) * 0.08, 0.003, -0.06 - i * 0.05), Vector3(0.012, 0.003, 0.055), strap, false)
-	var chalk := _chalk(r, "THE COUNT\nIS WRONG", CHALK_AT - r.position + Vector3(0, 0.15, 0), -90, 64, 0.0026)
+	var chalk := _chalk(r, ["THE COUNT", "IS WRONG"], CHALK_AT - r.position + Vector3(0, 0.15, 0), -90, Vector2(1.3, 0.56))
 	chalk.name = "Chalk"
-	var marks := _chalk(r, "IIII  IIII  IIII  IIII  IIII  IIII  IIII  IIII  II", CHALK_AT - r.position + Vector3(0, -0.55, 0), -90, 34, 0.0022, Color(0.85, 0.85, 0.8))
-	marks.modulate.a = 0.8
+	Signage.paint(r, CHALK_AT - r.position + Vector3(0, -0.5, 0), -90, {"size": Vector2(1.5, 0.18), "kind": "chalk",
+		"color": Color(0.85, 0.85, 0.8), "wear": 0.35, "strokes": Signage.tally([42], Vector2(1.5, 0.18), 0.12, 9), "stroke_w": 0.008})
 	UndercroftPower.emergency_light(r, Vector3(7.86, 2.8, 2.0), -90.0, 0.3, 5.0)
 	UndercroftPower.work_light(r, Vector3(4.0, 3.86, 2.2), 90.0, 0.6, 7.0)
 	place_pickup("ammo:9mm", Vector3(49.6, 0.1, 13.0), "c2_stacks_ammo")

@@ -112,29 +112,13 @@ func _build_doors() -> void:
 	_blocker = _collider(Vector3(0, DOOR_H / 2.0, -0.2), Vector3(DOOR_W, DOOR_H, 0.12))
 	if arrived:
 		return
-	# A note taped to the right-hand leaf, beside the seam.
-	var note := Label3D.new()
-	note.text = "LIFT DEAD AGAIN.\nVault breaker tripped.\nReset it in the BOILER ROOM,\nthrough the vault, east door.\n            - O.V."
-	note.font = load("res://assets/fonts/CormorantGaramond.ttf")
-	note.font_size = 44
-	note.outline_size = 0
-	note.pixel_size = 0.0011
-	note.modulate = Color(0.12, 0.08, 0.06)
-	note.shaded = true
-	note.position = Vector3(-0.12, 1.45, 0.035)
-	var paper := MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(0.42, 0.3)
-	paper.mesh = q
-	var pm := StandardMaterial3D.new()
-	pm.albedo_color = Color(0.82, 0.78, 0.66)
-	pm.roughness = 0.95
-	paper.material_override = pm
-	paper.position = Vector3(-0.12, 1.45, 0.03)
-	paper.rotation.z = deg_to_rad(-3.0)
-	note.rotation.z = paper.rotation.z
-	_leaves[1].add_child(paper)
-	_leaves[1].add_child(note)
+	# A note taped to the right-hand leaf, beside the seam: a sheet torn from
+	# a pad, in Orrin Vell's hand, laid over the pressed ribs.
+	var note := Signage.plate(_leaves[1], Vector3(-0.12, 1.45, 0.0315), Vector3(0, 0, -3), {"size": Vector2(0.42, 0.3),
+		"style": "card", "font": "hand", "align": "left", "fix": "none", "wear": 0.45, "seed": 7.7,
+		"ink": Color(0.07, 0.08, 0.16), "margin": Vector2(0.03, 0.025),
+		"lines": ["LIFT DEAD AGAIN.", "Vault breaker tripped.", "Reset it in the BOILER ROOM,", "through the vault, east door.", ["- O.V.", 0.9]]})
+	note.name = "Note"
 	for x in [-0.18, 0.18]:
 		var tape := MeshInstance3D.new()
 		var tq := QuadMesh.new()
@@ -144,7 +128,7 @@ func _build_doors() -> void:
 		tm.albedo_color = Color(0.75, 0.7, 0.5, 0.8)
 		tm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		tape.material_override = tm
-		tape.position = Vector3(-0.12 + x, 1.6, 0.033)
+		tape.position = Vector3(-0.12 + x, 1.6, 0.0335)
 		tape.rotation.z = deg_to_rad(randf_range(-20, 20))
 		_leaves[1].add_child(tape)
 
@@ -176,15 +160,11 @@ func _build_front() -> void:
 	_lamp_light.omni_range = 2.6
 	_lamp_light.position = Vector3(0, DOOR_H + 0.15, face + 0.4)
 	add_child(_lamp_light)
-	var sign := Label3D.new()
-	sign.text = "B2  -  UNDERCROFT  SERVICE  LEVEL" if arrived else "STAFF LIFT  -  SERVICE TUNNELS"
-	sign.font_size = 36
-	sign.outline_size = 0
-	sign.pixel_size = 0.0016
-	sign.modulate = Color(0.82, 0.78, 0.64)
-	sign.shaded = true
-	sign.position = Vector3(0, DOOR_H + 0.13, face + 0.035)
-	add_child(sign)
+	# The enamel name strip screwed to the header, under the lamp.
+	Signage.plate(self, Vector3(0, DOOR_H + 0.13, face + 0.03), 0, {"size": Vector2(1.4, 0.085), "style": "enamel",
+		"lines": ["B2 - UNDERCROFT SERVICE LEVEL" if arrived else "STAFF LIFT - SERVICE TUNNELS"],
+		"field": Color(0.07, 0.09, 0.1), "ink": Color(0.84, 0.8, 0.66), "border": 0.004, "fix": "screws",
+		"track": 0.12, "wear": 0.45, "rust": 0.5, "seed": 11.0 if arrived else 12.0})
 	# Call panel on the right: a key card reader with its light, one button.
 	var px := DOOR_W / 2.0 + 0.32
 	RoomBuilder._box(self, Vector3(px, 1.22, face - 0.005), Vector3(0.18, 0.34, 0.05), _steel(0.36), false)
@@ -264,16 +244,22 @@ func _build_car() -> void:
 	# facing out, that's the car's -x side).
 	var bx := -CAR.x + 0.02
 	RoomBuilder._box(self, Vector3(bx, 1.25, z0 - 0.45), Vector3(0.03, 0.42, 0.2), _steel(0.5), false)
-	var floor_lbl := Label3D.new()
-	floor_lbl.text = "G\n\nB2"
-	floor_lbl.font_size = 34
-	floor_lbl.outline_size = 0
-	floor_lbl.pixel_size = 0.0016
-	floor_lbl.modulate = Color(0.1, 0.1, 0.1)
-	floor_lbl.shaded = true
-	floor_lbl.position = Vector3(bx + 0.017, 1.25, z0 - 0.5)
-	floor_lbl.rotation.y = PI / 2
-	add_child(floor_lbl)
+	# Two steel buttons, an engraved label beside each (to your left as you
+	# face the panel, toward the doors).
+	var face_x := bx + 0.015
+	for f in [["G", 1.34], ["B2", 1.16]]:
+		var b := MeshInstance3D.new()
+		var bm := CylinderMesh.new()
+		bm.top_radius = 0.021
+		bm.bottom_radius = 0.024
+		bm.height = 0.012
+		b.mesh = bm
+		b.rotation.z = -PI / 2
+		b.material_override = _steel(0.62)
+		b.position = Vector3(face_x + 0.006, f[1], z0 - 0.75)
+		add_child(b)
+		Signage.plate(self, Vector3(face_x, f[1], z0 - 0.665), 90, {"size": Vector2(0.06, 0.04), "style": "engraved",
+			"lines": [f[0]], "fix": "none", "wear": 0.3})
 	_inner = _area(Vector3(0, 1.1, cz), Vector3(CAR.x * 2 - 0.2, 1.7, dz - 0.1))
 
 # ------------------------------------------------------------------ state

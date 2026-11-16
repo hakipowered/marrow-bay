@@ -87,8 +87,10 @@ func _build() -> void:
 	band.material_override = stripes
 	band.position = Vector3(0, 0.2, 0.131)
 	_slab.add_child(band)
-	UndercroftKit.label(_slab, "FLOOD DOOR  No. 3", Vector3(0, 2.6, 0.131), 64, Color(0.82, 0.78, 0.66), 0.0, 0.0022)
-	UndercroftKit.label(_slab, "KEEP  CLEAR  WHEN  ALARM  SOUNDS", Vector3(0, 2.3, 0.131), 34, Color(0.75, 0.2, 0.12), 0.0, 0.0022)
+	# Stencilled on the slab's top panels, either side of the centre rib.
+	for side in [[-1.0, ["FLOOD DOOR", "No. 3"], Color(0.84, 0.8, 0.68)], [1.0, ["KEEP CLEAR", "WHEN ALARM SOUNDS"], Color(0.72, 0.16, 0.08)]]:
+		Signage.paint(_slab, Vector3(side[0] * 0.875, 2.425, 0.08), 0, {"size": Vector2(1.45, 0.5), "kind": "stencil",
+			"lines": side[1], "color": side[2], "surface": steel, "wear": 0.55})
 	# The beacon over it, dead until there's power.
 	_beacon = Node3D.new()
 	_beacon.position = Vector3(W / 2 - 0.3, H + 0.62, 0.3)
@@ -131,17 +133,14 @@ func _build_box() -> void:
 	var steel := Mats.trim(Color(0.3, 0.29, 0.28), 0.4, 0.85)
 	var chrome := Mats.trim(Color(0.62, 0.62, 0.6), 0.22, 1.0)
 	var black := Mats.trim(Color(0.03, 0.03, 0.03), 0.45, 0.1)
-	var enamel := Mats.trim(Color(0.84, 0.8, 0.68), 0.45)
-	var ink := Color(0.1, 0.08, 0.06)
 	# Backplate, case, the door's rim and its four screws.
 	RoomBuilder._box(box, Vector3(0, -0.05, -0.08), Vector3(0.5, 0.8, 0.02), steel, false)
 	RoomBuilder._box(box, Vector3(0, 0, 0), Vector3(0.42, 0.62, 0.16), paint, true)
 	RoomBuilder._box(box, Vector3(0, 0, 0.081), Vector3(0.39, 0.59, 0.004), paint, false)
 	for c in [Vector2(-0.17, 0.27), Vector2(0.17, 0.27), Vector2(-0.17, -0.27), Vector2(0.17, -0.27)]:
 		UndercroftKit.bar(box, Vector3(c.x, c.y, 0.085), 0.008, 0.006, chrome, "z", 8)
-	# Plate.
-	RoomBuilder._box(box, Vector3(0, 0.23, 0.085), Vector3(0.32, 0.08, 0.004), enamel, false)
-	UndercroftKit.label(box, "FLOOD DOOR No.3\nMOTOR CONTROL", Vector3(0, 0.23, 0.088), 22, ink, 0.0, 0.00085)
+	# Engraved panel labels, screwed to the door.
+	_legend(box, ["FLOOD DOOR No. 3", "MOTOR CONTROL"], Vector3(0, 0.23, 0.083), Vector2(0.32, 0.08))
 	# Lamps in chrome bezels.
 	var names := {"supply": ["SUPPLY", Color(1.0, 0.62, 0.18)], "locked": ["LOCKED OUT", Color(1.0, 0.1, 0.05)], "raise": ["RAISING", Color(0.3, 1.0, 0.35)]}
 	var i := 0
@@ -170,7 +169,7 @@ func _build_box() -> void:
 		lens.material_override = mat
 		lens.position = Vector3(x, 0.12, 0.088)
 		box.add_child(lens)
-		UndercroftKit.label(box, names[k][0], Vector3(x, 0.083, 0.087), 13, Color(0.86, 0.84, 0.76), 0.0, 0.00085)
+		_legend(box, [names[k][0]], Vector3(x, 0.075, 0.083), Vector2(0.1, 0.02))
 		var glow := OmniLight3D.new()
 		glow.light_color = names[k][1]
 		glow.omni_range = 0.8
@@ -184,10 +183,8 @@ func _build_box() -> void:
 	UndercroftKit.bar(box, Vector3(-0.05, -0.04, 0.088), 0.036, 0.016, chrome, "z", 20)
 	UndercroftKit.bar(box, Vector3(-0.05, -0.04, 0.097), 0.028, 0.004, black, "z", 20)
 	RoomBuilder._box(box, Vector3(-0.05, -0.04, 0.1), Vector3(0.006, 0.026, 0.002), Mats.trim(Color(0.0, 0.0, 0.0), 0.9), false)
-	UndercroftKit.label(box, "OFF", Vector3(-0.1, 0.0, 0.087), 13, Color(0.86, 0.84, 0.76), 0.0, 0.00085)
-	UndercroftKit.label(box, "ON", Vector3(-0.005, -0.04, 0.087), 13, Color(0.86, 0.84, 0.76), 0.0, 0.00085)
-	RoomBuilder._box(box, Vector3(-0.05, -0.105, 0.085), Vector3(0.15, 0.03, 0.003), Mats.trim(Color(0.6, 0.1, 0.06), 0.5), false)
-	UndercroftKit.label(box, "WARDEN'S KEY ONLY", Vector3(-0.05, -0.105, 0.088), 11, Color(0.92, 0.88, 0.78), 0.0, 0.00085)
+	_legend(box, ["OFF        ON"], Vector3(-0.05, 0.012, 0.083), Vector2(0.11, 0.018))
+	_legend(box, ["WARDEN'S KEY ONLY"], Vector3(-0.05, -0.105, 0.083), Vector2(0.15, 0.028), Color(0.6, 0.08, 0.05))
 	# The Warden's key, once it's in: an iron bow and its brass tag.
 	_key_turn = Node3D.new()
 	_key_turn.position = Vector3(-0.05, -0.04, 0.1)
@@ -214,7 +211,7 @@ func _build_box() -> void:
 	for b in [[0.09, -0.04, Color(0.04, 0.04, 0.04), "RAISE"], [0.09, -0.17, Color(0.6, 0.05, 0.03), "STOP"]]:
 		UndercroftKit.bar(box, Vector3(b[0], b[1], 0.087), 0.024, 0.012, chrome, "z", 16)
 		UndercroftKit.bar(box, Vector3(b[0], b[1], 0.1), 0.02 if b[3] == "RAISE" else 0.03, 0.02, Mats.trim(b[2], 0.4, 0.1), "z", 16)
-		UndercroftKit.label(box, b[3], Vector3(b[0], b[1] - 0.045, 0.087), 12, Color(0.86, 0.84, 0.76), 0.0, 0.00085)
+		_legend(box, [b[3]], Vector3(b[0], b[1] - 0.045, 0.083), Vector2(0.07, 0.018))
 	# Conduit down the wall into the floor, and a gland on top up to the
 	# motor.
 	UndercroftKit.bar(box, Vector3(0.12, -0.31 - 0.47, -0.02), 0.018, 0.94, steel, "y", 10)
@@ -343,3 +340,8 @@ func _process(delta: float) -> void:
 		_beacon_light.light_energy = 3.0
 	elif _beacon_light.light_energy > 0.0:
 		_beacon_light.light_energy = move_toward(_beacon_light.light_energy, 0.0, delta * 2.0)
+
+## An engraved laminate label (black, or `field`, cut through to white).
+func _legend(parent: Node3D, lines: Array, at: Vector3, size: Vector2, field := Color(0.03, 0.03, 0.03)) -> void:
+	Signage.plate(parent, at, 0, {"size": size, "style": "engraved", "lines": lines, "field": field,
+		"core": Color(0.9, 0.88, 0.82), "wear": 0.35, "dirt": 0.5})

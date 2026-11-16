@@ -603,15 +603,10 @@ func _staff_stair() -> void:
 	})
 	var d := place_door(Vector3(-26.0, 0, -1.2), 90, Door.Kind.BARRED, "wood_panel", 1.1, 2.2, "staff_stair")
 	d.add_to_group("staff_stair_door")
-	var sign := Label3D.new()
-	sign.text = "STAFF STAIR\nSTACKS · NO PUBLIC ACCESS"
-	sign.font_size = 26
-	sign.pixel_size = 0.0022
-	sign.modulate = Color(0.85, 0.82, 0.72)
-	sign.outline_size = 0
-	sign.position = Vector3(-25.8, 2.42, -1.2)
-	sign.rotation_degrees.y = 90
-	add_child(sign)
+	# A black enamel plate over the door, on the reading room's side.
+	Signage.plate(self, Vector3(-25.875, 2.5, -1.2), 90, {"size": Vector2(0.95, 0.24), "style": "enamel",
+		"lines": ["STAFF STAIR", ["STACKS - NO PUBLIC ACCESS", 0.5]], "field": Color(0.06, 0.07, 0.07),
+		"ink": Color(0.85, 0.82, 0.72), "border": 0.006, "track": 0.06, "wear": 0.5, "rust": 0.45, "seed": 21.0})
 
 # ---------------- Office (safe room) ----------------
 func _office_safe_room() -> void:
