@@ -380,14 +380,35 @@ func take_hit(dmg: float, _weapon_id: String, zone: String, _dir: Vector3) -> vo
 		_stagger = 4.0
 		_kneel.rpc()
 
+var _kneel_tw: Tween
+
 @rpc("authority", "reliable", "call_local")
 func _kneel() -> void:
 	Sfx.play_at("stalker_kneel", global_position, "", 4.0, 14.0)
 	_one_shot("hit", 4.0)
-	var t := create_tween()
-	t.tween_property(_model, "position:y", -0.5, 0.4)
-	t.tween_interval(3.4)
-	t.tween_property(_model, "position:y", 0.0, 0.6)
+	# Down on his knee he's no wall: a survivor he backed into a corner (the
+	# fuel shed's front corner, against its gas bottle, left no way past his
+	# shoulders) can get out past him. He's solid again as he rises.
+	_pass_survivors(true)
+	if _kneel_tw:
+		_kneel_tw.kill()
+	_kneel_tw = create_tween()
+	_kneel_tw.tween_property(_model, "position:y", -0.5, 0.4)
+	_kneel_tw.tween_interval(3.4)
+	_kneel_tw.tween_callback(_pass_survivors.bind(false))
+	_kneel_tw.tween_property(_model, "position:y", 0.0, 0.6)
+
+## Survivors walk through him (on), or bump into him again (off). Both
+## bodies get the exception: each one's own move checks its own list.
+func _pass_survivors(on: bool) -> void:
+	for b in get_collision_exceptions():
+		remove_collision_exception_with(b)
+	for p in get_tree().get_nodes_in_group("players"):
+		if on:
+			add_collision_exception_with(p)
+			p.add_collision_exception_with(self)
+		else:
+			p.remove_collision_exception_with(self)
 
 func hear_noise(_pos: Vector3) -> void:
 	pass
