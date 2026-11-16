@@ -7,8 +7,20 @@ extends MultiplayerPeerExtension
 ##   client -> relay : [u32 target_peer][u8 channel][u8 mode] payload  (target 0 = everyone else)
 ##   relay -> client : [u32 from_peer ][u8 channel][u8 mode] payload
 ## Control messages are JSON text frames: welcome / peer_joined / peer_left / error.
+##
+## When the connection ends, relay_closed says why, once, as one of:
+##   no_room      the relay has no game open with this code (a joiner)
+##   room_full    that game already has two players
+##   code_taken   another host already has this code (a host)
+##   host_left    the host closed their game
+##   unreachable  the relay never answered (no internet, DNS, blocked)
+##   lost         the connection dropped after the relay had let us in
+## Not emitted when this side closes on purpose (Net.close()).
 
-signal relay_error(message: String)
+signal relay_closed(kind: String)
+
+## Why the connection ended (see relay_closed), "" while it's still open.
+var close_kind := ""
 
 var _ws := WebSocketPeer.new()
 var _status := MultiplayerPeer.CONNECTION_DISCONNECTED
@@ -19,6 +31,7 @@ var _mode := MultiplayerPeer.TRANSFER_MODE_RELIABLE
 var _refuse := false
 var _incoming: Array = []   # [{from, channel, mode, data}]
 var _peers: Dictionary = {}
+var _welcomed := false
 
 func open(url: String) -> Error:
 	_ws.inbound_buffer_size = 1 << 20
@@ -29,16 +42,13 @@ func open(url: String) -> Error:
 	return err
 
 func _poll() -> void:
-	_ws.poll()
-	var state := _ws.get_ready_state()
-	if state == WebSocketPeer.STATE_CLOSED:
-		if _status != MultiplayerPeer.CONNECTION_DISCONNECTED:
-			for id in _peers.keys():
-				peer_disconnected.emit(id)
-			_peers.clear()
-			_status = MultiplayerPeer.CONNECTION_DISCONNECTED
+	if close_kind != "":
 		return
-	while _ws.get_available_packet_count() > 0:
+	_ws.poll()
+	# Read what arrived before looking at the state: the relay's "No game
+	# with that code" comes in the same moment as it closes the socket, and
+	# skipping it is how a wrong code used to show up as "Relay timed out".
+	while close_kind == "" and _ws.get_available_packet_count() > 0:
 		var pkt := _ws.get_packet()
 		if _ws.was_string_packet():
 			_handle_control(pkt.get_string_from_utf8())
@@ -50,6 +60,42 @@ func _poll() -> void:
 				"mode": pkt[5],
 				"data": pkt.slice(6),
 			})
+	if close_kind == "" and _ws.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+		_finish(_why_closed())
+
+## The relay closes a refused socket with its reason ("No game with that
+## code"), and the joiner's socket with "Host left" when the host goes.
+func _why_closed() -> String:
+	var kind := kind_for(_ws.get_close_reason())
+	if kind != "":
+		return kind
+	return "lost" if _welcomed else "unreachable"
+
+## The relay's words (worker.js / local_relay.js) as a relay_closed kind.
+static func kind_for(message: String) -> String:
+	var m := message.to_lower()
+	if m.contains("no game"):
+		return "no_room"
+	if m.contains("full"):
+		return "room_full"
+	if m.contains("already in use"):
+		return "code_taken"
+	if m.contains("host left"):
+		return "host_left"
+	return ""
+
+func _finish(kind: String) -> void:
+	if close_kind != "":
+		return
+	close_kind = kind
+	for id in _peers.keys():
+		peer_disconnected.emit(id)
+	_peers.clear()
+	_incoming.clear()
+	_status = MultiplayerPeer.CONNECTION_DISCONNECTED
+	if _ws.get_ready_state() != WebSocketPeer.STATE_CLOSED:
+		_ws.close()
+	relay_closed.emit(kind)
 
 func _handle_control(text: String) -> void:
 	var msg = JSON.parse_string(text)
@@ -57,6 +103,7 @@ func _handle_control(text: String) -> void:
 		return
 	match msg.get("type", ""):
 		"welcome":
+			_welcomed = true
 			_unique_id = int(msg["id"])
 			_status = MultiplayerPeer.CONNECTION_CONNECTED
 			for id in msg.get("peers", []):
@@ -73,8 +120,8 @@ func _handle_control(text: String) -> void:
 			if _peers.erase(id):
 				peer_disconnected.emit(id)
 		"error":
-			relay_error.emit(str(msg.get("message", "relay error")))
-			_close()
+			var kind := kind_for(str(msg.get("message", "")))
+			_finish(kind if kind != "" else ("lost" if _welcomed else "unreachable"))
 
 func _get_available_packet_count() -> int:
 	return _incoming.size()
@@ -123,6 +170,8 @@ func _disconnect_peer(_peer: int, _force: bool) -> void:
 	pass  # the relay owns connections; a player leaves by closing.
 
 func _close() -> void:
+	if close_kind == "":
+		close_kind = "closed"   # on purpose: nothing to tell the player
 	_ws.close()
 	_status = MultiplayerPeer.CONNECTION_DISCONNECTED
 	_incoming.clear()

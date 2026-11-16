@@ -5,6 +5,7 @@ extends Control
 var _panel: VBoxContainer
 var _status: Label
 var _code_edit: LineEdit
+var _room_title: Label
 var _char := "zegan"
 var _custom: Dictionary = {}
 var _sliders := {}
@@ -90,7 +91,8 @@ func _ready() -> void:
 	_custom = GameState.look(_char)
 	Net.session_ready.connect(_on_session_ready)
 	Net.partner_joined.connect(_on_partner_joined)
-	Net.session_failed.connect(func(r): _set_status("Connection problem: " + r))
+	Net.session_failed.connect(_set_problem)
+	Net.room_code_changed.connect(_on_room_code_changed)
 	_home()
 	WebPlatform.note("menu", true)
 	_check_invite_link()
@@ -208,6 +210,15 @@ func _btn(text: String, cb: Callable) -> Button:
 func _set_status(t: String) -> void:
 	if is_instance_valid(_status):
 		_status.text = t
+		_status.remove_theme_color_override("font_color")
+		WebPlatform.note("status", t)
+
+## Something went wrong: Net's message says what, in full, in red.
+func _set_problem(t: String) -> void:
+	if is_instance_valid(_status):
+		_status.text = t
+		_status.add_theme_color_override("font_color", Color(1.0, 0.5, 0.42))
+		WebPlatform.note("status", t)
 
 func _home() -> void:
 	_clear()
@@ -402,43 +413,81 @@ func _go(next: String) -> void:
 func _lobby_host(code: String) -> void:
 	WebPlatform.note("room", code)
 	_clear()
-	_title("ROOM %s" % code, 72)
+	_room_title = _title("ROOM %s" % Net.pretty_code(code), 72)
 	var diff := Label.new()
 	diff.text = "Difficulty: %s" % GameState.difficulty_name()
 	diff.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	diff.add_theme_color_override("font_color", Color(0.75, 0.7, 0.64))
 	_panel.add_child(diff)
 	_status = Label.new()
-	_status.text = "Send this code or the invite link to your friend.\nWaiting for them to join..."
+	# Online, the room is only open once the relay has said so (_on_session_ready).
+	var open_now: bool = code == "LAN" or multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+	_status.text = LOBBY_WAITING if open_now else "Opening the room..."
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_panel.add_child(_status)
 	_btn("Share Invite Link", func():
-		var msg := "Join my RaGoon City game: %s  (or enter code %s)" % [Net.invite_link(), code]
+		var shown := code if code == "LAN" else Net.pretty_code(Net.room_code)
+		var msg := "Join my RaGoon City game: %s  (or enter code %s)" % [Net.invite_link(), shown]
 		DisplayServer.clipboard_set(msg)
 		if OS.has_feature("android"):
 			OS.shell_open("https://wa.me/?text=" + msg.uri_encode())
 		elif WebPlatform.share(msg):
 			pass
-		_set_status("Invite copied. Waiting for your friend..."))
+		# Don't cover up "Opening the room..." or a problem with the relay.
+		if code == "LAN" or multiplayer.multiplayer_peer is RelayPeer and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+			_set_status("Invite copied. Waiting for your friend..."))
 	_btn("Cancel", func(): Net.close(); _home())
+
+const LOBBY_WAITING := "Send this code or the invite link to your friend.\nWaiting for them to join..."
+
+## The relay gave the room a new code because the first was taken.
+func _on_room_code_changed(code: String) -> void:
+	WebPlatform.note("room", code)
+	if is_instance_valid(_room_title):
+		_room_title.text = "ROOM %s" % Net.pretty_code(code)
 
 func _join_menu(prefill := "") -> void:
 	_clear()
 	_title("JOIN A FRIEND", 64)
 	_code_edit = LineEdit.new()
 	_code_edit.placeholder_text = "ROOM CODE"
-	_code_edit.text = prefill
+	_code_edit.text = Net.pretty_code(prefill)
 	_code_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_code_edit.custom_minimum_size = Vector2(0, 120)
+	# Codes are numbers: the phone shows its number pad. Anything typed on a
+	# real keyboard (an older letter code) comes out in capitals.
+	_code_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	_code_edit.text_changed.connect(func(t: String):
+		var up := t.to_upper()
+		if up != t:
+			var caret := _code_edit.caret_column
+			_code_edit.text = up
+			_code_edit.caret_column = caret)
+	_code_edit.text_submitted.connect(func(_t): _try_join())
 	_panel.add_child(_code_edit)
-	_btn("Paste Invite", func(): _code_edit.text = Net.parse_code(await WebPlatform.read_clipboard(self)))
-	_btn("Join", func():
-		Net.join_online(_code_edit.text, _char)
-		_set_status("Connecting..."))
+	_btn("Paste Invite", func():
+		var code := Net.parse_code(await WebPlatform.read_clipboard(self))
+		_code_edit.text = Net.pretty_code(code)
+		if code == "":
+			_set_problem("There's no room code to paste. Copy your friend's invite message first.")
+		else:
+			_set_status(""))
+	_btn("Join", _try_join)
 	_status = Label.new()
+	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_panel.add_child(_status)
-	_btn("Back", _home)
+	_btn("Back", func(): Net.close(); _home())
+
+## Join with what's in the box. A code that can't be right is caught by
+## Net.join_online and explained without asking the relay.
+func _try_join() -> void:
+	var code := Net.parse_code(_code_edit.text)
+	if Net.is_valid_code(code):
+		_code_edit.text = Net.pretty_code(code)
+		_set_status("Joining room %s..." % Net.pretty_code(code))
+	Net.join_online(code, _char)
 
 func _lan_menu() -> void:
 	_clear()
@@ -474,6 +523,9 @@ func _on_session_ready() -> void:
 	elif not multiplayer.is_server():
 		WebPlatform.note("connected", true)
 		_set_status("Connected. Waiting for host to start...")
+	elif is_instance_valid(_room_title):
+		WebPlatform.note("room_open", true)
+		_set_status(LOBBY_WAITING)
 
 func _on_partner_joined(_id: int) -> void:
 	if not multiplayer.is_server():
