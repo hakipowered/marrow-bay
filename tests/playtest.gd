@@ -765,7 +765,10 @@ var _skirt_side := 0.0
 
 func _skirt_tallyman(dir: Vector3) -> Vector3:
 	for st in get_nodes_in_group("stalker"):
-		if not st.active:
+		# On his knee he's no obstacle (Stalker._kneel lets survivors walk
+		# through him until he starts to rise): straight on past him, as a
+		# player would. Skirting him there had her dithering beside him.
+		if not st.active or st._stagger > 0.4:
 			continue
 		var off: Vector3 = st.global_position - p.global_position
 		off.y = 0.0
@@ -1088,11 +1091,16 @@ func _monitor() -> void:
 	if p._hit_stun > 0.2 and _prev_stun <= 0.0:
 		var back: Vector3 = p.body.global_transform.basis.z
 		var wall := not _los(p.global_position + Vector3.UP, p.global_position + Vector3.UP + back * 0.8, [p.get_rid()])
-		_hits.append([sim_t, wall])
+		_hits.append([sim_t, wall, Time.get_ticks_msec()])
 	_prev_stun = p._hit_stun
-	while not _hits.is_empty() and sim_t - _hits[0][0] > 5.0:
+	# The rule (Zombie.GRACE_MS, 1.3 s between blows) runs on the game's wall
+	# clock, so the window is 5 s on both clocks: on a busy machine more
+	# blows fit in 5 s of game time. The rule allows 4 in 3.9 s; 5 means a
+	# hole in it.
+	var now_ms := Time.get_ticks_msec()
+	while not _hits.is_empty() and (sim_t - _hits[0][0] > 5.0 or now_ms - int(_hits[0][2]) > 5000):
 		_hits.pop_front()
-	if _hits.size() >= 4:
+	if _hits.size() >= 5:
 		var walled := 0
 		for h in _hits:
 			walled += int(h[1])
