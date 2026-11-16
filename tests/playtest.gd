@@ -99,6 +99,7 @@ var _seen_audio := {}
 var _voice_starts: Array = []   # [time, id]
 var _music_log := {}            # track -> seconds while fighting ordinary infected
 var _fight_kind := ""
+var _doing := ""   # what the route is doing (PT_DEBUG on a stuck report)
 var _kills := {}
 var _damage_taken := 0.0
 var _shots_fired := 0
@@ -279,9 +280,11 @@ func _threat(radius := 7.0) -> Node:
 ## in front of it; from there she walks straight on through the doorway.
 func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 	await _recover()
+	_doing = "go_to %s%s" % [tag, _v(target)]
 	var end := sim_t + timeout
 	var path := _path(target)
 	var i := 0
+	_snag_at = Vector3.INF
 	while sim_t < end:
 		if p.downed:
 			return false
@@ -291,12 +294,14 @@ func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 			await _fend_tallyman()
 			path = _path(target)
 			i = 0
+			_snag_at = Vector3.INF
 			continue
 		var z := _threat()
 		if z and not _busy_fighting:
 			await fight(z)
 			path = _path(target)
 			i = 0
+			_snag_at = Vector3.INF
 			continue
 		if i >= path.size():
 			break
@@ -304,22 +309,82 @@ func go_to(target: Vector3, timeout := 40.0, run := true, tag := "") -> bool:
 		to.y = 0.0
 		if to.length() < (0.35 if i < path.size() - 1 else 0.45):
 			i += 1
-			if i < path.size() and i == path.size() - 1 and path.size() >= 2:
-				# Straight-on leg (through a doorway): re-path once past it.
-				pass
+			continue
+		# Snagged on a corner (a crate, a shed post, a jerrycan): a player
+		# eases back and round it rather than pushing on. Then path again.
+		if _snagged():
+			await _ease_round(to)
+			path = _path(target)
+			i = 0
 			continue
 		_steer(_skirt_tallyman(to.normalized()), run)
 		await physics_frame
 	_stop()
+	_doing += " (done)"
 	var off := Vector2(p.global_position.x - target.x, p.global_position.z - target.z).length()
 	if off > 1.2:
 		_bug("route", "couldn't walk to %s%s: stopped at %s" % [tag, _v(target), _v(p.global_position)], "route:" + tag)
 		return false
 	return true
 
+## Snagged: she has been pushing on for 0.6 s and is still within a
+## quarter metre of where she was (sliding to and fro along a round prop
+## counts too). Walks reset it with _snag_at = Vector3.INF.
+var _snag_at := Vector3.INF
+var _snag_t := 0.0
+func _snagged() -> bool:
+	if _snag_at == Vector3.INF or p.global_position.distance_to(_snag_at) > 0.25:
+		_snag_at = p.global_position
+		_snag_t = sim_t
+		return false
+	return sim_t - _snag_t > 0.6
+
+## Off whatever she's snagged on (or wedged between: a gas bottle and him
+## on his knee): half a second the way she has most room, leaning toward
+## the way she wants to go.
+func _ease_round(pref: Vector3) -> void:
+	var dir := _free_dir(pref)
+	for f in 30:
+		_steer(dir, false)
+		await physics_frame
+	_snag_at = Vector3.INF
+
+## Of 16 directions round her, the one with most room to walk (a body her
+## size swept a metre, infected and him included), leaning toward `pref`.
+func _free_dir(pref: Vector3) -> Vector3:
+	pref.y = 0.0
+	pref = pref.normalized()
+	var cap := CapsuleShape3D.new()
+	cap.height = 1.4
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = cap
+	q.collision_mask = p.collision_mask
+	q.exclude = [p.get_rid()]
+	q.transform = Transform3D(Basis(), p.global_position + Vector3.UP * 0.8)
+	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	# Thinner than her (0.32): pressed against him (0.42) her own size
+	# overlaps him at the start, and a cast that starts overlapping reads
+	# every way as clear.
+	for r in [0.2, 0.12, 0.06]:
+		cap.radius = r
+		if space.intersect_shape(q, 1).is_empty():
+			break
+	var best := pref
+	var best_score := -INF
+	for k in 16:
+		var d := Vector3.FORWARD.rotated(Vector3.UP, k * TAU / 16.0)
+		q.motion = d
+		var room: float = space.cast_motion(q)[0]
+		var score := room + 0.4 * d.dot(pref)
+		if score > best_score:
+			best_score = score
+			best = d
+	return best
+
 ## Through a doorway: walk to the front, then straight on to the back,
 ## stepping around anything in the way (a lamp post, a zombie).
 func cross(front: Vector3, back: Vector3, tag := "") -> bool:
+	_doing = "cross " + tag
 	await go_to(front, 40.0, true, tag + " (front) ")
 	await _recover()
 	if OS.has_environment("PT_DEBUG"):
@@ -396,6 +461,16 @@ func _recover() -> void:
 	CHEATS.set_cheat("god_mode", true)
 	if CUTS.active:
 		await _wait_cutscene_end(2.0)
+
+## Has she died since the death count was `n`? Waits out her going down
+## and presses Continue first. The checkpoint can take back what she was
+## carrying, so whoever asks starts that step over.
+func _died_since(n: int) -> bool:
+	var end := sim_t + 15.0
+	while sim_t < end and is_instance_valid(p) and p.downed and not p.dead:
+		await physics_frame
+	await _recover()
+	return _deaths != n
 
 ## Puts her somewhere by hand (after a logged failure), so one stuck spot
 ## doesn't hide every bug past it.
@@ -506,12 +581,21 @@ func _stand_spot(stand: Vector3, dir: Vector3) -> Vector3:
 	q.shape = shape
 	q.collision_mask = 1
 	q.exclude = [p.get_rid()]
-	for r in [0.7, 0.9, 1.1, 1.3]:
-		for k in [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8]:
-			var c: Vector3 = stand + dir.rotated(Vector3.UP, k * TAU / 16.0) * r
-			q.transform = Transform3D(Basis(), c + Vector3.UP * 0.83)
-			if space.intersect_shape(q, 1).is_empty():
-				return c
+	# First a spot on the navmesh (room to walk away again: a gap that only
+	# just takes her, between a crate and a shed wall, has none), then any
+	# spot she fits.
+	var map: RID = p.get_world_3d().navigation_map
+	for need_nav in [true, false]:
+		for r in [0.7, 0.9, 1.1, 1.3]:
+			for k in [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7, 8]:
+				var c: Vector3 = stand + dir.rotated(Vector3.UP, k * TAU / 16.0) * r
+				if need_nav:
+					var on: Vector3 = NavigationServer3D.map_get_closest_point(map, c)
+					if Vector2(on.x - c.x, on.z - c.z).length() > 0.15 or absf(on.y - c.y) > 0.4:
+						continue
+				q.transform = Transform3D(Basis(), c + Vector3.UP * 0.83)
+				if space.intersect_shape(q, 1).is_empty():
+					return c
 	return stand + dir * 0.7
 
 func pick_up_node(node: Node) -> bool:
@@ -523,6 +607,12 @@ func pick_up_node(node: Node) -> bool:
 		var pos: Vector3 = node.global_position
 		var stand := pos
 		stand.y = p.global_position.y
+		# Lying on another level from hers (the pump room's walkway over the
+		# sump): stand on the floor it lies on, not under it.
+		var floor_at: Vector3 = NavigationServer3D.map_get_closest_point(p.get_world_3d().navigation_map, pos)
+		# (A table top or a desk with navmesh on it is under 1.2 m up.)
+		if absf(floor_at.y - stand.y) > 1.2 and Vector2(floor_at.x - pos.x, floor_at.z - pos.z).length() < 0.6 and pos.y - floor_at.y > -0.2 and pos.y - floor_at.y < 1.5:
+			stand.y = floor_at.y
 		var from: Vector3 = (p.global_position - stand) * Vector3(1, 0, 1)
 		if from.length() < 0.1:
 			from = Vector3.BACK
@@ -553,6 +643,11 @@ func pick_up_node(node: Node) -> bool:
 		p.interact()
 		await _wait(0.6)
 		if target != null and is_instance_valid(target) and not target._taken:
+			if before != JSON.stringify(p.inventory.to_dict()):
+				# Her stacks took what fitted and the rest stays on the floor
+				# (her own copy keeps what's left): the bag's full of it now.
+				_note("took what fitted of '%s'; the rest stays (bag full of it)" % prompt)
+				return false
 			_bug("pickups", "pressed INTERACT on '%s' and nothing was taken" % prompt)
 			continue
 		if p._prompt_text == prompt and is_instance_valid(p._focus) and p._focus == target:
@@ -591,6 +686,19 @@ func _line_of_fire(z: Node, head: bool) -> bool:
 	return hit.collider is Area3D and hit.collider.get_meta("enemy", null) == z
 
 ## What a shot at `z` would hit first (for the "no clear shot" reports).
+## The other infected a shot at z would hit first, if any.
+func _blocker(z: Node, head: bool) -> Node:
+	var q := PhysicsRayQueryParameters3D.create(p.camera.global_position, _aim_point(z, head), 1 | 8, [p.get_rid()])
+	q.collide_with_areas = true
+	var hit: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return null
+	var c: Object = hit.collider
+	var who: Variant = c.get_meta("enemy", null) if c is Area3D else c
+	if who is Node and is_instance_valid(who) and who != z and who.is_in_group("zombies") and not who.is_in_group("boss") and who.state != ZS.DEAD:
+		return who
+	return null
+
 func _in_the_way(z: Node) -> String:
 	var q := PhysicsRayQueryParameters3D.create(p.camera.global_position, _aim_point(z, false), 1 | 8, [p.get_rid()])
 	q.collide_with_areas = true
@@ -685,6 +793,7 @@ func _fend_tallyman() -> void:
 	if st == null or _fending or p.downed:
 		return
 	_fending = true
+	_doing = "fend"
 	var use := _best_gun()
 	if use != "" and use != "knife" and p.inventory.equipped != use:
 		p.equip(use)
@@ -707,6 +816,7 @@ func _fend_tallyman() -> void:
 	# Down on his knee: out of his reach first (he's up and swinging again
 	# in four seconds), then on her way past him.
 	var clear_end := sim_t + 1.0
+	_snag_at = Vector3.INF
 	while sim_t < clear_end and is_instance_valid(st) and st._stagger > 0.0 and not p.downed:
 		var away: Vector3 = p.global_position - st.global_position
 		away.y = 0.0
@@ -714,17 +824,24 @@ func _fend_tallyman() -> void:
 			break
 		p.aiming = false
 		p.fire_held = false
-		_steer(_skirt_tallyman(away.normalized()), true)
+		var dir := _skirt_tallyman(away.normalized())
+		if _snagged():
+			# Backed into something (a gas bottle, a crate) with him on his
+			# knee in front: out along it, not on into it.
+			await _ease_round(dir)
+			continue
+		_steer(dir, true)
 		await physics_frame
 	_stop()
 	_fending = false
+	_doing += " (done)"
 	_tally_fends += 1
 	if is_instance_valid(st) and st._stagger > 0.0:
 		_tally_knees += 1
 	_tally_time += sim_t - t0
 	_tally_dmg += maxf(hp0 - p.hp, 0.0)
 
-func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
+func fight(z: Node, weapon := "", max_t := 30.0, report := true) -> bool:
 	if _busy_fighting or not is_instance_valid(z):
 		return false
 	if z.is_in_group("boss"):
@@ -740,6 +857,7 @@ func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 	var shot_taken := false
 	var last_hp: float = z.hp
 	var progress_t := sim_t
+	var blocked := 0.0
 	while sim_t < end and is_instance_valid(z) and z.state != ZS.DEAD and not p.downed:
 		if _tallyman_close(5.0):
 			await _fend_tallyman()
@@ -753,6 +871,20 @@ func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 		var head: bool = kind in ["shambler", "possum"] and not melee and dist < 7.0
 		var err := _aim_at(_aim_point(z, head))
 		p.aiming = true
+		# Another infected between her and this one (a crank wave crowding
+		# her): a player shoots the one in front first.
+		var front: Node = null if melee else _blocker(z, head)
+		blocked = blocked + 1.0 / 60.0 if front else 0.0
+		if blocked > 1.5:
+			z = front
+			kind = z.variant
+			_fight_kind = kind
+			hp0 = z.hp
+			last_hp = z.hp
+			progress_t = sim_t
+			end = maxf(end, sim_t + 15.0)
+			blocked = 0.0
+			continue
 		if melee:
 			if dist > 1.5:
 				_steer(to, false, false)
@@ -798,7 +930,7 @@ func fight(z: Node, weapon := "", max_t := 30.0) -> bool:
 	if is_instance_valid(z) and z.state == ZS.DEAD:
 		_kills[kind] = _kills.get(kind, 0) + 1
 		return true
-	if is_instance_valid(z) and not p.downed:
+	if is_instance_valid(z) and not p.downed and report:
 		var gw: Dictionary = WeaponDB.WEAPONS.get(p.inventory.equipped, {})
 		var why := "mag %d, %d in the bag, %.1f m off, %s" % [p.inventory.mag.get(p.inventory.equipped, 0), p.inventory.ammo_count(gw.get("ammo", "")) if gw.has("ammo") else 0,
 			z.global_position.distance_to(p.global_position), "clear shot" if _line_of_fire(z, false) else "no clear shot: %s in the way" % _in_the_way(z)]
@@ -983,7 +1115,7 @@ func _monitor() -> void:
 				_bug("movement", "stuck at %s pushing toward %s%s" % [_v(p.global_position), _v(p.global_position + Basis(Vector3.UP, p.yaw) * Vector3(p.move_input.x, 0, p.move_input.y)), _blocked_by(p)], "stuck:%d:%d" % [roundi(p.global_position.x), roundi(p.global_position.z)])
 				if OS.has_environment("PT_DEBUG"):
 					var hud := _hud()
-					print("PTDBG stuck: vel %s floor %s working '%s' anim '%s' fending %s fighting '%s' tally %s paused %s physics %s cutscene %s bag %s pause_menu %s" % [p.velocity, p.is_on_floor(), p.working, p.model._current if p.model else "", _fending, _fight_kind, _stalker_where(), paused, p.is_physics_processing(), CUTS.active,
+					print("PTDBG stuck (%s): vel %s floor %s working '%s' anim '%s' fending %s fighting '%s' tally %s paused %s physics %s cutscene %s bag %s pause_menu %s" % [_doing, p.velocity, p.is_on_floor(), p.working, p.model._current if p.model else "", _fending, _fight_kind, _stalker_where(), paused, p.is_physics_processing(), CUTS.active,
 						hud._inventory.visible if hud and hud.get("_inventory") else "?", hud._pause.visible if hud and hud.get("_pause") else "?"])
 			_stuck_ref = p.global_position
 			_stuck_t = 0.0
@@ -1879,50 +2011,27 @@ func _run_route2() -> void:
 		await _wait_cutscene_end(3.0)
 	if not GS.has_flag("story_c2_hunt"):
 		_bug("chapter2", "taking the fuse didn't bring the Tallyman")
-	# ---- the coal yard: the diesel. He follows her out there, so she does
-	# what a hunted player does: the can first, only what comes at her
-	# fought, no sweeping the yard. If he kills her, Continue puts her back
-	# at the last checkpoint without what she took since: she goes back.
-	for tries in 3:
-		await _recover()
-		var gen := _gen()
-		if not (p.inventory.key_items.has("diesel_can") or gen.fitted("fuel")):
-			await go_to(Vector3(57.0, 0, 2.0), 60.0, true, "the coal yard ")
-			_shot("c2_yard")
-			if not GS.has_flag("story_c2_hunt") or GS.has_flag("c2_hunt_over"):
-				await clear_area("yard", 150.0)
-			for id in ["c2_diesel", "c2_yard_herb", "c2_yard_ammo", "c2_yard_shells"]:
-				if id == "c2_yard_shells" and _hunted():
-					continue   # the far corner, with him behind her: leave it
-				await pick_up(id)
-			await _recover()
-		if not (p.inventory.key_items.has("fuse") or _gen().fitted("fuse")):
-			# Back at a checkpoint from before the fuse: the clock again.
-			await _clock_fuse()
-		await _recover()
-		# ---- diesel and fuse in
-		if p.inventory.key_items.has("diesel_can") and not _gen().fitted("fuel"):
-			await _gen_use(_gen(), Vector3(-0.1, 0, 0), Vector3(0, 0, 1), 1.0, "Pour in the diesel")
-		if p.inventory.key_items.has("fuse") and not _gen().fitted("fuse"):
-			await _gen_use(_gen(), Vector3(0.7, 0, 0), Vector3(0, 0, 1), 1.9, "Fit the fuse")
-		await _recover()
-		if _gen().fitted("fuel") and _gen().fitted("fuse"):
-			break
-	if not (_gen().fitted("fuel") and _gen().fitted("fuse")):
-		_bug("chapter2", "diesel and fuse not both in the generator")
-	# ---- all three in: the Tallyman gives up. Crank it, seeing off the waves
-	if not await _until_t(func(): return GS.has_flag("c2_hunt_over"), 45.0):
-		_bug("chapter2", "the Tallyman kept hunting with all three parts in (%s)" % _stalker_where())
-	await _crank(_gen(), 300.0)
-	if not _gen().running():
-		_bug("chapter2", "the generator never caught (progress %.2f)" % _gen().progress)
+	if not await _power_up():
 		return
-	_shot("c2_power")
-	await _wait(6.0)
-	if GS.has_flag("c2_flood_open"):
-		_bug("chapter2", "the flood door went up on the power alone (it needs the Warden's key)")
+	if OS.has_environment("PT_DIE_AFTER_POWER"):
+		# (Checks the path below: dying with the lights on.)
+		p.apply_damage(p.hp + 50.0, null)
+		await _wait(2.0)
 	# ---- Hardass on the tannoy: the flood door is locked out, his key
-	if not await _evade_until(func(): return CUTS.active or GS.has_flag("story_c2_intercom"), 90.0):
+	var heard := false
+	for again in 2:
+		await _recover()
+		if not _gen().running():
+			# She died after the lights came on and Continue put her back at
+			# a checkpoint from before them (the lodge): the parts and the
+			# crank again, as a player would.
+			_note("Continue put her back before the generator ran: powering it up again")
+			if not await _power_up():
+				return
+		heard = await _evade_until(func(): return CUTS.active or GS.has_flag("story_c2_intercom"), 90.0)
+		if heard or _gen().running():
+			break
+	if not heard:
 		_bug("chapter2", "the tannoy scene never started after the lights came on (%s)" % _scene_blockers())
 	if CUTS.active:
 		await _wait_cutscene_end(3.0)
@@ -1996,7 +2105,71 @@ func _scene_blockers() -> String:
 	for st in get_nodes_in_group("stalker"):
 		if st.active:
 			out.append("Tallyman %.0f m away" % st.global_position.distance_to(at))
+	if _level() and _level().name == "Undercroft":
+		# What else Chapter2Story waits on before its scenes.
+		var gen_cls: Script = load("res://scripts/world/generator_set.gd")
+		if not gen_cls.running():
+			out.append("the generator isn't running")
+		if GS.has_flag("taken:c2_fuse") and not GS.has_flag("story_c2_hunt"):
+			out.append("the hunt scene hasn't played")
+	if CUTS.active:
+		out.append("a scene is playing")
+	elif not CUTS.all_ready():
+		out.append("the scene system isn't ready")
 	return ", ".join(out) if out.size() > 0 else "nothing in the way"
+
+## The diesel and the fuse into the generator, then the crank under the
+## waves, until the lights come on. Run again if Continue takes her back to
+## before it ran.
+func _power_up() -> bool:
+	# ---- the coal yard: the diesel. He follows her out there, so she does
+	# what a hunted player does: the can first, only what comes at her
+	# fought, no sweeping the yard. If he kills her, Continue puts her back
+	# at the last checkpoint without what she took since: she goes back.
+	for tries in 3:
+		await _recover()
+		var gen := _gen()
+		if not (p.inventory.key_items.has("crank_handle") or gen.fitted("crank")):
+			# Back at a checkpoint from before the pump room.
+			await _pump_room()
+		if p.inventory.key_items.has("crank_handle") and not _gen().fitted("crank"):
+			await _gen_use(_gen(), Vector3(-2.0, 0, 0), Vector3(-1, 0, 0), 1.1, "Fit the starting handle")
+		if not (p.inventory.key_items.has("diesel_can") or gen.fitted("fuel")):
+			await go_to(Vector3(57.0, 0, 2.0), 60.0, true, "the coal yard ")
+			_shot("c2_yard")
+			if not GS.has_flag("story_c2_hunt") or GS.has_flag("c2_hunt_over"):
+				await clear_area("yard", 150.0)
+			for id in ["c2_diesel", "c2_yard_herb", "c2_yard_ammo", "c2_yard_shells"]:
+				if id == "c2_yard_shells" and _hunted():
+					continue   # the far corner, with him behind her: leave it
+				await pick_up(id)
+			await _recover()
+		if not (p.inventory.key_items.has("fuse") or _gen().fitted("fuse")):
+			# Back at a checkpoint from before the fuse: the clock again.
+			await _clock_fuse()
+		await _recover()
+		# ---- diesel and fuse in
+		if p.inventory.key_items.has("diesel_can") and not _gen().fitted("fuel"):
+			await _gen_use(_gen(), Vector3(-0.1, 0, 0), Vector3(0, 0, 1), 1.0, "Pour in the diesel")
+		if p.inventory.key_items.has("fuse") and not _gen().fitted("fuse"):
+			await _gen_use(_gen(), Vector3(0.7, 0, 0), Vector3(0, 0, 1), 1.9, "Fit the fuse")
+		await _recover()
+		if _gen().fitted("fuel") and _gen().fitted("fuse") and _gen().fitted("crank"):
+			break
+	if not (_gen().fitted("fuel") and _gen().fitted("fuse")):
+		_bug("chapter2", "diesel and fuse not both in the generator")
+	# ---- all three in: the Tallyman gives up. Crank it, seeing off the waves
+	if not await _until_t(func(): return GS.has_flag("c2_hunt_over"), 45.0):
+		_bug("chapter2", "the Tallyman kept hunting with all three parts in (%s)" % _stalker_where())
+	await _crank(_gen(), 300.0)
+	if not _gen().running():
+		_bug("chapter2", "the generator never caught (progress %.2f)" % _gen().progress)
+		return false
+	_shot("c2_power")
+	await _wait(6.0)
+	if GS.has_flag("c2_flood_open"):
+		_bug("chapter2", "the flood door went up on the power alone (it needs the Warden's key)")
+	return true
 
 func _stalker_where() -> String:
 	var st = get_first_node_in_group("stalker")
@@ -2007,6 +2180,7 @@ func _stalker_where() -> String:
 ## Away from the Tallyman until `cond` holds: to whichever of a few far-off
 ## spots is furthest from him, again and again (he walks slower than she runs).
 func _evade_until(cond: Callable, max_t: float) -> bool:
+	_doing = "evade"
 	var spots := [Vector3(8.5, 0, 3.0), Vector3(36.0, 0, 3.0), Vector3(66.0, 0, 3.0), Vector3(46.0, 0, -4.5), Vector3(28.0, 0, -6.0)]
 	var end := sim_t + max_t
 	while sim_t < end:
@@ -2021,11 +2195,26 @@ func _evade_until(cond: Callable, max_t: float) -> bool:
 		var leg_end := sim_t + 10.0
 		var path := _path(best)
 		var i := 0
+		_snag_at = Vector3.INF
 		while sim_t < leg_end and i < path.size() and not cond.call():
+			# Infected coming for her: a player sees them off rather than
+			# running into them (and the story's scenes wait for them too,
+			# Chapter2Story._quiet). Not with him at her back.
+			var z := _threat(4.0)
+			if z and not _busy_fighting and _tallyman_close(6.0) == null:
+				# Only what's on top of her, and not for long: she's keeping
+				# moving, not clearing the hall (no "couldn't put down" here).
+				await fight(z, "", 12.0, false)
+				break
 			var to: Vector3 = path[i] - p.global_position
 			to.y = 0.0
 			if to.length() < 0.45:
 				i += 1
+				continue
+			if _snagged():
+				await _ease_round(to)
+				path = _path(best)
+				i = 0
 				continue
 			_steer(to, true)
 			await physics_frame
@@ -2137,6 +2326,7 @@ func _gen() -> Node:
 
 ## One of the generator's parts, through its real prompt.
 func _gen_use(gen: Node, local: Vector3, n: Vector3, dist: float, expect: String) -> bool:
+	var deaths0 := _deaths
 	var at: Vector3 = gen.global_transform * local
 	var stand: Vector3 = Vector3(at.x, 0, at.z) + n * dist
 	# Drops from the waves lying where she stands would take the prompt:
@@ -2144,11 +2334,17 @@ func _gen_use(gen: Node, local: Vector3, n: Vector3, dist: float, expect: String
 	for pk in get_nodes_in_group("pickups"):
 		if is_instance_valid(pk) and not pk._taken and Vector2(pk.global_position.x - stand.x, pk.global_position.z - stand.z).length() < 1.6:
 			await pick_up_node(pk)
-	if not await go_to(stand, 40.0, true, expect + " "):
+	# With him after her (the diesel, the fuse) the walk takes longer: she
+	# turns on him and backs off on the way.
+	if not await go_to(stand, 75.0 if _hunted() else 40.0, true, expect + " "):
+		if await _died_since(deaths0):
+			return false   # Continue may have taken back what she carried: the caller starts over
 		await _warp(stand, "to the generator (" + expect + ")")
 	if _tallyman_close(5.0):
 		await _fend_tallyman()
 		await go_to(stand, 20.0, true, expect + " ")
+	if await _died_since(deaths0):
+		return false
 	await face(Vector3(at.x, 1.0, at.z))
 	_stop()
 	await _wait(0.2)
