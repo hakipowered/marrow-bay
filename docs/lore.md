@@ -206,11 +206,13 @@ reading room. Hides it with a rag around the wrist so the others won't panic.
   with them, and sits back down facing the door "to keep the count". He knows
   exactly what is happening to him. Talk to him afterwards for a few more
   lines (the power, the count, Orrin, Nasri's coffee).
-- **Ch. 2:** he is already down in the Undercroft, barred into the shelter
-  staff's muster room with the flood door's key on his belt (the Warden's key:
-  the door won't lift without it, power or no power). When the generator
-  runs he hears it, tells them over the tannoy where the key is and unbars the
-  door. When they get
+- **Ch. 2:** he came down after them with the flood door's
+  key (the Warden's key: the door won't lift without it, power or no power),
+  but the fever took his legs and he barred himself into the shelter staff's
+  muster room. When the generator runs he hears it and comes on the tannoy:
+  "It's Hardass." Only his key lifts the flood door, he has it with him, and
+  he tells them the way (back down the tunnel, the steel door past the pump
+  room) and draws the bar. When they get
   there he counts the shelter one last time ("Not one of them went out.") and
   turns in front of them, in his riot gear, with the steel truncheon and the
   riot shield he drilled with for twenty years. The bite on his back has
@@ -327,10 +329,10 @@ world flags (`docs/chapter2.md`).
 | Zegan | Eleven v4 | See `tools/voice/cast.json`. |
 | Obcera | Eleven v4 | Screams also on v4. |
 | Tallyman | masked with a filter | Breathing and speech never overlap. |
-| Hardass | Eleven v4 "Clyde" (`2EiwWnXFnvU5JabPnv8n`) | hoarse, commanding, exhausted; `[weak, rasping]` as he turns |
-| Hardass on the tannoy | same voice, `hardass_pa` in `cast.json` | through a speaker filter (chapter 2 intercom) |
+| Hardass | Eleven v4 "Clyde" (`2EiwWnXFnvU5JabPnv8n`) | hoarse, commanding, exhausted, every line (other tags drift to another-sounding man; check with `tools/voice/match.py`) |
+| Hardass on the tannoy | same voice, `hardass_pa` in `cast.json` | only lightly band-limited, so he is plainly the same man (chapter 2 intercom) |
 
-Generate new lines with `tools/voice/say.py`. The fal content filter rejects
+Generate new lines with `tools/voice/say.py` and check takes against the character's other lines with `tools/voice/match.py`. The fal content filter rejects
 violent wording ("shoot you"): rephrase rather than fight it.
 
 ## 10. Writing rules

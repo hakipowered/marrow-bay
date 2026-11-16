@@ -2,7 +2,7 @@ class_name WardenBoss
 extends CharacterBody3D
 ## Chapter 2's boss, "The Last Warden": Warden Jackson Hardass, bitten in the
 ## Archive, turned on the way down, still in his shelter riot gear with the
-## generator's starting handle on his belt. He fights in the muster room.
+## generator's starting handle on him. He fights in the muster room.
 ##
 ## Phase one: he walks them down behind a riot shield that stops everything
 ## from the front but the legs, with a steel truncheon (swing, slash, a

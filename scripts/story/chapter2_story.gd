@@ -16,9 +16,12 @@ extends Node3D
 ## With all three in, the Tallyman gives up the hunt (he walks off and is gone
 ## once nobody can see him). They crank the generator under attack; it
 ## catches and the lights come on, but the flood door's control is locked
-## out. Warden Hardass comes on the tannoy: the key is on his belt, he's in the
-## muster room, he's unbarred the door ("c2_intercom"). He has turned by the
-## time they get there ("c2_warden", the boss fight, WardenBoss). His key in
+## out. Warden Hardass comes on the tannoy ("c2_intercom"): only his key lifts
+## the door and he has it with him; he came down after them and his legs gave
+## out in the muster room, back down the tunnel past the pump room. He draws
+## the bar on its steel door, and the lamp beside it goes from red to green
+## (Undercroft's DoorLamp). He has turned by the time they get there
+## ("c2_warden", the boss fight, WardenBoss). His key in
 ## the flood door's key switch raises it, and in the deep stacks behind it
 ## they find Nasri's staff card and his chalk on the wall ("c2_end").
 ##
@@ -41,14 +44,15 @@ const VOICE := "res://assets/audio/voice/story/%s.ogg"
 const OBJ_OUT := "Find a way out of the service tunnels"
 const OBJ_CRANK := "Crank the generator in the engine hall. Keep the infected off whoever is cranking"
 const OBJ_POWER := "The lights are on. Raise the flood door in the engine hall"
-const OBJ_KEY := "The flood door is locked out. Get the Warden's key from Hardass\nin the muster room, off the service tunnel"
-const OBJ_WARDEN_KEY := "The Warden has turned. Put him down and take the flood door key off his belt"
+const OBJ_KEY := "Only Hardass's key lifts the flood door. He's in the muster room:\nback down the tunnel, past the pump room, the steel door with the green lamp"
+const OBJ_WARDEN_KEY := "The Warden has turned. Put him down and take the flood door key from him"
 const OBJ_TURN_KEY := "Turn the Warden's key in the flood door's control box in the engine hall"
 const OBJ_FLOOD := "The flood door is up: go through to the deep stacks"
 const OBJ_END := "End of chapter 2. Chapter 3 is coming in a later build"
 ## The 0.13 order (OLD_FLOW): the Warden had the starting handle.
-const OBJ_HANDLE := "Get the generator's starting handle from Hardass in the muster room, off the service tunnel"
-const OBJ_WARDEN := "The Warden has turned: take the starting handle off his belt"
+## (Its lamp is dark in this order, the power being off: no "green lamp".)
+const OBJ_HANDLE := "Get the generator's starting handle from Hardass in the muster room:\nback down the tunnel, past the pump room, the steel door on the left"
+const OBJ_WARDEN := "The Warden has turned. Put him down and take the starting handle from him"
 const OBJ_FIT := "Fit the starting handle to the generator in the engine hall"
 
 ## Set on load for a save from before the pump room (see the top).
@@ -335,7 +339,7 @@ func warden_kneels() -> void:
 		_rpc_bark.rpc("obcera", "o_w_down", "He's down! Hit the growth on his back!")
 
 ## Every phone, from WardenBoss when he dies: the flood door key (before
-## the pump room, the starting handle) drops off his belt, the door unbars.
+## the pump room, the starting handle) drops where he falls, the door unbars.
 func warden_died(pos: Vector3) -> void:
 	GameState.set_flag("c2_warden_dead")
 	var at := pos + Vector3(0.0, 0.05, 0.0)
@@ -397,6 +401,7 @@ func _spawn_boss(awake: bool) -> WardenBoss:
 ## The muster room door: shut and barred for the fight, open after.
 func _lock_muster(lock: bool) -> void:
 	GameState.set_flag("unlocked:muster_door", not lock)
+	DoorLamp.refresh_all(get_tree())
 	for d in get_tree().get_nodes_in_group("doors"):
 		if d.door_id == "muster_door":
 			if lock and d.is_open:
@@ -455,6 +460,7 @@ func on_cutscene_end(id: String) -> void:
 			Cutscenes.set_objective(gen_objective())
 		"c2_intercom":
 			GameState.set_flag("unlocked:muster_door")
+			DoorLamp.refresh_all(get_tree())
 			Cutscenes.set_objective(OBJ_HANDLE if GameState.has_flag(OLD_FLOW) else OBJ_KEY)
 		"c2_warden":
 			# The Tallyman lost them down here; the Warden is enough.
@@ -598,9 +604,13 @@ func _hunt_door() -> void:
 func _tally_in() -> Signal:
 	return _tally.walk_to(HUNT_FROM, 0.95, "stalk")
 
-## Hardass on the tannoy once the lights are on: the flood door is locked
-## out, the key is on his belt, he's in the muster room.
+## Hardass on the tannoy once the lights are on. Who he is (the same man as
+## the safe room upstairs), that only his key lifts the flood door, that he
+## has it with him in the muster room, and the way there: a shot down the
+## tunnel to its steel door, the bar drawn and the lamp beside it turning
+## green. Then why he's down here at all, and what's happening to him.
 func _intercom() -> Array:
+	var door := Undercroft.MUSTER_DOOR
 	return [
 		{"do": "call", "fn": "_intercom_stage"},
 		{"do": "bars", "on": true, "t": 0.5, "wait": false},
@@ -608,22 +618,41 @@ func _intercom() -> Array:
 		{"do": "cam", "pos": Vector3(42.0, 1.6, 1.0), "look": Undercroft.PA_HORN, "fov": 36.0, "t": 8.0, "block": false},
 		{"do": "sfx", "file": SFX % "pa_crackle", "vol": -2.0},
 		{"do": "wait", "t": 0.9},
-		{"do": "say", "who": "hardass", "line": "h_pa_1", "text": "...is this on. You two. From upstairs."},
+		{"do": "say", "who": "hardass", "line": "h_pa_1", "text": "...is this thing on? You two. It's Hardass."},
 		{"do": "cam", "pos": Vector3(49.4, 1.4, 2.2), "look": Vector3(48.2, 1.1, 0.3), "fov": 42.0},
 		{"do": "say", "who": "hardass", "line": "h_pa_2", "text": "You got the old engine running. I heard her from here."},
 		{"do": "cam", "pos": Vector3(47.3, 1.6, 9.4), "look": Undercroft.FLOOD_AT + FloodDoor.BOX_FROM_HALL, "fov": 40.0},
 		{"do": "cam", "pos": Vector3(47.5, 1.55, 9.9), "look": Undercroft.FLOOD_AT + FloodDoor.BOX_FROM_HALL, "fov": 36.0, "t": 4.5, "block": false},
-		{"do": "say", "who": "hardass", "line": "h_pa_3", "text": "But the flood door's locked out. It won't lift without my key."},
+		{"do": "say", "who": "hardass", "line": "h_pa_3", "text": "But the flood door's locked out. Power won't lift it. Only my key will."},
 		{"do": "cam", "pos": Vector3(44.2, 1.6, 3.4), "look": Undercroft.PA_HORN, "fov": 48.0},
-		{"do": "say", "who": "hardass", "line": "h_pa_5", "text": "It's on my belt. Muster room, off the tunnel. I've unbarred the door."},
+		{"do": "say", "who": "hardass", "line": "h_pa_5", "text": "I've got that key here with me. I'm in the muster room."},
+		# The way there: down the tunnel from the engine hall to his door.
+		{"do": "cam", "pos": Vector3(38.4, 1.7, 2.3), "look": door + Vector3(1.0, 1.5, -0.3), "fov": 40.0},
+		{"do": "cam", "pos": Vector3(35.4, 1.68, 2.6), "look": door + Vector3(1.0, 1.4, -0.3), "fov": 38.0, "t": 5.6, "block": false},
+		{"do": "say", "who": "hardass", "line": "h_pa_6", "text": "Back down the tunnel. Steel door on your left, past the pump room. I've unlocked it.", "gap": 0.1},
+		{"do": "cam", "pos": door + Vector3(4.6, 1.55, -2.7), "look": door + Vector3(0.6, 1.5, 0.0), "fov": 52.0},
+		{"do": "cam", "pos": door + Vector3(4.2, 1.55, -2.55), "look": door + Vector3(0.6, 1.5, 0.0), "fov": 49.0, "t": 3.0, "block": false},
+		{"do": "wait", "t": 0.5},
+		{"do": "sfx", "file": SFX % "bolt_draw_1", "vol": -1.0},
+		{"do": "wait", "t": 0.9},
+		{"do": "call", "fn": "_unbar_muster"},
+		{"do": "wait", "t": 1.3},
 		{"do": "cam", "pos": Vector3(47.0, 1.6, 3.6), "look": Vector3(45.3, 1.5, 1.9), "fov": 46.0},
 		{"do": "say", "who": "obcera", "line": "o_pa_help", "text": "Warden? You sound hurt. Let us help you."},
+		{"do": "cam", "pos": Vector3(43.4, 1.6, 2.8), "look": Undercroft.PA_HORN, "fov": 40.0},
+		{"do": "say", "who": "hardass", "line": "h_pa_7", "text": "I came down after you with that key. My legs gave out.", "gap": 0.4},
 		{"do": "cam", "pos": Vector3(42.0, 1.55, 1.0), "look": Undercroft.PA_HORN, "fov": 34.0},
 		{"do": "say", "who": "hardass", "line": "h_pa_4", "text": "Come and count yourselves out. Before I forget why I'm waiting.", "gap": 0.6},
 		{"do": "sfx", "file": SFX % "pa_crackle", "vol": -6.0},
 		{"do": "wait", "t": 0.8},
 		{"do": "fade", "to": 1.0, "t": 0.6},
 	]
+
+## In the intercom scene, every phone: he draws the bar on the muster room
+## door and its lamp goes green (on_cutscene_end sets it too, for a skip).
+func _unbar_muster() -> void:
+	GameState.set_flag("unlocked:muster_door")
+	DoorLamp.refresh_all(get_tree())
 
 func _intercom_stage() -> void:
 	_place("zegan", Vector3(45.0, 0.0, 1.6), Undercroft.PA_HORN)
@@ -662,12 +691,11 @@ func _warden() -> Array:
 		{"do": "fade", "to": 1.0, "t": 0.4},
 	]
 
-## What he says he's got on his belt: the key (before the pump room, the
-## handle).
+## What he says he has on him: the key (before the pump room, the handle).
 func _take_line() -> Dictionary:
 	if GameState.has_flag(OLD_FLOW):
-		return {"do": "say", "who": "hardass", "line": "h_w_take", "text": "The handle's on my belt. Take it... if you can."}
-	return {"do": "say", "who": "hardass", "line": "h_w_key", "text": "The key's on my belt. Take it... if you can."}
+		return {"do": "say", "who": "hardass", "line": "h_w_take", "text": "The handle's right here on me. Take it... if you can."}
+	return {"do": "say", "who": "hardass", "line": "h_w_key", "text": "The key's right here on me. Take it... if you can."}
 
 func _warden_stage() -> void:
 	_place("zegan", Vector3(25.4, 0.0, 6.2), Undercroft.WARDEN_SEAT)

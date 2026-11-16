@@ -49,7 +49,7 @@ const KEY_NAMES := {
 	"fuse": ["Field Fuse", "A porcelain cartridge fuse the size of a fist, stamped GPO 60A FIELD. The engine hall generator won't excite without it."],
 	"diesel_can": ["Jerrycan of Diesel", "Twenty litres of red diesel from the coal yard shed. Heavy, and it sloshes. The generator's day tank is dry."],
 	"crank_handle": ["Starting Handle", "The generator's iron starting handle, black with sump silt. The keeper threw it down there so nobody could start the engine."],
-	"flood_key": ["Warden's Flood Door Key", "A heavy iron key on a brass tag stamped FLOOD DOOR No.3 - WARDEN. It unlocks the key switch on the flood door's control box in the engine hall. It came off Warden Hardass's belt."],
+	"flood_key": ["Warden's Flood Door Key", "A heavy iron key on a brass tag stamped FLOOD DOOR No.3 - WARDEN. It unlocks the key switch on the flood door's control box in the engine hall. Warden Hardass carried it on him."],
 }
 
 const FILES := {
