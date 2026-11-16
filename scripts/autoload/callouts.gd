@@ -87,9 +87,29 @@ func _rpc_play(character: String, line_id: String, text: String, scream: bool) -
 		a.unit_size = 18.0 if scream else 8.0
 		a.max_db = 6.0 if scream else 0.0
 		a.bus = "Voice"
+		# The partner hears a call wherever they are: it still comes from
+		# the caller's direction and sounds further off the further away
+		# they are, but never drops below about -9 dB (a scream -6 dB),
+		# even from the other end of the level.
+		if not player.is_multiplayer_authority():
+			var ear := get_viewport().get_camera_3d()
+			if ear:
+				var d := ear.global_position.distance_to(player.global_position + Vector3.UP * 1.6)
+				a.unit_size = maxf(a.unit_size, d / (2.0 if scream else 2.8))
+		a.position = Vector3.UP * 1.6   # from the mouth, not the feet
 		player.add_child(a)
 		a.play()
 		a.finished.connect(a.queue_free)
+	elif ResourceLoader.exists(path):
+		# No body on this phone to voice it from (not spawned yet): heard
+		# flat, so it's never lost.
+		var f := AudioStreamPlayer.new()
+		f.stream = load(path)
+		f.volume_db = -4.0
+		f.bus = "Voice"
+		add_child(f)
+		f.play()
+		f.finished.connect(f.queue_free)
 	callout_played.emit(speaker, character, line_id, text, scream)
 	# Zombies hear screams.
 	if scream and player:

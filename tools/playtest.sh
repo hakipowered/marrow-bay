@@ -140,6 +140,7 @@ if command -v node >/dev/null 2>&1 && node -e "require('ws')" >/dev/null 2>&1; t
 	coop coop_playtest tests/playtest_coop.gd
 	coop coop_saves tests/coop_saves.gd
 	coop coop_pickups tests/coop_pickups.gd
+	coop coop_callouts tests/coop_callouts.gd
 	coop coop_item_box tests/coop_item_box.gd
 	kill $RELAY 2>/dev/null
 else
