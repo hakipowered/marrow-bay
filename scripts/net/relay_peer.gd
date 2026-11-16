@@ -101,7 +101,12 @@ func _put_packet_script(buffer: PackedByteArray) -> Error:
 	header[5] = _mode
 	# Negative target = everyone except -target. With two players that is
 	# the same as "everyone else", which the relay does for target 0.
-	return _ws.send(header + buffer, WebSocketPeer.WRITE_MODE_BINARY)
+	var err := _ws.send(header + buffer, WebSocketPeer.WRITE_MODE_BINARY)
+	# Out now. WebSocketPeer only writes to the socket when polled, and the
+	# multiplayer sends its snapshots after this frame's poll, so without
+	# this every message sat a whole frame (1/60 to 1/30 s) before leaving.
+	_ws.poll()
+	return err
 
 func _get_max_packet_size() -> int:
 	return 1 << 20

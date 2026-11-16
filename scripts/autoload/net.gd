@@ -16,12 +16,17 @@ const CODE_ALPHABET := "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 ## player that their friend's game is too old to check.
 const HELLO_TIMEOUT := 6.0
 const VersionCheck := preload("res://scripts/net/version_check.gd")
+const NetPing := preload("res://scripts/net/net_ping.gd")
 
 var room_code := ""
 var relay_url := RELAY_URL
+## The corner readout (frame rate and ping) in co-op: on unless the player
+## turned it off in the pause menu (user://settings.cfg [hud] net_stats).
+var show_stats := true
 ## Joiners whose game content matches the host's (see version_check.gd).
 var _verified := {}
 var _version_check: Node
+var _ping: Node
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -33,6 +38,9 @@ func _ready() -> void:
 	_version_check.name = "VersionCheck"
 	add_child(_version_check)
 	_version_check.peer_verified.connect(_on_peer_verified)
+	_ping = NetPing.new()
+	_ping.name = "Ping"
+	add_child(_ping)
 	_version_check.peer_rejected.connect(func(_id, theirs): session_failed.emit(VersionCheck.explain(PackMount.version_name, theirs)))
 	_version_check.rejected_by_host.connect(func(theirs):
 		close.call_deferred()
@@ -40,6 +48,7 @@ func _ready() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load("user://settings.cfg") == OK:
 		relay_url = cfg.get_value("net", "relay_url", RELAY_URL)
+		show_stats = bool(cfg.get_value("hud", "net_stats", true))
 	if OS.get_environment("RAGOON_RELAY") != "":
 		relay_url = OS.get_environment("RAGOON_RELAY")
 	# Browser version: /play/?relay=ws://... points a test build at a local relay.
@@ -199,8 +208,38 @@ func _on_peer_disconnected(id: int) -> void:
 func is_coop() -> bool:
 	return GameState.mode == GameState.Mode.COOP
 
+# ------------------------------------------------------------------ readout
+
+## To the partner's phone and back (ms); 0 before the first ping returns.
+func ping_ms() -> float:
+	return _ping.ms()
+
+## The corner readout: "60 FPS · PING 84 ms", plus the longest the partner's
+## phone went quiet lately when that was long enough to notice. Frame rate
+## low = this phone is struggling; ping or hiccups high = the connection.
+func stats_text() -> String:
+	var t := "%d FPS" % roundi(Engine.get_frames_per_second())
+	var ping := ping_ms()
+	t += " · PING %s" % ("%d ms" % roundi(ping) if ping > 0.0 else "...")
+	var partner := 0
+	for id in multiplayer.get_peers():
+		partner = id
+	if partner != 0:
+		var quiet := NetSmooth.link(partner).recent_gap_ms()
+		if quiet >= 150.0:
+			t += " · HICCUP %d ms" % roundi(quiet)
+	return t
+
+func set_show_stats(on: bool) -> void:
+	show_stats = on
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")   # keeps what else is there
+	cfg.set_value("hud", "net_stats", on)
+	cfg.save("user://settings.cfg")
+
 func close() -> void:
 	_verified.clear()
+	NetSmooth.reset()
 	if multiplayer.multiplayer_peer and not multiplayer.multiplayer_peer is OfflineMultiplayerPeer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()

@@ -1,7 +1,8 @@
 class_name Zombie
 extends CharacterBody3D
 ## Every infected enemy. Behavior comes from EnemyDB flags (see enemy_db.gd).
-## Host simulates; partner interpolates through the synchronizer.
+## Host simulates; the joiner's phone plays its motion back smoothly
+## (net_stamp/net_pos/net_yaw through the synchronizer, then NetSmooth).
 ## Hit zones: head (x3, can pop), torso, arms, legs (cripple -> crawls).
 
 enum S { IDLE, WANDER, CHASE, ATTACK, STAGGER, CRAWL, DEAD, FEED, PLAY_DEAD, HIDDEN, PINNING, CHARGE }
@@ -87,6 +88,32 @@ var _hitboxes: Array = []
 ## so the walk, run and gallop clips play there too.
 var _anim_pos := Vector3.INF
 var _anim_speed := 0.0
+## Sent to the partner's phone instead of position and rotation: the host's
+## clock with where it is and which way it faces, so the joiner's phone can
+## play the motion back smoothly (NetSmooth). On the host these read the live
+## values; on the joiner each snapshot lands in _net_in, then _on_net_snapshot.
+var net_stamp: int:
+	get:
+		return Time.get_ticks_msec()
+	set(v):
+		_net_in[0] = v
+var net_pos: Vector3:
+	get:
+		return position
+	set(v):
+		_net_in[1] = v
+var net_yaw: float:
+	get:
+		return rotation.y
+	set(v):
+		_net_in[2] = v
+var _net_in := [0, Vector3.ZERO, 0.0]
+var _smooth: NetSmooth
+var _sync: MultiplayerSynchronizer
+var _net_rate_t := 0.0
+## Within this of a survivor (m), its snapshots go out 30 times a second and
+## set how far behind the joiner's phone plays them; further off, ten.
+const NET_NEAR := 40.0
 
 ## The hound's hitboxes ride on its bones: zone, bone, centre along the bone
 ## (m), box size. The ribcage comes first (aim assist aims at the first torso
@@ -158,11 +185,41 @@ func _ready() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":rotation", ":state", ":crippled", ":head_gone"]:
+	for prop in [":net_stamp", ":net_pos", ":net_yaw", ":state", ":crippled", ":head_gone"]:
 		cfg.add_property(NodePath(prop))
 	sync.replication_config = cfg
-	sync.replication_interval = 1.0 / 20.0
+	sync.replication_interval = 1.0 / 30.0
 	add_child(sync)
+	_sync = sync
+	_smooth = NetSmooth.new(get_multiplayer_authority(), sync.replication_interval)
+	sync.synchronized.connect(_on_net_snapshot)
+
+## Joiner: a snapshot from the host. One near her survivor and on its feet
+## sets how far behind playback runs; the rest just play back.
+func _on_net_snapshot() -> void:
+	var near := false
+	if state != S.DEAD:
+		for p in get_tree().get_nodes_in_group("players"):
+			if p.is_multiplayer_authority() and p.global_position.distance_to(_net_in[1]) < NET_NEAR:
+				near = true
+	_smooth.push(_net_in[0], _net_in[1], _net_in[2], near)
+
+## Host: how often its snapshot goes to the joiner. Near a survivor and on
+## its feet, 30 a second (smooth playback there needs them); further off,
+## ten; lying dead, four (all it does is settle).
+func _tick_net_rate(delta: float) -> void:
+	_net_rate_t -= delta
+	if _net_rate_t > 0.0:
+		return
+	_net_rate_t = 0.25
+	var every := 1.0 / 30.0
+	if state == S.DEAD and is_on_floor():
+		every = 0.25
+	else:
+		var p := _nearest_player()
+		if p == null or global_position.distance_to(p.global_position) > NET_NEAR:
+			every = 0.1
+	_sync.replication_interval = every
 
 ## Precise hitboxes sized to the body parts, not one big capsule.
 func _build_hitboxes(h: float) -> void:
@@ -210,6 +267,11 @@ func _zone_area(zone: String, size: Vector3) -> Area3D:
 func _physics_process(delta: float) -> void:
 	var pace := velocity.length()
 	if not multiplayer.is_server():
+		# The host moves it: shown smoothly, a moment behind (NetSmooth).
+		if _smooth.has_data():
+			var shown := _smooth.step(delta)
+			position = shown[0]
+			rotation.y = shown[1]
 		if _anim_pos != Vector3.INF and delta > 0.0:
 			var moved := (global_position - _anim_pos) * Vector3(1, 0, 1)
 			_anim_speed = lerpf(_anim_speed, moved.length() / delta, 0.15)
@@ -231,6 +293,7 @@ func _physics_process(delta: float) -> void:
 			_groan.rpc(_sound_id("chase" if state == S.CHASE else "idle"))
 	if not multiplayer.is_server():
 		return
+	_tick_net_rate(delta)
 	if state == S.DEAD:
 		if not is_on_floor():   # killed in mid-air (falling through a hole): it still comes down
 			velocity.x = 0.0

@@ -1,7 +1,8 @@
 class_name Player
 extends CharacterBody3D
 ## Third-person over-the-shoulder survivor. Each player's own phone simulates
-## its movement (authority = owning peer); position/aim sync to the partner.
+## its movement (authority = owning peer); position/aim sync to the partner,
+## whose phone plays them back smoothly (NetSmooth).
 ## Damage to enemies is resolved on the host.
 
 signal health_changed(hp: float, max_hp: float)
@@ -150,6 +151,22 @@ var _lock_target: Node3D = null
 var _face_yaw := 0.0
 var _inv_dirty := false
 var _inv_sync_t := 0.0
+## Sent to the partner's phone instead of position: this phone's clock with
+## where she is, so the partner's phone can play her motion back smoothly
+## (NetSmooth, fed with sync_yaw too). Getters read the live values on her
+## own phone; on the partner's each snapshot lands in _net_in.
+var net_stamp: int:
+	get:
+		return Time.get_ticks_msec()
+	set(v):
+		_net_in[0] = v
+var net_pos: Vector3:
+	get:
+		return position
+	set(v):
+		_net_in[1] = v
+var _net_in := [0, Vector3.ZERO]
+var _smooth: NetSmooth
 
 func _enter_tree() -> void:
 	set_multiplayer_authority(peer_id)
@@ -302,19 +319,32 @@ func _setup_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_speed", ":sync_weapon", ":downed", ":pinned", ":dodging", ":sync_lamp"]:
+	for prop in [":net_stamp", ":net_pos", ":sync_yaw", ":sync_pitch", ":sync_aiming", ":sync_anim", ":sync_speed", ":sync_weapon", ":downed", ":pinned", ":dodging", ":sync_lamp"]:
 		cfg.add_property(NodePath(prop))
 		cfg.property_set_replication_mode(NodePath(prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
 	sync.replication_interval = 1.0 / 30.0
 	add_child(sync)
 	sync.set_multiplayer_authority(peer_id)
+	_smooth = NetSmooth.new(peer_id, sync.replication_interval)
+	sync.synchronized.connect(func(): _smooth.push(_net_in[0], _net_in[1], sync_yaw))
 
 func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
 		if cutscene_pose:
+			body.position = Vector3.ZERO   # on the scene's mark, on both phones
 			return
-		body.rotation.y = lerp_angle(body.rotation.y, sync_yaw, 0.35)
+		if _smooth.has_data():
+			# Her capsule stands where her newest snapshot says (the host's
+			# infected chase and swing at her there, not a moment behind);
+			# her body, gun and lamp are drawn on the smooth path through
+			# the snapshots (NetSmooth), so she walks instead of hopping.
+			var shown := _smooth.step(delta)
+			position = _smooth.newest_pos()
+			body.position = shown[0] - position
+			body.rotation.y = shown[1]
+		else:
+			body.rotation.y = lerp_angle(body.rotation.y, sync_yaw, 0.35)
 		if sync_weapon != held.weapon_id:
 			_show_weapon(sync_weapon)
 		held.stowed = sync_anim in WORK_CLIPS

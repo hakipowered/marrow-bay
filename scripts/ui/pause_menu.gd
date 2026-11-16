@@ -1,5 +1,6 @@
 extends Control
-## Pause: Resume, Save game (the slot screen), Cheats, Quit.
+## Pause: Resume, Save game (the slot screen), Cheats, Quit, and whether
+## the co-op corner readout (frame rate and ping) shows.
 
 var _list: VBoxContainer
 var _cheats: VBoxContainer
@@ -36,6 +37,13 @@ func _ready() -> void:
 	_add("Save game", _open_save_slots)
 	_add("Cheats", func(): _cheats.visible = not _cheats.visible)
 	_add("Quit to title", _quit)
+	# The co-op corner readout: frame rate and ping.
+	var stats := CheckButton.new()
+	stats.text = "Show frame rate and ping"
+	stats.add_theme_font_size_override("font_size", 28)
+	stats.button_pressed = Net.show_stats
+	stats.toggled.connect(func(on): Net.set_show_stats(on))
+	_list.add_child(stats)
 	_cheats = VBoxContainer.new()
 	_cheats.visible = false
 	row.add_child(_cheats)

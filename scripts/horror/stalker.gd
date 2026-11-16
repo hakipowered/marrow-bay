@@ -103,10 +103,13 @@ func _ready() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":rotation", ":active"]:
+	for prop in [":net_stamp", ":net_pos", ":net_yaw", ":active"]:
 		cfg.add_property(NodePath(prop))
 	sync.replication_config = cfg
+	sync.replication_interval = 1.0 / 30.0
 	add_child(sync)
+	_smooth = NetSmooth.new(get_multiplayer_authority(), sync.replication_interval)
+	sync.synchronized.connect(func(): _smooth.push(_net_in[0], _net_in[1], _net_in[2]))
 	visible = active
 	_home = position
 
@@ -157,6 +160,7 @@ func activate(at: Vector3) -> void:
 	visible = true
 	global_position = at
 	_home = at
+	_smooth.clear()   # on the joiner: here until the host's snapshots from here come in
 	_lost_t = 0.0
 	_link_exit = Vector3.INF
 	if _breath.stream:
@@ -210,6 +214,26 @@ func _voice_done() -> void:
 
 var _last_pos := Vector3.ZERO
 var _anim_state := ""
+## Sent to the joiner's phone instead of position and rotation, so it can
+## play the motion back smoothly (NetSmooth): live values on the host, each
+## snapshot lands in _net_in on the joiner.
+var net_stamp: int:
+	get:
+		return Time.get_ticks_msec()
+	set(v):
+		_net_in[0] = v
+var net_pos: Vector3:
+	get:
+		return position
+	set(v):
+		_net_in[1] = v
+var net_yaw: float:
+	get:
+		return rotation.y
+	set(v):
+		_net_in[2] = v
+var _net_in := [0, Vector3.ZERO, 0.0]
+var _smooth: NetSmooth
 
 ## Walk or stand, from how far he actually moved (the same on every phone).
 func _animate(delta: float) -> void:
@@ -226,6 +250,10 @@ func _physics_process(delta: float) -> void:
 	visible = active
 	if not active:
 		return
+	if not multiplayer.is_server() and _smooth.has_data():
+		var shown := _smooth.step(delta)
+		position = shown[0]
+		rotation.y = shown[1]
 	_animate(delta)
 	_stoop(delta)
 	_step_t -= delta * (velocity.length() / SPEED)

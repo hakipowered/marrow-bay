@@ -23,6 +23,10 @@ var _call_btn: Button
 var _call_pressed_at := 0.0
 var _theme := Theme.new()
 var _crosshair: Crosshair
+## Co-op corner readout: frame rate and ping (Net.stats_text), so a player
+## can tell a struggling phone from a slow connection.
+var _net_stats: Label
+var _net_stats_t := 0.0
 
 func _ready() -> void:
 	add_to_group("hud")
@@ -47,6 +51,10 @@ func _ready() -> void:
 	look.anchor_bottom = 1.0
 	look.look.connect(func(d): if player: player.look_delta += d)
 	root.add_child(look)
+
+	_net_stats = _label(root, Vector2(50, 4), 22)
+	_net_stats.modulate = Color(1, 1, 1, 0.75)
+	_net_stats.visible = false
 
 	# Health + ammo
 	_hp_bar = ProgressBar.new()
@@ -231,8 +239,14 @@ func _show_ammo(in_mag: int, reserve: int) -> void:
 		_ammo.text = "%d / %d" % [in_mag, reserve]
 	_ammo.add_theme_color_override("font_color", Color(1.0, 0.45, 0.35) if in_mag == 0 else Color(0.93, 0.9, 0.84))
 
-func _process(_d: float) -> void:
+func _process(d: float) -> void:
 	_crosshair.update_from(player)
+	_net_stats_t -= d
+	if _net_stats_t <= 0.0:
+		_net_stats_t = 0.5
+		_net_stats.visible = Net.is_coop() and Net.show_stats and multiplayer.has_multiplayer_peer() and not multiplayer.get_peers().is_empty()
+		if _net_stats.visible:
+			_net_stats.text = Net.stats_text()
 	if _weapon_pressed_at > 0.0 and not _weapon_long and (Time.get_ticks_msec() - _weapon_pressed_at) > 450.0:
 		_weapon_long = true
 		_weapon_pressed_at = 0.0
