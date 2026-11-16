@@ -124,6 +124,7 @@ SOUNDS = {
     "sump_empty": (1, 3.0, -16, "the last water sucked down a floor drain: a long slurping gurgle that ends in drips echoing in an empty concrete pit"),
     "gate_chain": (1, 1.4, -17, "unhooking a heavy chain from a steel railing gate and swinging the gate open: chain rattle and a creaking hinge"),
     "key_switch": (1, 1.0, -16, "turning a heavy old key in an industrial key switch: a stiff metal click and a relay clunk"),
+    "bolt_draw": (2, 1.8, -15, "a heavy steel bar drawn back slowly across a shelter door from the inside: a long iron scrape ending in a deep clank, in a brick tunnel"),
     # The Warden (chapter 2 boss): a big man, turned
     "warden_growl": (3, 2.2, -18, "a huge man turned into a monster: a deep wet rattling growl through clenched teeth, heavy breathing"),
     "warden_roar": (2, 2.6, -11, "a huge man turned into a monster roaring in rage, deep ragged human voice tearing, echoing"),

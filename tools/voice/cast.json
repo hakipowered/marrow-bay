@@ -65,7 +65,7 @@
       "normal": "[hoarse, exhausted, commanding]",
       "scream": "[roaring, furious]"
     },
-    "notes": "Warden Jackson Hardass (Clyde). Chapter 2: he is turning; use [weak, rasping] for the muster room lines."
+    "notes": "Warden Jackson Hardass (Clyde). Keep every line on [hoarse, exhausted, commanding], chapter 2 too: takes made with [weak, rasping] or [strained] drift towards a different-sounding man (the person noticed in 0.14). Check new takes with tools/voice/match.py hardass against his safe room lines before committing."
   },
   "hardass_pa": {
     "endpoint": "elevenlabs/tts/eleven-v4",
@@ -78,8 +78,8 @@
       "normal": "[hoarse, exhausted, commanding]",
       "scream": "[roaring, furious]"
     },
-    "notes": "Hardass over the Undercroft's tannoy horn (chapter 2 intercom): the same voice through a speaker filter.",
-    "mask_filter": "highpass=f=320,lowpass=f=3200,equalizer=f=1500:t=q:w=1:g=6,acrusher=bits=10:mix=0.25,aecho=0.8:0.6:90|170:0.35|0.22,volume=1.4",
+    "notes": "Hardass over the Undercroft's tannoy horn (chapter 2 intercom): the same voice, only band-limited a little. No echo, no bit-crush and nothing cut below 140 Hz: the 0.14 filter (highpass 320 Hz, crusher, 90/170 ms echo) took out his chest voice and he sounded like someone else.",
+    "mask_filter": "highpass=f=140,lowpass=f=5000,equalizer=f=1800:t=q:w=1.2:g=3",
     "loudness_lufs": -19
   }
 }

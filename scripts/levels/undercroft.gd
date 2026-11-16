@@ -35,6 +35,9 @@ const GENERATOR_AT := Vector3(47.5, 0.0, -1.0)
 const FLOOD_AT := Vector3(46.0, 0.0, 12.0)
 const CLOCK_AT := Vector3(24.5, 0.0, -9.375)
 const MUSTER_DOOR := Vector3(26.1, 0.0, 4.625)
+## The muster room door's lamp (DoorLamp), on the tunnel wall east of it,
+## between the door and the next pilaster.
+const MUSTER_LAMP := Vector3(27.4, 2.2, 4.36)
 const WARDEN_SEAT := Vector3(26.0, 0.0, 13.25)
 ## Where he stands up to, clear of his bench (sat on it, he is inside its
 ## collider and can neither move nor be shot in the legs).
@@ -530,6 +533,9 @@ func _muster_room() -> void:
 	})
 	# Barred from inside: Hardass unbars it over the PA (the intercom scene).
 	place_door(MUSTER_DOOR, 0, Door.Kind.LOCKED, "steel", 1.4, 2.4, "muster_door", "barred_from_inside")
+	# Its lamp in the tunnel, on the engine hall side of the door: red while
+	# it's barred, green once he draws the bar (DoorLamp).
+	DoorLamp.make(self, MUSTER_LAMP, 180.0, "muster_door")
 	var concrete := Mats.surface("undercroft_floor", {"tile_size": 1.2, "grime_amount": 0.7, "tint": Color(0.7, 0.7, 0.68)})
 	for x in [4.2, 9.8]:
 		_block(r, Vector3(x, 1.8, 5.0), Vector3(0.6, 3.6, 0.6), concrete)

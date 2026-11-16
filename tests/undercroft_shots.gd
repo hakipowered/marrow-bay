@@ -26,6 +26,8 @@ var shots := [
 	["cabinet_close", Vector3(48.3, 1.5, 1.15), Vector3(48.2, 1.35, 0.4)],
 	["flood_box", Vector3(47.9, 1.55, 10.6), Vector3(48.62, 1.15, 11.8)],
 	["pump_door", Vector3(37.0, 1.6, 2.0), Vector3(34.6, 1.1, 4.6)],
+	["muster_lamp", Vector3(30.4, 1.6, 2.0), Vector3(26.8, 1.6, 4.3)],
+	["hall_to_tunnel", Vector3(44.5, 1.7, 2.2), Vector3(30.0, 1.5, 3.4)],
 	["pump", Vector3(34.3, 1.75, 5.2), Vector3(36.9, -0.5, 9.6)],
 	["pump_valves", Vector3(36.3, 1.6, 6.2), Vector3(33.5, 1.3, 8.4)],
 	["pump_board", Vector3(35.4, 1.7, 8.4), Vector3(33.4, 2.3, 8.4)],

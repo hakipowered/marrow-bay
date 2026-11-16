@@ -98,6 +98,11 @@ func _take(pid: String) -> bool:
 func _obj() -> String:
 	return str(gs.world_flags.get("objective", ""))
 
+## The muster room door's lamp: 0 dark, 1 red (barred), 2 green (DoorLamp).
+func _lamp() -> int:
+	var l: Node = current_scene.find_child("DoorLamp_muster_door", true, false)
+	return l.state() if l else -1
+
 func _door(id: String) -> Node:
 	for d in get_nodes_in_group("doors"):
 		if d.door_id == id:
@@ -506,6 +511,7 @@ func _process(_d: float) -> bool:
 				lit += 1 if l.visible and l.light_energy > 0.0 else 0
 			_check(all > 0 and lit == all, "the work lights are on (%d of %d)" % [lit, all])
 			_check(cs.active and cs.current == "c2_intercom", "with the lights on, Hardass comes on the tannoy (%s)" % str(cs.current))
+			_check(_lamp() == 1, "the muster door lamp is red while it's barred (%d)" % _lamp())
 			wall_to = Time.get_ticks_msec() + 90000
 			step = 19
 		19:
@@ -526,6 +532,7 @@ func _process(_d: float) -> bool:
 			if frames < wait_to:
 				return false
 			var md := _door("muster_door")
+			_check(_lamp() == 2, "the muster door lamp is green once he's unbarred it (%d)" % _lamp())
 			_check(md.is_open, "the muster room door opens")
 			p.global_position = Vector3(26.1, 0.0, 6.2)
 			step = 21
@@ -544,6 +551,7 @@ func _process(_d: float) -> bool:
 			var md := _door("muster_door")
 			_check(md != null and not md.is_open and not gs.has_flag("unlocked:muster_door"), "the door is barred behind them for the fight")
 			_check(_obj() == _story_cls.OBJ_WARDEN_KEY, "objective: %s" % _obj())
+			_check(_lamp() == 1, "and its lamp is red again (%d)" % _lamp())
 			_check(p.global_position.z > 5.0, "she is inside the room, not in the doorway")
 			# The fight itself is tests/warden_fight.gd; here he goes down.
 			cheats.set_cheat("god_mode", true)

@@ -9,13 +9,20 @@ extends SceneTree
 ## texture, so the frosted pane renders black there. 960x720 is about the
 ## shape of the Fold's inner screen.) "glass_seen" plays the warden scene as
 ## if they had already seen the thing behind the reading room glass.
+## "c2_intercom" is chapter 2's tannoy scene: the Undercroft with the
+## generator running, which starts it as soon as everyone is ready.
 ## The cutscene clock runs on game time, so the film matches the phone even
 ## though software rendering is far slower than real time.
 
 const ENTER := {
 	"warden": Vector3(13.4, 0.1, 2.6),
 	"glass": Vector3(-15.8, 0.1, 6.5),
+	"c2_intercom": Vector3(44.0, 0.1, 2.0),
 }
+## Chapter 2 up to the lights coming on (the tannoy scene comes next).
+const C2_POWER := ["story_c2_arrival", "c2_arrival", "story_c2_hall", "story_c2_hunt", "c2_hunt",
+	"c2_hunt_over", "c2_clock_open", "taken:c2_fuse", "taken:c2_diesel", "taken:c2_crank",
+	"c2_fuel_in", "c2_fuse_in", "c2_crank_in", "power:undercroft"]
 
 var scene_id := "warden"
 var seen_glass := false
@@ -48,6 +55,10 @@ func _process(delta: float) -> bool:
 					flags.append("story_warden")
 				elif seen_glass:
 					flags.append("story_glass")
+				if scene_id.begins_with("c2_"):
+					flags = C2_POWER.duplicate()
+					gs.level_path = "res://scenes/levels/undercroft.tscn"
+					gs.shared_checkpoint = "ch2_hall"
 				for f in flags:
 					gs.set_flag(f)
 				root.get_node("Net").start_solo("zegan")

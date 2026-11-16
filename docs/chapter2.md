@@ -79,12 +79,20 @@ are the only light until the generator runs.
    sounds. The flood door's control box lights LOCKED OUT: the door won't
    lift without the Warden's key.
 9. **The intercom** (`c2_intercom`, the lights on and it quiet): Hardass on the
-   tannoy. He heard the engine; the key is on his belt; he is in the muster
-   room and has unbarred the door.
+   tannoy ("It's Hardass", the same voice as the safe room upstairs, only a
+   little band-limited). He heard the engine; power won't lift the flood door,
+   only his key will, and he has it with him in the muster room. He gives the
+   way ("Back down the tunnel. Steel door on your left, past the pump room.
+   I've unlocked it."), and the scene shows it: a shot down the tunnel from the
+   engine hall to the muster door, then the door itself as the bar is drawn
+   and the lamp beside it turns from red to green (`DoorLamp`, the only green
+   light down there). He came down after them with the key and his legs gave
+   out. The objective repeats the way.
 10. **The Warden** (`c2_warden`, walking into the muster room): Hardass counts
     the shelter one last time and turns in front of them. The door bars
     behind them.
-11. **The key** drops where the Warden falls; the muster door unbars. Turn it
+11. **The key** drops where the Warden falls; the muster door unbars (its lamp
+    is red while he fights them behind it, green again after). Turn it
     in the flood door's control box and the door rises.
 12. **The end** (`c2_end`, in the deep stacks): Nasri's staff card on the floor,
     "THE COUNT IS WRONG" chalked on the wall with tally marks, the Tallyman
