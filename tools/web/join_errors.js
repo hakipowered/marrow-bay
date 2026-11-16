@@ -51,7 +51,9 @@ const newCtx = (browser) => browser.newContext({ viewport: { width: 904, height:
 		await host.waitForTimeout(10000);
 		await host.tapAt(452, 445);           // Co-op: Invite a Friend
 		await host.waitForTimeout(1500);
-		await host.tapAt(452, 491);           // Create Room
+		await host.tapAt(452, 491);           // Next (survivor)
+		await host.waitForTimeout(1500);
+		await host.tapAt(452, 500);           // Create Room (under the difficulty)
 		const code = await host.waitNote('room', 30);
 		await host.waitNote('room_open', 30);
 		check(/^[0-9]{6}$/.test(code), `host room ${code} is six numbers and open`);
@@ -63,6 +65,7 @@ const newCtx = (browser) => browser.newContext({ viewport: { width: 904, height:
 		const guest = await open(guestCtx, 'guest', `?join=${wrong}&relay=${encodeURIComponent(relay)}`);
 		pages.push(guest);
 		await guest.waitForTimeout(10000);
+		await guest.shot('1_join_menu');
 		// Join menu: title, code box, Paste Invite, Join, status, Back.
 		const t0 = Date.now();
 		await guest.tapAt(452, 438);          // Join

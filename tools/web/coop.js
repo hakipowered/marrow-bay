@@ -46,7 +46,9 @@ async function open(browser, name, query) {
 		await host.waitForTimeout(10000);
 		await host.tapAt(452, 445);           // Co-op: Invite a Friend
 		await host.waitForTimeout(1500);
-		await host.tapAt(452, 491);           // Create Room
+		await host.tapAt(452, 491);           // Next (survivor)
+		await host.waitForTimeout(1500);
+		await host.tapAt(452, 500);           // Create Room (under the difficulty)
 		const code = await host.waitNote('room', 30);
 		say(`host room ${code}`);
 		await host.shot('1_room');
