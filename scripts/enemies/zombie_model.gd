@@ -692,6 +692,9 @@ func fall() -> void:
 	_anim.seek(0.15, true)
 	_anim.speed_scale = 0.8
 
+const LAND_LIFT := 0.16
+var _land_tw: Tween
+
 func land() -> void:
 	_falling = false
 	if not _rigged:
@@ -706,6 +709,12 @@ func land() -> void:
 		# Already folding when it hits: on the floor a beat later.
 		_anim.seek(maxf(death_land(_lying) - 0.2, 0.0), true)
 		_anim.speed_scale = 1.2
+		# Blending from the flailing fall into the fold sinks the feet up
+		# to 15 cm into the floor for the first few frames (the coal chute
+		# drops, measured): it touches down a hand higher and settles.
+		position.y = LAND_LIFT
+		_land_tw = create_tween()
+		_land_tw.tween_property(self, "position:y", 0.0, 0.18)
 	else:
 		_anim.seek(1.7, true)
 		_anim.speed_scale = 1.5
@@ -746,6 +755,8 @@ func die(head_gone: bool, plan := {}) -> void:
 		t.parallel().tween_property(self, "position:y", 0.15, 0.6)
 
 func _start_death(clip: String, plan: Dictionary) -> void:
+	if _land_tw and _land_tw.is_valid():
+		_land_tw.kill()   # shot as it landed: the death moves it from here
 	_death = plan
 	_death_name = "deaths/" + clip
 	_death_t = 0.0
