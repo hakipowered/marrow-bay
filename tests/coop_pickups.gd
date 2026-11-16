@@ -112,7 +112,8 @@ func _main() -> void:
 		NET.join_online(CODE, "obcera")
 	if not await _until(func(): return get_first_node_in_group("level") != null and get_nodes_in_group("players").size() == 2, 40.0):
 		_check(false, "both survivors in the level")
-		return _finish()
+		_finish()
+		return
 	level = get_first_node_in_group("level")
 	await _wait(2.5)
 	CHEATS.set_cheat("god_mode", true)
